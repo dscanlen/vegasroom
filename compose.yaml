@@ -1,0 +1,51 @@
+services:
+  pi:
+    build:
+      context: .
+      dockerfile: harness/pi/Dockerfile
+      # Rootless fallback: avoid BuildKit trying to attach RUN containers
+      # to the default bridge network on hosts where veth is unsupported.
+      network: ${VR_PI_BUILD_NETWORK:-host}
+      args:
+        USER_UID: ${VR_AGENT_UID:-1000}
+        USER_GID: ${VR_AGENT_GID:-1000}
+    image: vegasroom/pi:local
+    # Rootless fallback for runtime container creation. Override with
+    # VR_PI_NETWORK_MODE=bridge after the host rootless network is healthy.
+    network_mode: ${VR_PI_NETWORK_MODE:-host}
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    environment:
+      HOME: /home/agent
+      PI_CODING_AGENT_SESSION_DIR: /home/agent/.pi/sessions
+      # Uncomment for offline smoke tests that should not hit Pi package/version endpoints.
+      # PI_OFFLINE: "1"
+      # PI_SKIP_VERSION_CHECK: "1"
+    volumes:
+      - type: bind
+        source: ${HOME}/.vegas-rooms/workspace
+        target: /workspace
+      - type: bind
+        source: ${HOME}/.vegas-rooms/harness/pi/config
+        target: /home/agent/.pi/agent
+      - type: bind
+        source: ${HOME}/.vegas-rooms/harness/pi/extensions
+        target: /home/agent/.pi/extensions
+      - type: bind
+        source: ${HOME}/.vegas-rooms/harness/pi/skills
+        target: /home/agent/.pi/skills
+      - type: bind
+        source: ${HOME}/.vegas-rooms/harness/pi/sessions
+        target: /home/agent/.pi/sessions
+      # Mount the SSH state directory, not the known_hosts file directly.
+      # Docker creates missing bind sources as directories, which causes
+      # file-vs-directory errors when binding a missing file to known_hosts.
+      - type: bind
+        source: ${HOME}/.vegas-rooms/ssh
+        target: /home/agent/.ssh
+      - type: bind
+        source: ${HOME}/.vegas-rooms/cache
+        target: /home/agent/.cache
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
