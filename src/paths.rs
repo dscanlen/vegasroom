@@ -1,4 +1,7 @@
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
@@ -102,8 +105,9 @@ impl StatePaths {
             return Ok(());
         }
 
-        fs::create_dir_all(&self.cache)
-            .with_context(|| format!("failed to create cache directory: {}", self.cache.display()))?;
+        fs::create_dir_all(&self.cache).with_context(|| {
+            format!("failed to create cache directory: {}", self.cache.display())
+        })?;
 
         println!("Vegasroom launches AI agent harnesses inside ephemeral Docker containers.\n");
         println!("Only configured mounts persist. Your workspace and harness config are mounted read-write.\n");
@@ -111,8 +115,12 @@ impl StatePaths {
         println!("Provider login state may persist inside the Pi harness mount after you use Pi /login.\n");
         println!("Default harness: Pi. Other harnesses can be added in future versions.\n");
 
-        fs::write(&self.disclaimer_ack, "acknowledged\n")
-            .with_context(|| format!("failed to write disclaimer acknowledgement: {}", self.disclaimer_ack.display()))?;
+        fs::write(&self.disclaimer_ack, "acknowledged\n").with_context(|| {
+            format!(
+                "failed to write disclaimer acknowledgement: {}",
+                self.disclaimer_ack.display()
+            )
+        })?;
 
         Ok(())
     }
@@ -195,8 +203,12 @@ fn ensure_file(path: &Path, contents: &str, report: &mut EnsureReport) -> Result
     }
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create parent directory: {}", display_path(parent)))?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create parent directory: {}",
+                display_path(parent)
+            )
+        })?;
     }
 
     fs::write(path, contents)

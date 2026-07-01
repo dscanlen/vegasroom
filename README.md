@@ -1,62 +1,98 @@
 # Vegasroom
 
-Vegasroom is an experimental CLI for launching AI agent harnesses inside ephemeral Docker containers.
+Vegasroom is a source-built MVP for running the Pi Agent Harness inside an ephemeral rootless Docker container.
 
-M4 provides a minimal Rust command named `vr` that wraps the proven M1 Pi runtime, forwards the host ssh-agent from M3, and supports Pi login persistence through the explicit Pi state mount.
+The goal is practical containment for agent work: Pi runs in a container, only explicit state mounts persist, Git-over-SSH works through the host ssh-agent, and Pi login state persists through the Pi harness mount.
 
-## Current commands
+This MVP is functional, not hardened.
 
-```bash
-cargo run -- init
-cargo run -- doctor
-cargo run -- pi
-cargo run -- shell
-```
+## Current status
 
-When installed as `vr`:
+Implemented commands:
 
 ```bash
+vr
 vr init
+vr init --build
 vr doctor
 vr pi
 vr shell
-vr
+```
+
+Source-development equivalents:
+
+```bash
+cargo run -- init
+cargo run -- init --build
+cargo run -- doctor
+cargo run -- pi
+cargo run -- shell
+cargo run
 ```
 
 `vr` defaults to `vr pi`.
 
-## Runtime assumptions
+## Requirements
 
-M4 preserves the M1-M3 runtime decisions:
+MVP target:
 
 - Linux
-- Docker with a configured `rootless` context
-- Docker Compose
-- host-network fallback for rootless Docker
-- container-root runtime inside rootless Docker
-- explicit bind mounts only
-- Pi state under `~/.vegasroom/harness/pi`
-- workspace under `~/.vegasroom/workspace`
-- SSH directory mount at `~/.vegasroom/ssh`
-- Pi auth state under `~/.vegasroom/harness/pi/config/auth.json` after `/login`
+- Docker
+- Docker Compose v2 through `docker compose`
+- Docker context named `rootless`
+- Rust toolchain for source builds
 
-## Build image
-
-After `vr init`, build the local Pi image:
+Check Docker contexts:
 
 ```bash
-cargo run -- init --build
+docker context ls
+docker --context rootless info
 ```
 
-or directly:
+## Quick start from source
+
+Build and install the host command:
 
 ```bash
-docker --context rootless compose build pi
+cargo build --release
+cargo install --path .
 ```
+
+Initialize state and build the local Pi image:
+
+```bash
+vr init --build
+```
+
+Check readiness:
+
+```bash
+vr doctor
+```
+
+Launch Pi:
+
+```bash
+vr
+```
+
+Open the debug shell:
+
+```bash
+vr shell
+```
+
+If you do not want to install `vr`, use `cargo run -- ...` from the repo.
 
 ## State directory
 
-Vegasroom creates or repairs:
+Vegasroom uses:
+
+```text
+~/.vegasroom
+```
+
+Default layout:
 
 ```text
 ~/.vegasroom/
@@ -67,100 +103,137 @@ Vegasroom creates or repairs:
   harness/pi/skills/
   harness/pi/sessions/
   ssh/
+    known_hosts
   cache/
 ```
 
-Provider/API-key handling is intentionally out of scope for M4. Pi native `/login` is used for subscription/provider auth.
+## Runtime model
 
-## SSH agent forwarding
+The runtime is intentionally the proven M1-M4 model:
 
-M3 forwards the host ssh-agent socket when `SSH_AUTH_SOCK` points to a real socket.
+- Docker Compose service `pi`
+- image `vegasroom/pi:local`
+- `docker --context rootless compose run --rm pi`
+- ephemeral container removed after exit
+- `/workspace` mounted from `~/.vegasroom/workspace`
+- Pi state mounted from `~/.vegasroom/harness/pi/...`
+- `~/.vegasroom/ssh` mounted as the container SSH directory
+- ssh-agent socket forwarded only when `$SSH_AUTH_SOCK` is usable
+- `network_mode=host`
+- `build.network=host`
+- container runs as root inside rootless Docker for MVP bind-mount compatibility
 
-The container sees:
+## SSH model
+
+Vegasroom does not copy SSH private keys into the container and does not mount host `~/.ssh`.
+
+When the host has a usable ssh-agent socket, `vr pi` and `vr shell` generate a temporary Compose override that mounts that socket into the container at:
 
 ```text
+/tmp/vegasroom/ssh-agent.sock
+```
+
+The container receives:
+
+```bash
 SSH_AUTH_SOCK=/tmp/vegasroom/ssh-agent.sock
 ```
 
-Vegasroom does not copy SSH private keys into the container and does not mount the host `~/.ssh`. It mounts only the Vegas-managed SSH directory:
+This allows Git-over-SSH without copying private key files. It is still powerful: processes in the container can ask the host agent to sign SSH authentication requests while the socket is mounted.
 
-```text
-~/.vegasroom/ssh -> /home/agent/.ssh
-~/.vegasroom/ssh -> /root/.ssh
+## Pi login model
+
+Pi login is handled by Pi itself through interactive `/login`.
+
+The container sets:
+
+```yaml
+BROWSER: echo
 ```
 
-Forwarding the ssh-agent socket allows processes inside the container to request SSH signatures from identities loaded in the host agent while the socket is mounted.
+so browser login helpers print a URL instead of attempting to launch a browser inside the container. Open that URL on the host.
 
-### M3 proof commands
-
-On the host:
-
-```bash
-echo "$SSH_AUTH_SOCK"
-ssh-add -l
-cargo run -- init
-cargo run -- doctor
-cargo run -- shell
-```
-
-Inside the room:
-
-```bash
-echo "$SSH_AUTH_SOCK"
-ls -la /tmp/vegasroom
-ssh-add -l
-ssh -T git@github.com
-cd /workspace
-git clone git@github.com:OWNER/REPO.git
-cd REPO
-git fetch
-```
-
-
-## Pi login proof
-
-M4 keeps browser work on the host where possible. The Compose service sets:
-
-```text
-BROWSER=echo
-```
-
-This encourages browser-login helpers to print the URL instead of trying to launch a browser inside the container. Open the printed URL on the host, complete login, return to Pi, and then exit/relaunch the room.
-
-Pi auth state is expected to persist at:
+Pi auth state is expected to persist under:
 
 ```text
 ~/.vegasroom/harness/pi/config/auth.json
 ```
 
-because the container path `/home/agent/.pi/agent` is mounted from `~/.vegasroom/harness/pi/config`.
+Do not store provider API keys in `~/.vegasroom/config.yaml`; provider/API-key handling is out of scope for this MVP.
 
-### M4 proof commands
+## Commands
+
+### `vr init`
+
+Creates or repairs the Vegasroom state directory. It does not delete existing files and does not overwrite an existing config file.
 
 ```bash
-cargo run -- init
-cargo run -- doctor
-cargo run -- pi
+vr init
 ```
 
-Inside Pi:
+Build the local Pi image:
+
+```bash
+vr init --build
+```
+
+### `vr doctor`
+
+Prints readiness checks using:
 
 ```text
-/login
+PASS
+WARN
+FAIL
 ```
 
-After login, exit and relaunch:
+`WARN` means usable but degraded. `FAIL` means required functionality is missing.
+
+### `vr pi` and `vr`
+
+Launch Pi interactively in the room:
 
 ```bash
-cargo run -- pi
+vr pi
 ```
 
-Then verify that Pi remains authenticated. For filesystem inspection:
+Equivalent default:
 
 ```bash
-cargo run -- shell
-ls -la /home/agent/.pi/agent
-find /home/agent/.pi/agent -maxdepth 2 -type f | sort
+vr
 ```
 
-M4 does not mount host browser profiles and does not add provider API keys to Vegasroom config.
+### `vr shell`
+
+Launches a shell in the same runtime:
+
+```bash
+vr shell
+```
+
+Use this to inspect mounts, SSH agent forwarding, Git, network behavior, and Pi state paths.
+
+## Security boundary
+
+Vegasroom MVP reduces accidental broad host filesystem access by only mounting explicit directories, but it is not a hardened sandbox.
+
+Known MVP tradeoffs:
+
+- container runs as root inside rootless Docker
+- host networking is enabled
+- workspace is mounted read-write
+- Pi state and auth are mounted read-write
+- SSH agent forwarding can authorize SSH operations
+- provider/API-key handling is deferred
+- hardening is deferred
+
+Read `docs/security.md` before evaluating isolation guarantees.
+
+## Documentation
+
+- `docs/design.md`
+- `docs/rootless-docker.md`
+- `docs/config.md`
+- `docs/security.md`
+- `docs/troubleshooting.md`
+- `docs/m5-mvp-notes.md`

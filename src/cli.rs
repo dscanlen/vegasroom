@@ -23,7 +23,7 @@ pub enum Commands {
     /// Check whether the local system is ready to run Vegasroom.
     Doctor,
 
-    /// Launch Pi in the M1 Docker/Compose runtime.
+    /// Launch Pi in the proven Docker/Compose runtime.
     Pi,
 
     /// Launch a shell in the same Docker/Compose runtime.
@@ -49,6 +49,7 @@ fn init(build: bool) -> Result<i32> {
 
     if build {
         let config = Config::load_or_default()?;
+        println!("Building Pi image: {}", config.harness.pi.image);
         docker::build_pi_image(&config)?;
     }
 
@@ -61,9 +62,8 @@ fn launch_pi() -> Result<i32> {
     state.show_disclaimer_once()?;
 
     let config = Config::load_or_default()?;
-    docker::ensure_pi_image_exists(&config).with_context(|| {
-        "Pi image was not found. Run: vr init --build"
-    })?;
+    docker::ensure_pi_image_exists(&config)
+        .with_context(|| "Pi image was not found. Run: vr init --build")?;
     docker::run_pi(&config)
 }
 
@@ -72,8 +72,7 @@ fn launch_shell() -> Result<i32> {
     let _ = state.ensure()?;
 
     let config = Config::load_or_default()?;
-    docker::ensure_pi_image_exists(&config).with_context(|| {
-        "Pi image was not found. Run: vr init --build"
-    })?;
+    docker::ensure_pi_image_exists(&config)
+        .with_context(|| "Pi image was not found. Run: vr init --build")?;
     docker::run_shell(&config)
 }

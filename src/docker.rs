@@ -29,7 +29,10 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
     if status.success() {
         Ok(())
     } else {
-        Err(anyhow!("Docker Compose build failed with status: {}", status))
+        Err(anyhow!(
+            "Docker Compose build failed with status: {}",
+            status
+        ))
     }
 }
 
@@ -116,7 +119,6 @@ pub fn can_run_trivial_container(config: &Config) -> bool {
         .unwrap_or(false)
 }
 
-
 pub fn container_pi_config_writable(config: &Config) -> Result<bool> {
     compose_shell_status(
         config,
@@ -185,7 +187,6 @@ fn run_compose(config: &Config, compose_args: &[&str], warn_about_ssh: bool) -> 
 
     Ok(status.code().unwrap_or(1))
 }
-
 
 fn compose_shell_status(config: &Config, script: &str) -> Result<bool> {
     let output = compose_shell_output(config, script)?;

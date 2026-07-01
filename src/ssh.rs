@@ -1,4 +1,7 @@
-use std::{env, fs, path::{Path, PathBuf}};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 
@@ -18,7 +21,6 @@ impl HostSshAgent {
     pub fn is_ready(&self) -> bool {
         matches!(self, Self::Ready(_))
     }
-
 
     pub fn status_detail(&self) -> String {
         match self {
@@ -66,13 +68,20 @@ pub fn detect_host_agent() -> HostSshAgent {
     }
 }
 
-pub fn write_agent_compose_override(state: &StatePaths, agent: &HostSshAgent) -> Result<Option<PathBuf>> {
+pub fn write_agent_compose_override(
+    state: &StatePaths,
+    agent: &HostSshAgent,
+) -> Result<Option<PathBuf>> {
     let HostSshAgent::Ready(host_sock) = agent else {
         return Ok(None);
     };
 
-    fs::create_dir_all(&state.cache)
-        .with_context(|| format!("failed to create cache directory: {}", display_path(&state.cache)))?;
+    fs::create_dir_all(&state.cache).with_context(|| {
+        format!(
+            "failed to create cache directory: {}",
+            display_path(&state.cache)
+        )
+    })?;
 
     let override_path = state.cache.join("ssh-agent.compose.yaml");
     let contents = format!(
@@ -89,8 +98,12 @@ pub fn write_agent_compose_override(state: &StatePaths, agent: &HostSshAgent) ->
         host_sock = yaml_double_quoted(host_sock),
     );
 
-    fs::write(&override_path, contents)
-        .with_context(|| format!("failed to write SSH agent Compose override: {}", display_path(&override_path)))?;
+    fs::write(&override_path, contents).with_context(|| {
+        format!(
+            "failed to write SSH agent Compose override: {}",
+            display_path(&override_path)
+        )
+    })?;
 
     Ok(Some(override_path))
 }

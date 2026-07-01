@@ -58,8 +58,14 @@ pub fn run() -> Result<i32> {
         Status::Fail,
         "Rootless context usable",
         docker::context_usable(&config),
-        format!("Docker context '{}' responded to `docker info`", config.docker.context),
-        format!("Docker context '{}' did not respond to `docker info`.", config.docker.context),
+        format!(
+            "Docker context '{}' responded to `docker info`",
+            config.docker.context
+        ),
+        format!(
+            "Docker context '{}' did not respond to `docker info`.",
+            config.docker.context
+        ),
     ));
 
     checks.push(check_bool(
@@ -87,12 +93,19 @@ pub fn run() -> Result<i32> {
     checks.push(check_path_file("Config", &state.config_yaml));
     checks.push(check_known_hosts(&state.known_hosts));
     checks.push(check_dir_writable("Pi config writable", &state.pi_config));
-    checks.push(check_dir_writable("Pi sessions writable", &state.pi_sessions));
+    checks.push(check_dir_writable(
+        "Pi sessions writable",
+        &state.pi_sessions,
+    ));
     checks.push(check_pi_auth_state(&state.pi_auth_json));
 
     let compose_file = config.compose_file_path();
     checks.push(check_path_file("Compose file", &compose_file));
-    checks.extend(check_compose_m1_m3_settings(&compose_file));
+    checks.push(check_path_file(
+        "Pi Dockerfile",
+        Path::new("harness/pi/Dockerfile"),
+    ));
+    checks.extend(check_compose_runtime_settings(&compose_file));
 
     let image_exists = match docker::image_exists(&config) {
         Ok(true) => {
@@ -107,7 +120,10 @@ pub fn run() -> Result<i32> {
             checks.push(Check {
                 status: Status::Warn,
                 name: "Pi image",
-                detail: format!("{} was not found. Run: vr init --build", config.harness.pi.image),
+                detail: format!(
+                    "{} was not found. Run: vr init --build",
+                    config.harness.pi.image
+                ),
             });
             false
         }
@@ -178,7 +194,10 @@ fn check_path_dir(name: &'static str, path: &Path) -> Check {
         Check {
             status: Status::Fail,
             name,
-            detail: format!("expected directory path exists as a file: {}", display_path(path)),
+            detail: format!(
+                "expected directory path exists as a file: {}",
+                display_path(path)
+            ),
         }
     } else {
         Check {
@@ -200,7 +219,10 @@ fn check_path_file(name: &'static str, path: &Path) -> Check {
         Check {
             status: Status::Fail,
             name,
-            detail: format!("expected file path exists as a directory: {}", display_path(path)),
+            detail: format!(
+                "expected file path exists as a directory: {}",
+                display_path(path)
+            ),
         }
     } else {
         Check {
@@ -231,7 +253,10 @@ fn check_known_hosts(path: &Path) -> Check {
         Check {
             status: Status::Warn,
             name: "known_hosts",
-            detail: format!("{} is missing but can be created by `vr init`", display_path(path)),
+            detail: format!(
+                "{} is missing but can be created by `vr init`",
+                display_path(path)
+            ),
         }
     } else {
         Check {
@@ -241,7 +266,6 @@ fn check_known_hosts(path: &Path) -> Check {
         }
     }
 }
-
 
 fn check_dir_writable(name: &'static str, path: &Path) -> Check {
     if !path.is_dir() {
@@ -277,13 +301,19 @@ fn check_pi_auth_state(path: &Path) -> Check {
         Check {
             status: Status::Fail,
             name: "Pi auth state",
-            detail: format!("expected Pi auth state to be a file, but path exists as a directory: {}", display_path(path)),
+            detail: format!(
+                "expected Pi auth state to be a file, but path exists as a directory: {}",
+                display_path(path)
+            ),
         }
     } else {
         Check {
             status: Status::Warn,
             name: "Pi auth state",
-            detail: format!("{} not found. Run `cargo run -- pi`, then use Pi `/login`.", display_path(path)),
+            detail: format!(
+                "{} not found. Run `cargo run -- pi`, then use Pi `/login`.",
+                display_path(path)
+            ),
         }
     }
 }
@@ -298,7 +328,8 @@ fn check_host_ssh_agent(agent: &ssh::HostSshAgent) -> Check {
         ssh::HostSshAgent::MissingEnv => Check {
             status: Status::Warn,
             name: "Host SSH agent socket",
-            detail: "SSH_AUTH_SOCK is not set. Git over SSH may not work inside the room.".to_owned(),
+            detail: "SSH_AUTH_SOCK is not set. Git over SSH may not work inside the room."
+                .to_owned(),
         },
         ssh::HostSshAgent::MissingPath(_) | ssh::HostSshAgent::NotSocket(_) => Check {
             status: Status::Warn,
@@ -394,7 +425,9 @@ fn check_container_ssh(config: &Config, agent: &ssh::HostSshAgent) -> Vec<Check>
         Ok(Some(result)) if result.code == 1 => Check {
             status: Status::Warn,
             name: "Container ssh-add -l",
-            detail: "ssh-agent is reachable but has no loaded identities. Run `ssh-add` on the host.".to_owned(),
+            detail:
+                "ssh-agent is reachable but has no loaded identities. Run `ssh-add` on the host."
+                    .to_owned(),
         },
         Ok(Some(result)) => Check {
             status: Status::Fail,
@@ -403,7 +436,11 @@ fn check_container_ssh(config: &Config, agent: &ssh::HostSshAgent) -> Vec<Check>
                 "ssh-add -l failed with code {}: {}{}{}",
                 result.code,
                 result.stdout,
-                if result.stdout.is_empty() || result.stderr.is_empty() { "" } else { " | " },
+                if result.stdout.is_empty() || result.stderr.is_empty() {
+                    ""
+                } else {
+                    " | "
+                },
                 result.stderr
             ),
         },
@@ -421,7 +458,6 @@ fn check_container_ssh(config: &Config, agent: &ssh::HostSshAgent) -> Vec<Check>
 
     checks
 }
-
 
 fn check_container_login_readiness(config: &Config) -> Vec<Check> {
     let mut checks = Vec::new();
@@ -483,7 +519,7 @@ fn check_container_login_readiness(config: &Config) -> Vec<Check> {
     checks
 }
 
-fn check_compose_m1_m3_settings(compose_file: &Path) -> Vec<Check> {
+fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> {
     let mut checks = Vec::new();
     let Ok(contents) = fs::read_to_string(compose_file) else {
         return checks;
@@ -492,7 +528,8 @@ fn check_compose_m1_m3_settings(compose_file: &Path) -> Vec<Check> {
     checks.push(check_bool(
         Status::Warn,
         "Compose build network",
-        contents.contains("network: ${VR_PI_BUILD_NETWORK:-host}") || contents.contains("network: host"),
+        contents.contains("network: ${VR_PI_BUILD_NETWORK:-host}")
+            || contents.contains("network: host"),
         "build.network host fallback is present",
         "build.network host fallback was not found in compose.yaml",
     ));
@@ -500,7 +537,8 @@ fn check_compose_m1_m3_settings(compose_file: &Path) -> Vec<Check> {
     checks.push(check_bool(
         Status::Warn,
         "Compose runtime network",
-        contents.contains("network_mode: ${VR_PI_NETWORK_MODE:-host}") || contents.contains("network_mode: host"),
+        contents.contains("network_mode: ${VR_PI_NETWORK_MODE:-host}")
+            || contents.contains("network_mode: host"),
         "network_mode host fallback is present",
         "network_mode host fallback was not found in compose.yaml",
     ));
@@ -508,7 +546,9 @@ fn check_compose_m1_m3_settings(compose_file: &Path) -> Vec<Check> {
     checks.push(check_bool(
         Status::Warn,
         "Container user",
-        contents.contains("user: \"0:0\"") || contents.contains("user: '0:0'") || contents.contains("user: 0:0"),
+        contents.contains("user: \"0:0\"")
+            || contents.contains("user: '0:0'")
+            || contents.contains("user: 0:0"),
         "container-root runtime is preserved",
         "container-root runtime setting was not found in compose.yaml",
     ));
@@ -526,7 +566,8 @@ fn check_compose_m1_m3_settings(compose_file: &Path) -> Vec<Check> {
     checks.push(Check {
         status: Status::Pass,
         name: "SSH agent mount model",
-        detail: "ssh-agent socket mount is generated dynamically when SSH_AUTH_SOCK is usable".to_owned(),
+        detail: "ssh-agent socket mount is generated dynamically when SSH_AUTH_SOCK is usable"
+            .to_owned(),
     });
 
     checks.push(check_bool(
@@ -550,9 +591,18 @@ fn print_checks(checks: &[Check]) {
         println!("{label}: {} - {}", check.name, check.detail);
     }
 
-    let pass = checks.iter().filter(|check| check.status == Status::Pass).count();
-    let warn = checks.iter().filter(|check| check.status == Status::Warn).count();
-    let fail = checks.iter().filter(|check| check.status == Status::Fail).count();
+    let pass = checks
+        .iter()
+        .filter(|check| check.status == Status::Pass)
+        .count();
+    let warn = checks
+        .iter()
+        .filter(|check| check.status == Status::Warn)
+        .count();
+    let fail = checks
+        .iter()
+        .filter(|check| check.status == Status::Fail)
+        .count();
 
     println!("\nSummary: {pass} PASS, {warn} WARN, {fail} FAIL");
 }

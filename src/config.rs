@@ -64,7 +64,7 @@ pub struct DockerConfig {
     pub compose_file: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HarnessConfig {
     #[serde(default)]
     pub pi: PiHarnessConfig,
@@ -94,7 +94,8 @@ impl Config {
         if paths.config_yaml.exists() {
             Self::load_from_path(paths.config_yaml)
         } else {
-            serde_yaml::from_str(DEFAULT_CONFIG_YAML).context("failed to parse built-in default config")
+            serde_yaml::from_str(DEFAULT_CONFIG_YAML)
+                .context("failed to parse built-in default config")
         }
     }
 
@@ -108,7 +109,6 @@ impl Config {
     pub fn compose_file_path(&self) -> PathBuf {
         expand_tilde(&self.docker.compose_file)
     }
-
 }
 
 impl Default for Config {
@@ -132,14 +132,6 @@ impl Default for DockerConfig {
         Self {
             context: default_context(),
             compose_file: default_compose_file(),
-        }
-    }
-}
-
-impl Default for HarnessConfig {
-    fn default() -> Self {
-        Self {
-            pi: PiHarnessConfig::default(),
         }
     }
 }
