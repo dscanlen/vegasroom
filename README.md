@@ -70,3 +70,47 @@ Vegasroom creates or repairs:
 ```
 
 Provider/API-key handling is intentionally out of scope for M2.
+
+## SSH agent forwarding
+
+M3 forwards the host ssh-agent socket when `SSH_AUTH_SOCK` points to a real socket.
+
+The container sees:
+
+```text
+SSH_AUTH_SOCK=/tmp/vegasroom/ssh-agent.sock
+```
+
+Vegasroom does not copy SSH private keys into the container and does not mount the host `~/.ssh`. It mounts only the Vegas-managed SSH directory:
+
+```text
+~/.vegasroom/ssh -> /home/agent/.ssh
+~/.vegasroom/ssh -> /root/.ssh
+```
+
+Forwarding the ssh-agent socket allows processes inside the container to request SSH signatures from identities loaded in the host agent while the socket is mounted.
+
+### M3 proof commands
+
+On the host:
+
+```bash
+echo "$SSH_AUTH_SOCK"
+ssh-add -l
+cargo run -- init
+cargo run -- doctor
+cargo run -- shell
+```
+
+Inside the room:
+
+```bash
+echo "$SSH_AUTH_SOCK"
+ls -la /tmp/vegasroom
+ssh-add -l
+ssh -T git@github.com
+cd /workspace
+git clone git@github.com:OWNER/REPO.git
+cd REPO
+git fetch
+```

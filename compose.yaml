@@ -19,6 +19,8 @@ services:
     environment:
       HOME: /home/agent
       PI_CODING_AGENT_SESSION_DIR: /home/agent/.pi/sessions
+      # SSH_AUTH_SOCK is injected by vr with a generated Compose override when
+      # the host has a usable ssh-agent socket.
       # Uncomment for offline smoke tests that should not hit Pi package/version endpoints.
       # PI_OFFLINE: "1"
       # PI_SKIP_VERSION_CHECK: "1"
@@ -44,6 +46,9 @@ services:
       - type: bind
         source: ${HOME}/.vegasroom/ssh
         target: /home/agent/.ssh
+      - type: bind
+        source: ${HOME}/.vegasroom/ssh
+        target: /root/.ssh
       - type: bind
         source: ${HOME}/.vegasroom/cache
         target: /home/agent/.cache

@@ -1,8 +1,15 @@
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::config::Config;
+use crate::{config::Config, paths::StatePaths, ssh};
+
+#[derive(Debug)]
+pub struct SshAddCheck {
+    pub code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
 
 pub fn build_pi_image(config: &Config) -> Result<()> {
     let status = base_docker(config)
@@ -27,11 +34,11 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
 }
 
 pub fn run_pi(config: &Config) -> Result<i32> {
-    run_compose(config, &["run", "--rm", "pi"])
+    run_compose(config, &["run", "--rm", "pi"], true)
 }
 
 pub fn run_shell(config: &Config) -> Result<i32> {
-    run_compose(config, &["run", "--rm", "pi", "sh"])
+    run_compose(config, &["run", "--rm", "pi", "sh"], true)
 }
 
 pub fn ensure_pi_image_exists(config: &Config) -> Result<()> {
@@ -109,11 +116,44 @@ pub fn can_run_trivial_container(config: &Config) -> bool {
         .unwrap_or(false)
 }
 
-fn run_compose(config: &Config, compose_args: &[&str]) -> Result<i32> {
-    let status = base_docker(config)
-        .arg("compose")
-        .arg("-f")
-        .arg(config.docker.compose_file.as_str())
+pub fn container_receives_ssh_auth_sock(config: &Config) -> Result<Option<bool>> {
+    if !ssh::detect_host_agent().is_ready() {
+        return Ok(None);
+    }
+
+    let output = compose_shell_output(
+        config,
+        "test \"$SSH_AUTH_SOCK\" = '/tmp/vegasroom/ssh-agent.sock' && test -S \"$SSH_AUTH_SOCK\"",
+    )?;
+
+    Ok(Some(output.status.success()))
+}
+
+pub fn container_has_ssh_add(config: &Config) -> Result<Option<bool>> {
+    if !ssh::detect_host_agent().is_ready() {
+        return Ok(None);
+    }
+
+    let output = compose_shell_output(config, "command -v ssh-add >/dev/null")?;
+    Ok(Some(output.status.success()))
+}
+
+pub fn container_ssh_add_l(config: &Config) -> Result<Option<SshAddCheck>> {
+    if !ssh::detect_host_agent().is_ready() {
+        return Ok(None);
+    }
+
+    let output = compose_shell_output(config, "ssh-add -l")?;
+    Ok(Some(SshAddCheck {
+        code: output.status.code().unwrap_or(1),
+        stdout: String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+    }))
+}
+
+fn run_compose(config: &Config, compose_args: &[&str], warn_about_ssh: bool) -> Result<i32> {
+    let mut command = compose_base(config, true, warn_about_ssh)?;
+    let status = command
         .args(compose_args)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
@@ -122,6 +162,34 @@ fn run_compose(config: &Config, compose_args: &[&str]) -> Result<i32> {
         .context("failed to start Docker Compose command")?;
 
     Ok(status.code().unwrap_or(1))
+}
+
+fn compose_shell_output(config: &Config, script: &str) -> Result<Output> {
+    let mut command = compose_base(config, true, false)?;
+    command
+        .args(["run", "--rm", "pi", "sh", "-lc", script])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .context("failed to start Docker Compose check command")
+}
+
+fn compose_base(config: &Config, include_ssh_agent: bool, warn_about_ssh: bool) -> Result<Command> {
+    let mut command = base_docker(config);
+    command
+        .arg("compose")
+        .arg("-f")
+        .arg(config.docker.compose_file.as_str());
+
+    if include_ssh_agent {
+        let state = StatePaths::default()?;
+        if let Some(override_path) = ssh::prepare_agent_override(&state, warn_about_ssh)? {
+            command.arg("-f").arg(override_path);
+        }
+    }
+
+    Ok(command)
 }
 
 fn base_docker(config: &Config) -> Command {

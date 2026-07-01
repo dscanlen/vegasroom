@@ -3,6 +3,7 @@ mod config;
 mod docker;
 mod doctor;
 mod paths;
+mod ssh;
 
 fn main() {
     match cli::run() {

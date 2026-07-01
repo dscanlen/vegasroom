@@ -16,6 +16,7 @@ pub struct StatePaths {
     pub pi_sessions: PathBuf,
     pub workspace: PathBuf,
     pub ssh_dir: PathBuf,
+    pub known_hosts: PathBuf,
     pub cache: PathBuf,
     pub config_yaml: PathBuf,
     pub disclaimer_ack: PathBuf,
@@ -43,6 +44,7 @@ impl StatePaths {
         let pi_sessions = pi_root.join("sessions");
         let workspace = root.join("workspace");
         let ssh_dir = root.join("ssh");
+        let known_hosts = ssh_dir.join("known_hosts");
         let cache = root.join("cache");
         let config_yaml = root.join("config.yaml");
         let disclaimer_ack = cache.join("disclaimer-ack");
@@ -57,6 +59,7 @@ impl StatePaths {
             pi_sessions,
             workspace,
             ssh_dir,
+            known_hosts,
             cache,
             config_yaml,
             disclaimer_ack,
@@ -71,6 +74,7 @@ impl StatePaths {
         }
 
         ensure_file(&self.config_yaml, DEFAULT_CONFIG_YAML, &mut report)?;
+        ensure_file(&self.known_hosts, "", &mut report)?;
 
         Ok(report)
     }

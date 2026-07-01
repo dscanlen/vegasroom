@@ -2,7 +2,12 @@ use std::{env, fs, path::Path};
 
 use anyhow::Result;
 
-use crate::{config::Config, docker, paths::{display_path, StatePaths}};
+use crate::{
+    config::Config,
+    docker,
+    paths::{display_path, StatePaths},
+    ssh,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Status {
@@ -80,30 +85,52 @@ pub fn run() -> Result<i32> {
     }
 
     checks.push(check_path_file("Config", &state.config_yaml));
+    checks.push(check_known_hosts(&state.known_hosts));
 
     let compose_file = config.compose_file_path();
     checks.push(check_path_file("Compose file", &compose_file));
-    checks.extend(check_compose_m1_settings(&compose_file));
+    checks.extend(check_compose_m1_m3_settings(&compose_file));
 
-    checks.push(match docker::image_exists(&config) {
-        Ok(true) => Check {
-            status: Status::Pass,
-            name: "Pi image",
-            detail: format!("{} exists", config.harness.pi.image),
-        },
-        Ok(false) => Check {
-            status: Status::Warn,
-            name: "Pi image",
-            detail: format!("{} was not found. Run: vr init --build", config.harness.pi.image),
-        },
-        Err(err) => Check {
-            status: Status::Warn,
-            name: "Pi image",
-            detail: format!("could not inspect image: {err:#}"),
-        },
-    });
+    let image_exists = match docker::image_exists(&config) {
+        Ok(true) => {
+            checks.push(Check {
+                status: Status::Pass,
+                name: "Pi image",
+                detail: format!("{} exists", config.harness.pi.image),
+            });
+            true
+        }
+        Ok(false) => {
+            checks.push(Check {
+                status: Status::Warn,
+                name: "Pi image",
+                detail: format!("{} was not found. Run: vr init --build", config.harness.pi.image),
+            });
+            false
+        }
+        Err(err) => {
+            checks.push(Check {
+                status: Status::Warn,
+                name: "Pi image",
+                detail: format!("could not inspect image: {err:#}"),
+            });
+            false
+        }
+    };
 
-    checks.push(check_ssh_auth_sock());
+    let host_agent = ssh::detect_host_agent();
+    checks.push(check_host_ssh_agent(&host_agent));
+    checks.push(check_ssh_auth_sock_env());
+
+    if image_exists {
+        checks.extend(check_container_ssh(&config, &host_agent));
+    } else {
+        checks.push(Check {
+            status: Status::Warn,
+            name: "Container SSH checks",
+            detail: "skipped because the Pi image is missing. Run: vr init --build".to_owned(),
+        });
+    }
 
     print_checks(&checks);
 
@@ -180,22 +207,172 @@ fn check_path_file(name: &'static str, path: &Path) -> Check {
     }
 }
 
-fn check_ssh_auth_sock() -> Check {
+fn check_known_hosts(path: &Path) -> Check {
+    if path.is_file() {
+        Check {
+            status: Status::Pass,
+            name: "known_hosts",
+            detail: format!("{} exists", display_path(path)),
+        }
+    } else if path.exists() {
+        Check {
+            status: Status::Fail,
+            name: "known_hosts",
+            detail: format!(
+                "expected known_hosts to be a file, but path exists as a directory: {}",
+                display_path(path)
+            ),
+        }
+    } else if path.parent().map(|parent| parent.is_dir()).unwrap_or(false) {
+        Check {
+            status: Status::Warn,
+            name: "known_hosts",
+            detail: format!("{} is missing but can be created by `vr init`", display_path(path)),
+        }
+    } else {
+        Check {
+            status: Status::Fail,
+            name: "known_hosts",
+            detail: format!("parent SSH directory is missing for {}", display_path(path)),
+        }
+    }
+}
+
+fn check_host_ssh_agent(agent: &ssh::HostSshAgent) -> Check {
+    match agent {
+        ssh::HostSshAgent::Ready(_) => Check {
+            status: Status::Pass,
+            name: "Host SSH agent socket",
+            detail: agent.status_detail(),
+        },
+        ssh::HostSshAgent::MissingEnv => Check {
+            status: Status::Warn,
+            name: "Host SSH agent socket",
+            detail: "SSH_AUTH_SOCK is not set. Git over SSH may not work inside the room.".to_owned(),
+        },
+        ssh::HostSshAgent::MissingPath(_) | ssh::HostSshAgent::NotSocket(_) => Check {
+            status: Status::Warn,
+            name: "Host SSH agent socket",
+            detail: agent.status_detail(),
+        },
+    }
+}
+
+fn check_ssh_auth_sock_env() -> Check {
     match env::var("SSH_AUTH_SOCK") {
         Ok(value) if !value.trim().is_empty() => Check {
             status: Status::Pass,
-            name: "SSH agent",
+            name: "SSH_AUTH_SOCK env",
             detail: format!("SSH_AUTH_SOCK is set: {value}"),
         },
         _ => Check {
             status: Status::Warn,
-            name: "SSH agent",
+            name: "SSH_AUTH_SOCK env",
             detail: "No SSH agent detected. Git over SSH may not work inside the room.".to_owned(),
         },
     }
 }
 
-fn check_compose_m1_settings(compose_file: &Path) -> Vec<Check> {
+fn check_container_ssh(config: &Config, agent: &ssh::HostSshAgent) -> Vec<Check> {
+    let mut checks = Vec::new();
+
+    if !agent.is_ready() {
+        checks.push(Check {
+            status: Status::Warn,
+            name: "Container SSH_AUTH_SOCK",
+            detail: "skipped because no usable host SSH agent socket was detected".to_owned(),
+        });
+        return checks;
+    }
+
+    checks.push(match docker::container_receives_ssh_auth_sock(config) {
+        Ok(Some(true)) => Check {
+            status: Status::Pass,
+            name: "Container SSH_AUTH_SOCK",
+            detail: format!("container receives {}", ssh::CONTAINER_SSH_AUTH_SOCK),
+        },
+        Ok(Some(false)) => Check {
+            status: Status::Fail,
+            name: "Container SSH_AUTH_SOCK",
+            detail: "container did not receive a usable mounted SSH agent socket".to_owned(),
+        },
+        Ok(None) => Check {
+            status: Status::Warn,
+            name: "Container SSH_AUTH_SOCK",
+            detail: "skipped because no usable host SSH agent socket was detected".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Fail,
+            name: "Container SSH_AUTH_SOCK",
+            detail: format!("Docker could not mount/check the ssh-agent socket: {err:#}"),
+        },
+    });
+
+    checks.push(match docker::container_has_ssh_add(config) {
+        Ok(Some(true)) => Check {
+            status: Status::Pass,
+            name: "Container ssh-add",
+            detail: "ssh-add is available inside the room".to_owned(),
+        },
+        Ok(Some(false)) => Check {
+            status: Status::Fail,
+            name: "Container ssh-add",
+            detail: "ssh-add was not found inside the room".to_owned(),
+        },
+        Ok(None) => Check {
+            status: Status::Warn,
+            name: "Container ssh-add",
+            detail: "skipped because no usable host SSH agent socket was detected".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container ssh-add",
+            detail: format!("could not check ssh-add inside the room: {err:#}"),
+        },
+    });
+
+    checks.push(match docker::container_ssh_add_l(config) {
+        Ok(Some(result)) if result.code == 0 => Check {
+            status: Status::Pass,
+            name: "Container ssh-add -l",
+            detail: if result.stdout.is_empty() {
+                "ssh-add -l succeeded".to_owned()
+            } else {
+                result.stdout
+            },
+        },
+        Ok(Some(result)) if result.code == 1 => Check {
+            status: Status::Warn,
+            name: "Container ssh-add -l",
+            detail: "ssh-agent is reachable but has no loaded identities. Run `ssh-add` on the host.".to_owned(),
+        },
+        Ok(Some(result)) => Check {
+            status: Status::Fail,
+            name: "Container ssh-add -l",
+            detail: format!(
+                "ssh-add -l failed with code {}: {}{}{}",
+                result.code,
+                result.stdout,
+                if result.stdout.is_empty() || result.stderr.is_empty() { "" } else { " | " },
+                result.stderr
+            ),
+        },
+        Ok(None) => Check {
+            status: Status::Warn,
+            name: "Container ssh-add -l",
+            detail: "skipped because no usable host SSH agent socket was detected".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container ssh-add -l",
+            detail: format!("could not run ssh-add -l inside the room: {err:#}"),
+        },
+    });
+
+    checks
+}
+
+fn check_compose_m1_m3_settings(compose_file: &Path) -> Vec<Check> {
     let mut checks = Vec::new();
     let Ok(contents) = fs::read_to_string(compose_file) else {
         return checks;
@@ -227,11 +404,19 @@ fn check_compose_m1_settings(compose_file: &Path) -> Vec<Check> {
 
     checks.push(check_bool(
         Status::Warn,
-        "SSH mount model",
-        contents.contains(".vegasroom/ssh") && contents.contains("target: /home/agent/.ssh"),
-        "SSH directory mount is preserved",
-        "SSH directory mount was not found in compose.yaml",
+        "SSH directory mount model",
+        contents.contains(".vegasroom/ssh")
+            && contents.contains("target: /home/agent/.ssh")
+            && contents.contains("target: /root/.ssh"),
+        "SSH directory mount is preserved for Pi HOME and root SSH",
+        "SSH directory mount was not found for both /home/agent/.ssh and /root/.ssh in compose.yaml",
     ));
+
+    checks.push(Check {
+        status: Status::Pass,
+        name: "SSH agent mount model",
+        detail: "ssh-agent socket mount is generated dynamically when SSH_AUTH_SOCK is usable".to_owned(),
+    });
 
     checks
 }
