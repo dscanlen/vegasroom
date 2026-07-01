@@ -6,10 +6,10 @@ services:
       # Rootless fallback: avoid BuildKit trying to attach RUN containers
       # to the default bridge network on hosts where veth is unsupported.
       network: ${VR_PI_BUILD_NETWORK:-host}
-      args:
-        USER_UID: ${VR_AGENT_UID:-1000}
-        USER_GID: ${VR_AGENT_GID:-1000}
     image: vegasroom/pi:local
+    # M1 rootless-Docker bind-mount compatibility: run as container root.
+    # With rootless Docker this is still unprivileged on the host.
+    user: "0:0"
     # Rootless fallback for runtime container creation. Override with
     # VR_PI_NETWORK_MODE=bridge after the host rootless network is healthy.
     network_mode: ${VR_PI_NETWORK_MODE:-host}
@@ -24,28 +24,28 @@ services:
       # PI_SKIP_VERSION_CHECK: "1"
     volumes:
       - type: bind
-        source: ${HOME}/.vegas-rooms/workspace
+        source: ${HOME}/.vegasroom/workspace
         target: /workspace
       - type: bind
-        source: ${HOME}/.vegas-rooms/harness/pi/config
+        source: ${HOME}/.vegasroom/harness/pi/config
         target: /home/agent/.pi/agent
       - type: bind
-        source: ${HOME}/.vegas-rooms/harness/pi/extensions
+        source: ${HOME}/.vegasroom/harness/pi/extensions
         target: /home/agent/.pi/extensions
       - type: bind
-        source: ${HOME}/.vegas-rooms/harness/pi/skills
+        source: ${HOME}/.vegasroom/harness/pi/skills
         target: /home/agent/.pi/skills
       - type: bind
-        source: ${HOME}/.vegas-rooms/harness/pi/sessions
+        source: ${HOME}/.vegasroom/harness/pi/sessions
         target: /home/agent/.pi/sessions
       # Mount the SSH state directory, not the known_hosts file directly.
       # Docker creates missing bind sources as directories, which causes
       # file-vs-directory errors when binding a missing file to known_hosts.
       - type: bind
-        source: ${HOME}/.vegas-rooms/ssh
+        source: ${HOME}/.vegasroom/ssh
         target: /home/agent/.ssh
       - type: bind
-        source: ${HOME}/.vegas-rooms/cache
+        source: ${HOME}/.vegasroom/cache
         target: /home/agent/.cache
     extra_hosts:
       - "host.docker.internal:host-gateway"
