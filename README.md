@@ -2,7 +2,7 @@
 
 Vegasroom is an experimental CLI for launching AI agent harnesses inside ephemeral Docker containers.
 
-M2 provides a minimal Rust command named `vr` that wraps the proven M1 Pi runtime.
+M4 provides a minimal Rust command named `vr` that wraps the proven M1 Pi runtime, forwards the host ssh-agent from M3, and supports Pi login persistence through the explicit Pi state mount.
 
 ## Current commands
 
@@ -27,7 +27,7 @@ vr
 
 ## Runtime assumptions
 
-M2 preserves the M1 runtime decisions:
+M4 preserves the M1-M3 runtime decisions:
 
 - Linux
 - Docker with a configured `rootless` context
@@ -38,6 +38,7 @@ M2 preserves the M1 runtime decisions:
 - Pi state under `~/.vegasroom/harness/pi`
 - workspace under `~/.vegasroom/workspace`
 - SSH directory mount at `~/.vegasroom/ssh`
+- Pi auth state under `~/.vegasroom/harness/pi/config/auth.json` after `/login`
 
 ## Build image
 
@@ -69,7 +70,7 @@ Vegasroom creates or repairs:
   cache/
 ```
 
-Provider/API-key handling is intentionally out of scope for M2.
+Provider/API-key handling is intentionally out of scope for M4. Pi native `/login` is used for subscription/provider auth.
 
 ## SSH agent forwarding
 
@@ -114,3 +115,52 @@ git clone git@github.com:OWNER/REPO.git
 cd REPO
 git fetch
 ```
+
+
+## Pi login proof
+
+M4 keeps browser work on the host where possible. The Compose service sets:
+
+```text
+BROWSER=echo
+```
+
+This encourages browser-login helpers to print the URL instead of trying to launch a browser inside the container. Open the printed URL on the host, complete login, return to Pi, and then exit/relaunch the room.
+
+Pi auth state is expected to persist at:
+
+```text
+~/.vegasroom/harness/pi/config/auth.json
+```
+
+because the container path `/home/agent/.pi/agent` is mounted from `~/.vegasroom/harness/pi/config`.
+
+### M4 proof commands
+
+```bash
+cargo run -- init
+cargo run -- doctor
+cargo run -- pi
+```
+
+Inside Pi:
+
+```text
+/login
+```
+
+After login, exit and relaunch:
+
+```bash
+cargo run -- pi
+```
+
+Then verify that Pi remains authenticated. For filesystem inspection:
+
+```bash
+cargo run -- shell
+ls -la /home/agent/.pi/agent
+find /home/agent/.pi/agent -maxdepth 2 -type f | sort
+```
+
+M4 does not mount host browser profiles and does not add provider API keys to Vegasroom config.

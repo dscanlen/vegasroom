@@ -86,6 +86,9 @@ pub fn run() -> Result<i32> {
 
     checks.push(check_path_file("Config", &state.config_yaml));
     checks.push(check_known_hosts(&state.known_hosts));
+    checks.push(check_dir_writable("Pi config writable", &state.pi_config));
+    checks.push(check_dir_writable("Pi sessions writable", &state.pi_sessions));
+    checks.push(check_pi_auth_state(&state.pi_auth_json));
 
     let compose_file = config.compose_file_path();
     checks.push(check_path_file("Compose file", &compose_file));
@@ -124,6 +127,7 @@ pub fn run() -> Result<i32> {
 
     if image_exists {
         checks.extend(check_container_ssh(&config, &host_agent));
+        checks.extend(check_container_login_readiness(&config));
     } else {
         checks.push(Check {
             status: Status::Warn,
@@ -234,6 +238,52 @@ fn check_known_hosts(path: &Path) -> Check {
             status: Status::Fail,
             name: "known_hosts",
             detail: format!("parent SSH directory is missing for {}", display_path(path)),
+        }
+    }
+}
+
+
+fn check_dir_writable(name: &'static str, path: &Path) -> Check {
+    if !path.is_dir() {
+        return check_path_dir(name, path);
+    }
+
+    let test_file = path.join(".vr-doctor-write-test");
+    match fs::write(&test_file, "doctor\n") {
+        Ok(()) => {
+            let _ = fs::remove_file(&test_file);
+            Check {
+                status: Status::Pass,
+                name,
+                detail: format!("{} is writable", display_path(path)),
+            }
+        }
+        Err(err) => Check {
+            status: Status::Fail,
+            name,
+            detail: format!("{} is not writable: {err}", display_path(path)),
+        },
+    }
+}
+
+fn check_pi_auth_state(path: &Path) -> Check {
+    if path.is_file() {
+        Check {
+            status: Status::Pass,
+            name: "Pi auth state",
+            detail: format!("{} exists", display_path(path)),
+        }
+    } else if path.exists() {
+        Check {
+            status: Status::Fail,
+            name: "Pi auth state",
+            detail: format!("expected Pi auth state to be a file, but path exists as a directory: {}", display_path(path)),
+        }
+    } else {
+        Check {
+            status: Status::Warn,
+            name: "Pi auth state",
+            detail: format!("{} not found. Run `cargo run -- pi`, then use Pi `/login`.", display_path(path)),
         }
     }
 }
@@ -372,6 +422,67 @@ fn check_container_ssh(config: &Config, agent: &ssh::HostSshAgent) -> Vec<Check>
     checks
 }
 
+
+fn check_container_login_readiness(config: &Config) -> Vec<Check> {
+    let mut checks = Vec::new();
+
+    checks.push(match docker::container_pi_config_writable(config) {
+        Ok(true) => Check {
+            status: Status::Pass,
+            name: "Container Pi config writable",
+            detail: "/home/agent/.pi/agent is writable inside the room".to_owned(),
+        },
+        Ok(false) => Check {
+            status: Status::Fail,
+            name: "Container Pi config writable",
+            detail: "/home/agent/.pi/agent is not writable inside the room".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container Pi config writable",
+            detail: format!("could not test Pi config write path inside the room: {err:#}"),
+        },
+    });
+
+    checks.push(match docker::container_pi_sessions_writable(config) {
+        Ok(true) => Check {
+            status: Status::Pass,
+            name: "Container Pi sessions writable",
+            detail: "/home/agent/.pi/sessions is writable inside the room".to_owned(),
+        },
+        Ok(false) => Check {
+            status: Status::Fail,
+            name: "Container Pi sessions writable",
+            detail: "/home/agent/.pi/sessions is not writable inside the room".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container Pi sessions writable",
+            detail: format!("could not test Pi session write path inside the room: {err:#}"),
+        },
+    });
+
+    checks.push(match docker::container_can_reach_internet(config) {
+        Ok(true) => Check {
+            status: Status::Pass,
+            name: "Container internet",
+            detail: "container can reach https://pi.dev".to_owned(),
+        },
+        Ok(false) => Check {
+            status: Status::Warn,
+            name: "Container internet",
+            detail: "container could not reach https://pi.dev; Pi login may fail".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container internet",
+            detail: format!("could not test outbound HTTPS from the room: {err:#}"),
+        },
+    });
+
+    checks
+}
+
 fn check_compose_m1_m3_settings(compose_file: &Path) -> Vec<Check> {
     let mut checks = Vec::new();
     let Ok(contents) = fs::read_to_string(compose_file) else {
@@ -417,6 +528,14 @@ fn check_compose_m1_m3_settings(compose_file: &Path) -> Vec<Check> {
         name: "SSH agent mount model",
         detail: "ssh-agent socket mount is generated dynamically when SSH_AUTH_SOCK is usable".to_owned(),
     });
+
+    checks.push(check_bool(
+        Status::Warn,
+        "Login browser opener",
+        contents.contains("BROWSER: echo"),
+        "BROWSER=echo is set so Pi browser-login URLs are printed for host-browser use",
+        "BROWSER=echo was not found in compose.yaml; Pi may try to open a browser inside the container",
+    ));
 
     checks
 }

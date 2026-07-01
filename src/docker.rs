@@ -116,6 +116,28 @@ pub fn can_run_trivial_container(config: &Config) -> bool {
         .unwrap_or(false)
 }
 
+
+pub fn container_pi_config_writable(config: &Config) -> Result<bool> {
+    compose_shell_status(
+        config,
+        "tmp=/home/agent/.pi/agent/.vr-m4-write-test && echo m4 > \"$tmp\" && rm -f \"$tmp\"",
+    )
+}
+
+pub fn container_pi_sessions_writable(config: &Config) -> Result<bool> {
+    compose_shell_status(
+        config,
+        "tmp=/home/agent/.pi/sessions/.vr-m4-write-test && echo m4 > \"$tmp\" && rm -f \"$tmp\"",
+    )
+}
+
+pub fn container_can_reach_internet(config: &Config) -> Result<bool> {
+    compose_shell_status(
+        config,
+        "node -e \"fetch('https://pi.dev').then(r => process.exit(r.status > 0 ? 0 : 1)).catch(() => process.exit(1))\"",
+    )
+}
+
 pub fn container_receives_ssh_auth_sock(config: &Config) -> Result<Option<bool>> {
     if !ssh::detect_host_agent().is_ready() {
         return Ok(None);
@@ -162,6 +184,12 @@ fn run_compose(config: &Config, compose_args: &[&str], warn_about_ssh: bool) -> 
         .context("failed to start Docker Compose command")?;
 
     Ok(status.code().unwrap_or(1))
+}
+
+
+fn compose_shell_status(config: &Config, script: &str) -> Result<bool> {
+    let output = compose_shell_output(config, script)?;
+    Ok(output.status.success())
 }
 
 fn compose_shell_output(config: &Config, script: &str) -> Result<Output> {

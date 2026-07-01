@@ -14,6 +14,7 @@ pub struct StatePaths {
     pub pi_extensions: PathBuf,
     pub pi_skills: PathBuf,
     pub pi_sessions: PathBuf,
+    pub pi_auth_json: PathBuf,
     pub workspace: PathBuf,
     pub ssh_dir: PathBuf,
     pub known_hosts: PathBuf,
@@ -42,6 +43,7 @@ impl StatePaths {
         let pi_extensions = pi_root.join("extensions");
         let pi_skills = pi_root.join("skills");
         let pi_sessions = pi_root.join("sessions");
+        let pi_auth_json = pi_config.join("auth.json");
         let workspace = root.join("workspace");
         let ssh_dir = root.join("ssh");
         let known_hosts = ssh_dir.join("known_hosts");
@@ -57,6 +59,7 @@ impl StatePaths {
             pi_extensions,
             pi_skills,
             pi_sessions,
+            pi_auth_json,
             workspace,
             ssh_dir,
             known_hosts,
@@ -105,6 +108,7 @@ impl StatePaths {
         println!("Vegasroom launches AI agent harnesses inside ephemeral Docker containers.\n");
         println!("Only configured mounts persist. Your workspace and harness config are mounted read-write.\n");
         println!("Your SSH private keys are not copied into the container, but the forwarded ssh-agent socket can authorize SSH operations while mounted.\n");
+        println!("Provider login state may persist inside the Pi harness mount after you use Pi /login.\n");
         println!("Default harness: Pi. Other harnesses can be added in future versions.\n");
 
         fs::write(&self.disclaimer_ack, "acknowledged\n")
