@@ -6,7 +6,7 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 
 - Runs Pi inside an ephemeral Docker container.
 - Removes the container after exit with `compose run --rm`.
-- Persists only explicit bind mounts under `~/.vegasroom`.
+- Persists only explicit bind mounts, with `/workspace` resolved by the `vr` wrapper.
 - Does not mount host `~/.ssh`.
 - Does not copy SSH private keys into the container.
 - Forwards an SSH agent socket only when available.
@@ -41,16 +41,18 @@ This preserves M1-M4 functionality, including rootless build behavior and login 
 
 ### Read-write mounts
 
-The workspace and Pi state mounts are read-write:
+The selected workspace and Pi state mounts are read-write:
 
 ```text
-~/.vegasroom/workspace
+/workspace -> resolved host workspace
 ~/.vegasroom/harness/pi
 ~/.vegasroom/ssh
 ~/.vegasroom/cache
 ```
 
 Processes inside the room can modify these paths.
+
+Workspace selection includes safety checks. Vegasroom refuses to mount `/`, virtual system roots, and common credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube`. It warns before broad mounts such as the host home directory or system paths. These checks reduce accidental exposure, but they are not a complete sandboxing policy.
 
 ### SSH agent forwarding
 
@@ -77,25 +79,7 @@ Post-MVP work should revisit:
 - non-root container user
 - network restrictions
 - capability reduction
-- safer mount policy
+- stricter mount policy and optional confirmation prompts
 - optional read-only workspace mode
 - warnings for dangerous mount paths
 - clearer credential lifecycle controls
-
-## Git identity injection
-
-Git commit identity is not treated as proof of authentication. SSH keys authenticate transport operations such as clone, fetch, and push. Git commits still need an explicit author and committer identity.
-
-Vegasroom injects Git identity into the room through generated runtime configuration under `~/.vegasroom/cache/`. The generated Compose override sets:
-
-```text
-GIT_CONFIG_GLOBAL
-GIT_AUTHOR_NAME
-GIT_AUTHOR_EMAIL
-GIT_COMMITTER_NAME
-GIT_COMMITTER_EMAIL
-```
-
-This avoids accidental `root <root@...>` commits while preserving the MVP container-root runtime used for bind-mount compatibility.
-
-Deploy keys do not provide a human profile or email address to Git. For deploy-key workflows, configure `git_user_name` and `git_user_email` on the selected key, or set top-level `git.user_name` and `git.user_email`.

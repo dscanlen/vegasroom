@@ -5,6 +5,7 @@ mod docker;
 mod doctor;
 mod paths;
 mod ssh;
+mod workspace;
 
 fn main() {
     match cli::run() {

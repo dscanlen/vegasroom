@@ -1,4 +1,4 @@
-# vegasroom
+# Vegasroom
 
 Vegasroom is a source-built MVP for running the Pi Agent Harness inside an ephemeral rootless Docker container.
 
@@ -17,8 +17,8 @@ vr init --build
 vr doctor
 vr ssh configure
 vr ssh status
-vr pi
-vr shell
+vr pi [workspace] [pi-args...]
+vr shell [workspace]
 ```
 
 Source-development equivalents:
@@ -124,13 +124,55 @@ The runtime is intentionally the proven M1-M4 model:
 - image `vegasroom/pi:local`
 - `docker --context rootless compose run --rm pi`
 - ephemeral container removed after exit
-- `/workspace` mounted from `~/.vegasroom/workspace`
+- `/workspace` mounted from the resolved host workspace, defaulting to `~/.vegasroom/workspace`
 - Pi state mounted from `~/.vegasroom/harness/pi/...`
 - `~/.vegasroom/ssh` mounted as the container SSH directory
-- ssh-agent socket forwarded only when `$SSH_AUTH_SOCK` is usable
+- ssh-agent socket forwarded only when `$SSH_AUTH_SOCK` is usable, or through Vegasroom-managed SSH keys
 - `network_mode=host`
 - `build.network=host`
 - container runs as root inside rootless Docker for MVP bind-mount compatibility
+
+
+## Workspace model
+
+`vr pi` and `vr shell` accept an optional workspace argument. Vegasroom resolves that host path and mounts it as `/workspace` inside the room.
+
+```bash
+vr pi
+vr pi .
+vr pi my-git-repo
+vr pi ~/workspace/my-git-repo
+vr pi /home/dan/workspace/my-git-repo
+
+vr shell
+vr shell .
+vr shell my-git-repo
+```
+
+Resolution rules:
+
+```text
+no workspace     ~/.vegasroom/workspace
+.                current host directory
+name             ~/.vegasroom/workspace/name
+relative/path    relative to current host directory
+~/path           expanded against host home
+/absolute/path   used directly if it exists
+```
+
+For `vr pi my-git-repo`, Vegasroom may create `~/.vegasroom/workspace/my-git-repo` if missing. External absolute paths must already exist. Credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube` are refused as workspaces.
+
+Pi-specific arguments can be passed through after the workspace:
+
+```bash
+vr pi --session <id>
+vr pi . --session <id>
+vr pi my-git-repo --session <id>
+vr pi . -- --help
+vr --session <id>
+```
+
+`vr pi --help` shows Vegasroom's Pi wrapper help. Use `vr pi -- --help` to pass `--help` to Pi itself.
 
 ## SSH model
 
@@ -173,39 +215,6 @@ SSH_AUTH_SOCK=/tmp/vegasroom/ssh-agent.sock
 
 This allows Git-over-SSH without copying private key files. It is still powerful: processes in the container can ask the forwarded agent to sign SSH authentication requests while the socket is mounted.
 
-## Git identity model
-
-The MVP container still runs as root inside rootless Docker for bind-mount compatibility, but Git author/committer identity is injected separately. This prevents commits made by Pi or shell commands from falling back to `root <root@...>`.
-
-By default, Vegasroom inherits the host global Git identity:
-
-```bash
-git config --global user.name
-git config --global user.email
-```
-
-You can override it in `~/.vegasroom/config.yaml`:
-
-```yaml
-git:
-  inherit_host: true
-  user_name: Dan Scanlen
-  user_email: dan@example.com
-```
-
-Selected SSH keys can also carry explicit Git identity metadata for repo-specific or deploy-key workflows:
-
-```yaml
-ssh:
-  selected_keys:
-    - path: ~/.ssh/id_ed25519_vegasroom
-      fingerprint: SHA256:abc123...
-      git_user_name: Vegasroom Deploy
-      git_user_email: vegasroom-deploy@example.com
-```
-
-At launch, Vegasroom injects `GIT_AUTHOR_*`, `GIT_COMMITTER_*`, and `GIT_CONFIG_GLOBAL` into the room.
-
 ## Pi login model
 
 Pi login is handled by Pi itself through interactive `/login`.
@@ -229,6 +238,7 @@ Do not store provider API keys in `~/.vegasroom/config.yaml`; provider/API-key h
 ## More documentation
 
 - [Managed SSH](docs/managed-ssh.md)
+- [Workspaces](docs/workspaces.md)
 - [Security](docs/security.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Configuration](docs/config.md)
@@ -291,10 +301,28 @@ Launch Pi interactively in the room:
 vr pi
 ```
 
+Launch Pi against a specific workspace:
+
+```bash
+vr pi .
+vr pi my-git-repo
+vr pi ~/workspace/my-git-repo
+vr pi /home/dan/workspace/my-git-repo
+```
+
+Pass Pi-specific options:
+
+```bash
+vr pi --session <id>
+vr pi . --session <id>
+vr pi . -- --help
+```
+
 Equivalent default:
 
 ```bash
 vr
+vr --session <id>
 ```
 
 ### `vr shell`
@@ -303,6 +331,8 @@ Launches a shell in the same runtime:
 
 ```bash
 vr shell
+vr shell .
+vr shell my-git-repo
 ```
 
 Use this to inspect mounts, SSH agent forwarding, Git, network behavior, and Pi state paths.
@@ -328,6 +358,7 @@ Read `docs/security.md` before evaluating isolation guarantees.
 - `docs/design.md`
 - `docs/rootless-docker.md`
 - `docs/config.md`
+- `docs/workspaces.md`
 - `docs/security.md`
 - `docs/troubleshooting.md`
 - `docs/m5-mvp-notes.md`

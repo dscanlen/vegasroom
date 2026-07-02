@@ -111,6 +111,68 @@ docker:
 After repair, `vr doctor`, `vr pi`, and `vr shell` should work from any current directory, even if the original git checkout has been removed.
 
 
+
+## Workspace path does not exist
+
+External workspace paths must already exist. For example:
+
+```bash
+vr pi /some/external/path
+```
+
+fails if `/some/external/path` is missing. Create it first or choose an existing directory.
+
+For managed workspace names, Vegasroom can create the directory automatically:
+
+```bash
+vr pi my-git-repo
+```
+
+This creates:
+
+```text
+~/.vegasroom/workspace/my-git-repo
+```
+
+## Workspace path is refused
+
+Vegasroom refuses to mount credential and system paths as `/workspace`, including:
+
+```text
+/
+~/.ssh
+~/.config
+~/.aws
+~/.gcloud
+~/.kube
+/dev
+/proc
+/sys
+/run
+```
+
+Choose a project directory instead, such as:
+
+```bash
+vr pi ~/workspace/my-project
+vr pi .
+```
+
+## Pi option is rejected or treated as a workspace
+
+Use the explicit separator when syntax is ambiguous:
+
+```bash
+vr pi -- --session <id>
+vr pi . -- --session <id>
+```
+
+`vr pi --help` shows Vegasroom's wrapper help. To pass help through to Pi itself, run:
+
+```bash
+vr pi -- --help
+```
+
 ## Managed SSH setup
 
 If you do not want to manage `ssh-agent` manually, configure Vegasroom-managed SSH:
@@ -241,76 +303,3 @@ vr doctor
 ```
 
 The MVP intentionally uses container root inside rootless Docker because earlier non-root attempts hit bind-mount write issues.
-
-## Commits are authored as root
-
-Symptom:
-
-```text
-root <root@...>
-```
-
-Cause: Git author/committer identity was not configured or inherited into the room.
-
-Check host Git identity:
-
-```bash
-git config --global user.name
-git config --global user.email
-```
-
-Check Vegasroom:
-
-```bash
-vr doctor
-vr shell
-```
-
-Inside the room:
-
-```bash
-echo "$GIT_AUTHOR_NAME <$GIT_AUTHOR_EMAIL>"
-git config --global user.name
-git config --global user.email
-git var GIT_AUTHOR_IDENT
-```
-
-Set an explicit room identity:
-
-```yaml
-git:
-  inherit_host: true
-  user_name: Dan Scanlen
-  user_email: dan@example.com
-```
-
-For a deploy-key-specific identity, edit the selected key entry:
-
-```yaml
-ssh:
-  selected_keys:
-    - path: ~/.ssh/id_ed25519_vegasroom
-      fingerprint: SHA256:abc123...
-      git_user_name: Vegasroom Deploy
-      git_user_email: vegasroom-deploy@example.com
-```
-
-Then rerun:
-
-```bash
-vr doctor
-vr shell
-```
-
-
-## Checking Git identity in doctor
-
-`vr doctor` should report these Git-related checks:
-
-```text
-PASS: Config Git section - ~/.vegasroom/config.yaml contains a git section
-PASS: Git identity - <name> <<email>> from <source>; will be injected into the room
-PASS: Room Git identity - <name> <<email>> is available inside the room
-```
-
-If `Room Git identity` is skipped, run `vr init --build` so the Pi image exists.

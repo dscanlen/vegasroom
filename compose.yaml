@@ -22,13 +22,13 @@ services:
       # Force browser-login helpers to print a URL instead of trying to launch a browser in the container.
       BROWSER: echo
       # SSH_AUTH_SOCK is injected by vr with a generated Compose override when
-      # the host has a usable ssh-agent socket.
+      # host-agent or managed SSH is available.
       # Uncomment for offline smoke tests that should not hit Pi package/version endpoints.
       # PI_OFFLINE: "1"
       # PI_SKIP_VERSION_CHECK: "1"
     volumes:
       - type: bind
-        source: ${HOME}/.vegasroom/workspace
+        source: ${VR_WORKSPACE:-${HOME}/.vegasroom/workspace}
         target: /workspace
       - type: bind
         source: ${HOME}/.vegasroom/harness/pi/config
