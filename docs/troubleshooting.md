@@ -110,6 +110,42 @@ docker:
 
 After repair, `vr doctor`, `vr pi`, and `vr shell` should work from any current directory, even if the original git checkout has been removed.
 
+
+## Managed SSH setup
+
+If you do not want to manage `ssh-agent` manually, configure Vegasroom-managed SSH:
+
+```bash
+vr ssh configure
+vr ssh status
+vr doctor
+```
+
+`vr ssh configure` recursively scans `~/.ssh` by default. To scan another location:
+
+```bash
+vr ssh configure /mnt/secrethost/.ssh
+```
+
+Selected keys remain on the host. Vegasroom starts a temporary `ssh-agent`, runs `ssh-add` for selected keys, forwards only the socket into the room, and kills the agent after the room exits.
+
+## Managed SSH key requires a passphrase
+
+If a selected key is passphrase-protected, `vr pi` or `vr shell` may prompt through the host terminal when it runs `ssh-add`. Vegasroom does not store passphrases.
+
+If `vr doctor` reports that managed SSH setup failed, test interactively with:
+
+```bash
+vr shell
+```
+
+Then inside the room:
+
+```bash
+ssh-add -l
+ssh -T git@github.com
+```
+
 ## SSH_AUTH_SOCK missing
 
 Start an agent and add a key:

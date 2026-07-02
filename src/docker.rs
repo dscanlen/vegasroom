@@ -2,7 +2,11 @@ use std::process::{Command, Output, Stdio};
 
 use anyhow::{anyhow, Context, Result};
 
-use crate::{config::Config, paths::StatePaths, ssh};
+use crate::{
+    config::Config,
+    paths::StatePaths,
+    ssh::{self, SshRuntime, SshRuntimeMode},
+};
 
 #[derive(Debug)]
 pub struct SshAddCheck {
@@ -143,7 +147,7 @@ pub fn container_can_reach_internet(config: &Config) -> Result<bool> {
 }
 
 pub fn container_receives_ssh_auth_sock(config: &Config) -> Result<Option<bool>> {
-    if !ssh::detect_host_agent().is_ready() {
+    if !ssh::planned_ssh_available(config) {
         return Ok(None);
     }
 
@@ -156,7 +160,7 @@ pub fn container_receives_ssh_auth_sock(config: &Config) -> Result<Option<bool>>
 }
 
 pub fn container_has_ssh_add(config: &Config) -> Result<Option<bool>> {
-    if !ssh::detect_host_agent().is_ready() {
+    if !ssh::planned_ssh_available(config) {
         return Ok(None);
     }
 
@@ -165,7 +169,7 @@ pub fn container_has_ssh_add(config: &Config) -> Result<Option<bool>> {
 }
 
 pub fn container_ssh_add_l(config: &Config) -> Result<Option<SshAddCheck>> {
-    if !ssh::detect_host_agent().is_ready() {
+    if !ssh::planned_ssh_available(config) {
         return Ok(None);
     }
 
@@ -178,8 +182,9 @@ pub fn container_ssh_add_l(config: &Config) -> Result<Option<SshAddCheck>> {
 }
 
 fn run_compose(config: &Config, compose_args: &[&str], warn_about_ssh: bool) -> Result<i32> {
-    let mut command = compose_base(config, true, warn_about_ssh)?;
-    let status = command
+    let mut invocation = compose_base(config, true, warn_about_ssh, SshRuntimeMode::Interactive)?;
+    let status = invocation
+        .command
         .args(compose_args)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
@@ -196,8 +201,9 @@ fn compose_shell_status(config: &Config, script: &str) -> Result<bool> {
 }
 
 fn compose_shell_output(config: &Config, script: &str) -> Result<Output> {
-    let mut command = compose_base(config, true, false)?;
-    command
+    let mut invocation = compose_base(config, true, false, SshRuntimeMode::NonInteractive)?;
+    invocation
+        .command
         .args(["run", "--rm", "pi", "sh", "-lc", script])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -206,7 +212,17 @@ fn compose_shell_output(config: &Config, script: &str) -> Result<Output> {
         .context("failed to start Docker Compose check command")
 }
 
-fn compose_base(config: &Config, include_ssh_agent: bool, warn_about_ssh: bool) -> Result<Command> {
+struct ComposeInvocation {
+    command: Command,
+    _ssh_runtime: SshRuntime,
+}
+
+fn compose_base(
+    config: &Config,
+    include_ssh_agent: bool,
+    warn_about_ssh: bool,
+    ssh_mode: SshRuntimeMode,
+) -> Result<ComposeInvocation> {
     let compose_file = config.resolved_compose_file()?;
     let project_dir = compose_project_dir(&compose_file)?;
 
@@ -218,14 +234,21 @@ fn compose_base(config: &Config, include_ssh_agent: bool, warn_about_ssh: bool) 
         .arg("--project-directory")
         .arg(project_dir);
 
-    if include_ssh_agent {
+    let ssh_runtime = if include_ssh_agent {
         let state = StatePaths::default()?;
-        if let Some(override_path) = ssh::prepare_agent_override(&state, warn_about_ssh)? {
+        let runtime = ssh::prepare_agent_override(config, &state, warn_about_ssh, ssh_mode)?;
+        if let Some(override_path) = runtime.override_path() {
             command.arg("-f").arg(override_path);
         }
-    }
+        runtime
+    } else {
+        SshRuntime::empty()
+    };
 
-    Ok(command)
+    Ok(ComposeInvocation {
+        command,
+        _ssh_runtime: ssh_runtime,
+    })
 }
 
 fn compose_project_dir(compose_file: &std::path::Path) -> Result<std::path::PathBuf> {

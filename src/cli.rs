@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
-use crate::{config::Config, docker, doctor, paths::StatePaths};
+use crate::{config::Config, docker, doctor, paths::StatePaths, ssh};
 
 #[derive(Debug, Parser)]
 #[command(name = "vr")]
@@ -23,11 +23,33 @@ pub enum Commands {
     /// Check whether the local system is ready to run Vegasroom.
     Doctor,
 
+    /// Configure or inspect Vegasroom SSH key behavior.
+    Ssh {
+        #[command(subcommand)]
+        command: SshCommands,
+    },
+
     /// Launch Pi in the proven Docker/Compose runtime.
     Pi,
 
     /// Launch a shell in the same Docker/Compose runtime.
     Shell,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SshCommands {
+    /// Recursively scan SSH key roots and interactively choose managed keys.
+    Configure {
+        /// Follow symlinked directories while scanning. This can scan outside the requested roots.
+        #[arg(long)]
+        follow_symlinks: bool,
+
+        /// Optional scan roots. Defaults to ~/.ssh when omitted.
+        paths: Vec<String>,
+    },
+
+    /// Show managed SSH key configuration and next-launch behavior.
+    Status,
 }
 
 pub fn run() -> Result<i32> {
@@ -36,6 +58,13 @@ pub fn run() -> Result<i32> {
     match cli.command.unwrap_or(Commands::Pi) {
         Commands::Init { build } => init(build),
         Commands::Doctor => doctor::run(),
+        Commands::Ssh { command } => match command {
+            SshCommands::Configure {
+                paths,
+                follow_symlinks,
+            } => configure_ssh(&paths, follow_symlinks),
+            SshCommands::Status => ssh_status(),
+        },
         Commands::Pi => launch_pi(),
         Commands::Shell => launch_shell(),
     }
@@ -54,6 +83,20 @@ fn init(build: bool) -> Result<i32> {
     }
 
     Ok(0)
+}
+
+fn configure_ssh(paths: &[String], follow_symlinks: bool) -> Result<i32> {
+    let state = StatePaths::default()?;
+    let _ = state.ensure()?;
+    repair_managed_runtime_config()?;
+    ssh::configure(paths, follow_symlinks)
+}
+
+fn ssh_status() -> Result<i32> {
+    let state = StatePaths::default()?;
+    let _ = state.ensure()?;
+    repair_managed_runtime_config()?;
+    ssh::status()
 }
 
 fn launch_pi() -> Result<i32> {

@@ -9,7 +9,8 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 - Persists only explicit bind mounts under `~/.vegasroom`.
 - Does not mount host `~/.ssh`.
 - Does not copy SSH private keys into the container.
-- Forwards the host ssh-agent socket only when available.
+- Forwards an SSH agent socket only when available.
+- Can start a temporary managed `ssh-agent` using user-selected host keys.
 
 ## What the MVP does not provide
 
@@ -53,9 +54,11 @@ Processes inside the room can modify these paths.
 
 ### SSH agent forwarding
 
-Forwarding the ssh-agent socket lets processes inside the container request SSH signatures from identities loaded in the host agent.
+Forwarding an ssh-agent socket lets processes inside the container request SSH signatures from identities loaded in that agent.
 
 Private key files are not copied, but the mounted socket can still authorize SSH operations.
+
+In managed SSH mode, Vegasroom runs `ssh-add` against selected private key files on the host, forwards only the temporary agent socket, and kills the temporary agent when the room exits. Vegasroom does not store key passphrases and does not mount host `~/.ssh` into the container.
 
 ### Pi auth state
 

@@ -18,6 +18,10 @@ docker:
   context: rootless
   compose_file: ~/.vegasroom/runtime/compose.yaml
 
+ssh:
+  mode: auto
+  selected_keys: []
+
 harness:
   pi:
     enabled: true
@@ -46,6 +50,9 @@ pub struct Config {
     pub docker: DockerConfig,
 
     #[serde(default)]
+    pub ssh: SshConfig,
+
+    #[serde(default)]
     pub harness: HarnessConfig,
 }
 
@@ -65,6 +72,39 @@ pub struct DockerConfig {
 
     #[serde(default = "default_compose_file")]
     pub compose_file: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshConfig {
+    #[serde(default)]
+    pub mode: SshMode,
+
+    #[serde(default)]
+    pub selected_keys: Vec<SelectedSshKey>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SshMode {
+    #[default]
+    Auto,
+    Host,
+    Managed,
+    Off,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SelectedSshKey {
+    pub path: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -184,6 +224,15 @@ impl Default for DockerConfig {
         Self {
             context: default_context(),
             compose_file: default_compose_file(),
+        }
+    }
+}
+
+impl Default for SshConfig {
+    fn default() -> Self {
+        Self {
+            mode: SshMode::Auto,
+            selected_keys: Vec::new(),
         }
     }
 }

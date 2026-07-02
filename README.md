@@ -15,6 +15,8 @@ vr
 vr init
 vr init --build
 vr doctor
+vr ssh configure
+vr ssh status
 vr pi
 vr shell
 ```
@@ -25,6 +27,8 @@ Source-development equivalents:
 cargo run -- init
 cargo run -- init --build
 cargo run -- doctor
+cargo run -- ssh configure
+cargo run -- ssh status
 cargo run -- pi
 cargo run -- shell
 cargo run
@@ -132,19 +136,42 @@ The runtime is intentionally the proven M1-M4 model:
 
 Vegasroom does not copy SSH private keys into the container and does not mount host `~/.ssh`.
 
-When the host has a usable ssh-agent socket, `vr pi` and `vr shell` generate a temporary Compose override that mounts that socket into the container at:
+Vegasroom supports two SSH paths:
 
-```text
-/tmp/vegasroom/ssh-agent.sock
+- host-agent forwarding, when the host already has a usable `SSH_AUTH_SOCK`
+- managed SSH, where `vr` starts a temporary `ssh-agent`, adds user-selected keys, forwards only that socket, then stops the agent when the room exits
+
+Configure managed SSH keys interactively:
+
+```bash
+vr ssh configure
 ```
 
-The container receives:
+By default this recursively scans `~/.ssh`. To scan another root:
+
+```bash
+vr ssh configure /mnt/secrethost/.ssh
+```
+
+Symlinked directories are not followed by default. To opt in:
+
+```bash
+vr ssh configure --follow-symlinks ~/.ssh
+```
+
+Show the current SSH configuration:
+
+```bash
+vr ssh status
+```
+
+At launch, the container receives:
 
 ```bash
 SSH_AUTH_SOCK=/tmp/vegasroom/ssh-agent.sock
 ```
 
-This allows Git-over-SSH without copying private key files. It is still powerful: processes in the container can ask the host agent to sign SSH authentication requests while the socket is mounted.
+This allows Git-over-SSH without copying private key files. It is still powerful: processes in the container can ask the forwarded agent to sign SSH authentication requests while the socket is mounted.
 
 ## Pi login model
 
@@ -165,6 +192,13 @@ Pi auth state is expected to persist under:
 ```
 
 Do not store provider API keys in `~/.vegasroom/config.yaml`; provider/API-key handling is out of scope for this MVP.
+
+## More documentation
+
+- [Managed SSH](docs/managed-ssh.md)
+- [Security](docs/security.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Configuration](docs/config.md)
 
 ## Commands
 
@@ -193,6 +227,28 @@ FAIL
 ```
 
 `WARN` means usable but degraded. `FAIL` means required functionality is missing.
+
+`vr doctor` also reports whether managed SSH keys are configured, whether key fingerprints still match, and whether the room can receive an SSH agent socket.
+
+### `vr ssh configure`
+
+Recursively scans SSH key roots and lets you choose which keys Vegasroom should add to a temporary managed `ssh-agent` when launching a room.
+
+```bash
+vr ssh configure
+vr ssh configure /mnt/secrethost/.ssh
+vr ssh configure --follow-symlinks ~/.ssh
+```
+
+Selected rows are displayed with a tick and green text. Unselected rows use an empty box and the default terminal color. The selector uses a fixed-height key list and a wrapped details pane for the highlighted key, so long paths stay readable without corrupting the list layout. Use arrow keys or `k`/`j` to move, Enter/Space to toggle, `s` to save without quitting, `q` to quit, and `r` to rescan. If there are unsaved changes, quitting prompts for `y` save-and-quit or `n` discard-and-quit.
+
+### `vr ssh status`
+
+Shows the configured SSH mode, selected keys, host agent status, and what Vegasroom will do on the next `vr pi` or `vr shell` launch.
+
+```bash
+vr ssh status
+```
 
 ### `vr pi` and `vr`
 
