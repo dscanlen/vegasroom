@@ -99,13 +99,39 @@ pub fn run() -> Result<i32> {
     ));
     checks.push(check_pi_auth_state(&state.pi_auth_json));
 
-    let compose_file = config.compose_file_path();
-    checks.push(check_path_file("Compose file", &compose_file));
-    checks.push(check_path_file(
-        "Pi Dockerfile",
-        Path::new("harness/pi/Dockerfile"),
-    ));
-    checks.extend(check_compose_runtime_settings(&compose_file));
+    let compose_ready = match config.resolved_compose_file() {
+        Ok(compose_file) => {
+            checks.push(check_path_file("Managed Compose file", &compose_file));
+            if let Some(project_dir) = compose_file.parent() {
+                checks.push(check_path_file(
+                    "Managed Pi Dockerfile",
+                    &project_dir.join("harness/pi/Dockerfile"),
+                ));
+            } else {
+                checks.push(Check {
+                    status: Status::Fail,
+                    name: "Managed Pi Dockerfile",
+                    detail: "could not determine Compose project directory".to_owned(),
+                });
+            }
+            checks.extend(check_compose_runtime_settings(&compose_file));
+            true
+        }
+        Err(err) => {
+            checks.push(Check {
+                status: Status::Fail,
+                name: "Managed Compose file",
+                detail: format!("{err:#}"),
+            });
+            checks.push(Check {
+                status: Status::Fail,
+                name: "Managed Pi Dockerfile",
+                detail: "skipped because the managed Compose runtime could not be resolved"
+                    .to_owned(),
+            });
+            false
+        }
+    };
 
     let image_exists = match docker::image_exists(&config) {
         Ok(true) => {
@@ -141,9 +167,17 @@ pub fn run() -> Result<i32> {
     checks.push(check_host_ssh_agent(&host_agent));
     checks.push(check_ssh_auth_sock_env());
 
-    if image_exists {
+    if image_exists && compose_ready {
         checks.extend(check_container_ssh(&config, &host_agent));
         checks.extend(check_container_login_readiness(&config));
+    } else if !compose_ready {
+        checks.push(Check {
+            status: Status::Warn,
+            name: "Container checks",
+            detail:
+                "skipped because the managed Compose runtime could not be resolved. Run: vr init."
+                    .to_owned(),
+        });
     } else {
         checks.push(Check {
             status: Status::Warn,

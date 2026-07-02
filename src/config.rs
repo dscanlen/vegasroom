@@ -1,9 +1,12 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::paths::{expand_tilde, StatePaths};
+use crate::paths::{display_path, expand_tilde, StatePaths};
 
 pub const DEFAULT_CONFIG_YAML: &str = r#"default_harness: pi
 
@@ -13,7 +16,7 @@ paths:
 
 docker:
   context: rootless
-  compose_file: ./compose.yaml
+  compose_file: ~/.vegasroom/runtime/compose.yaml
 
 harness:
   pi:
@@ -106,8 +109,57 @@ impl Config {
             .with_context(|| format!("failed to parse config: {}", path.display()))
     }
 
+    pub fn save_to_default_path(&self) -> Result<()> {
+        let paths = StatePaths::default()?;
+        self.save_to_path(&paths.config_yaml)
+    }
+
+    pub fn save_to_path(&self, path: &Path) -> Result<()> {
+        let contents = serde_yaml::to_string(self).context("failed to serialize config")?;
+        fs::write(path, contents)
+            .with_context(|| format!("failed to write config: {}", display_path(path)))
+    }
+
     pub fn compose_file_path(&self) -> PathBuf {
         expand_tilde(&self.docker.compose_file)
+    }
+
+    pub fn resolved_compose_file(&self) -> Result<PathBuf> {
+        let configured = self.compose_file_path();
+        if configured.is_file() {
+            return configured.canonicalize().with_context(|| {
+                format!(
+                    "failed to canonicalize Compose file: {}",
+                    display_path(&configured)
+                )
+            });
+        }
+
+        let state = StatePaths::default()?;
+        if state.runtime_compose_yaml.is_file() {
+            return state.runtime_compose_yaml.canonicalize().with_context(|| {
+                format!(
+                    "failed to canonicalize managed Compose file: {}",
+                    display_path(&state.runtime_compose_yaml)
+                )
+            });
+        }
+
+        bail!(
+            "Compose runtime file was not found: {}\nRun `vr init` to write the managed runtime files.",
+            display_path(&configured)
+        );
+    }
+
+    pub fn uses_managed_compose_file(&self) -> Result<bool> {
+        let state = StatePaths::default()?;
+        Ok(self.compose_file_path() == state.runtime_compose_yaml)
+    }
+
+    pub fn set_managed_compose_file(&mut self) -> Result<()> {
+        let state = StatePaths::default()?;
+        self.docker.compose_file = display_path(&state.runtime_compose_yaml);
+        Ok(())
     }
 }
 
@@ -165,7 +217,7 @@ fn default_context() -> String {
 }
 
 fn default_compose_file() -> String {
-    "./compose.yaml".to_owned()
+    "~/.vegasroom/runtime/compose.yaml".to_owned()
 }
 
 fn default_true() -> bool {

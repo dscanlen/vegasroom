@@ -12,14 +12,16 @@ pub struct SshAddCheck {
 }
 
 pub fn build_pi_image(config: &Config) -> Result<()> {
+    let compose_file = config.resolved_compose_file()?;
+    let project_dir = compose_project_dir(&compose_file)?;
+
     let status = base_docker(config)
-        .args([
-            "compose",
-            "-f",
-            config.docker.compose_file.as_str(),
-            "build",
-            "pi",
-        ])
+        .arg("compose")
+        .arg("-f")
+        .arg(&compose_file)
+        .arg("--project-directory")
+        .arg(&project_dir)
+        .args(["build", "pi"])
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -205,11 +207,16 @@ fn compose_shell_output(config: &Config, script: &str) -> Result<Output> {
 }
 
 fn compose_base(config: &Config, include_ssh_agent: bool, warn_about_ssh: bool) -> Result<Command> {
+    let compose_file = config.resolved_compose_file()?;
+    let project_dir = compose_project_dir(&compose_file)?;
+
     let mut command = base_docker(config);
     command
         .arg("compose")
         .arg("-f")
-        .arg(config.docker.compose_file.as_str());
+        .arg(compose_file)
+        .arg("--project-directory")
+        .arg(project_dir);
 
     if include_ssh_agent {
         let state = StatePaths::default()?;
@@ -219,6 +226,13 @@ fn compose_base(config: &Config, include_ssh_agent: bool, warn_about_ssh: bool) 
     }
 
     Ok(command)
+}
+
+fn compose_project_dir(compose_file: &std::path::Path) -> Result<std::path::PathBuf> {
+    compose_file
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .context("Compose file has no parent directory")
 }
 
 fn base_docker(config: &Config) -> Command {

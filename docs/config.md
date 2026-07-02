@@ -19,7 +19,7 @@ paths:
 
 docker:
   context: rootless
-  compose_file: ./compose.yaml
+  compose_file: ~/.vegasroom/runtime/compose.yaml
 
 harness:
   pi:
@@ -56,16 +56,25 @@ Currently parsed but mostly future-facing:
 - `harness.pi.network`
 - commented Claude config
 
-## Compose file path
+## Managed runtime path
 
-The default Compose file path is relative to the current working directory:
+The generated template points to the managed Compose file:
 
 ```text
-./compose.yaml
+~/.vegasroom/runtime/compose.yaml
 ```
 
-For the MVP, run `vr` from the repo root or configure `docker.compose_file` to an appropriate path.
+The installed `vr` binary embeds the MVP Compose file and Pi Dockerfile at compile time. `vr init` writes those files into:
+
+```text
+~/.vegasroom/runtime/compose.yaml
+~/.vegasroom/runtime/harness/pi/Dockerfile
+```
+
+Docker Compose is then invoked with `--project-directory ~/.vegasroom/runtime`, so installed `vr` commands work from any current directory and do not require the original git checkout to remain on disk.
+
+`docker.compose_file` is still stored in config for visibility and future flexibility, but the MVP default is the Vegasroom-managed runtime file.
 
 ## State directories
 
-The source of truth for runtime state is `~/.vegasroom`. The Compose file currently uses this path directly for bind mounts.
+The source of truth for persistent state is `~/.vegasroom`. The managed Compose file currently uses this path directly for bind mounts.

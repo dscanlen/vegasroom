@@ -78,6 +78,38 @@ Move or delete the conflicting file, then rerun:
 vr init
 ```
 
+
+## `vr` only works from the repo directory
+
+Current Vegasroom should not require the repo directory after installation. The installed binary embeds the runtime files and `vr init` materializes them into:
+
+```text
+~/.vegasroom/runtime/compose.yaml
+~/.vegasroom/runtime/harness/pi/Dockerfile
+```
+
+Repair the managed runtime files and config with:
+
+```bash
+vr init
+```
+
+Then check:
+
+```bash
+grep -A3 '^docker:' ~/.vegasroom/config.yaml
+ls -la ~/.vegasroom/runtime ~/.vegasroom/runtime/harness/pi
+```
+
+The config should point to:
+
+```yaml
+docker:
+  compose_file: ~/.vegasroom/runtime/compose.yaml
+```
+
+After repair, `vr doctor`, `vr pi`, and `vr shell` should work from any current directory, even if the original git checkout has been removed.
+
 ## SSH_AUTH_SOCK missing
 
 Start an agent and add a key:
