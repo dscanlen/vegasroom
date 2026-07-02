@@ -1,4 +1,4 @@
-# Vegasroom
+# vegasroom
 
 Vegasroom is a source-built MVP for running the Pi Agent Harness inside an ephemeral rootless Docker container.
 
