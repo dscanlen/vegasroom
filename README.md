@@ -58,11 +58,13 @@ cargo build --release
 cargo install --path .
 ```
 
-Initialize state and build the local Pi image:
+Initialize state, write the managed runtime files, and build the local Pi image:
 
 ```bash
 vr init --build
 ```
+
+`vr init` writes the Compose file and Pi Dockerfile that were embedded into the installed binary to `~/.vegasroom/runtime/`. After installation, `vr` commands can be run from any directory and do not require the original git checkout to remain on disk.
 
 Check readiness:
 
@@ -105,13 +107,16 @@ Default layout:
   ssh/
     known_hosts
   cache/
+  runtime/
+    compose.yaml
+    harness/pi/Dockerfile
 ```
 
 ## Runtime model
 
 The runtime is intentionally the proven M1-M4 model:
 
-- Docker Compose service `pi`
+- Docker Compose service `pi` materialized under `~/.vegasroom/runtime`
 - image `vegasroom/pi:local`
 - `docker --context rootless compose run --rm pi`
 - ephemeral container removed after exit

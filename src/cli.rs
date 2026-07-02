@@ -13,7 +13,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Create or repair Vegasroom local state.
+    /// Create or repair Vegasroom local state and managed runtime files.
     Init {
         /// Build the local Pi image after creating state.
         #[arg(long)]
@@ -44,8 +44,8 @@ pub fn run() -> Result<i32> {
 fn init(build: bool) -> Result<i32> {
     let state = StatePaths::default()?;
     let report = state.ensure()?;
-
     report.print();
+    repair_managed_runtime_config()?;
 
     if build {
         let config = Config::load_or_default()?;
@@ -59,6 +59,7 @@ fn init(build: bool) -> Result<i32> {
 fn launch_pi() -> Result<i32> {
     let state = StatePaths::default()?;
     let _ = state.ensure()?;
+    repair_managed_runtime_config()?;
     state.show_disclaimer_once()?;
 
     let config = Config::load_or_default()?;
@@ -70,9 +71,25 @@ fn launch_pi() -> Result<i32> {
 fn launch_shell() -> Result<i32> {
     let state = StatePaths::default()?;
     let _ = state.ensure()?;
+    repair_managed_runtime_config()?;
 
     let config = Config::load_or_default()?;
     docker::ensure_pi_image_exists(&config)
         .with_context(|| "Pi image was not found. Run: vr init --build")?;
     docker::run_shell(&config)
+}
+
+fn repair_managed_runtime_config() -> Result<()> {
+    let mut config = Config::load_or_default()?;
+    if config.uses_managed_compose_file()? {
+        return Ok(());
+    }
+
+    config.set_managed_compose_file()?;
+    config.save_to_default_path()?;
+    println!(
+        "Configured managed Compose runtime: {}",
+        config.docker.compose_file
+    );
+    Ok(())
 }

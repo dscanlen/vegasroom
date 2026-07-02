@@ -6,7 +6,7 @@ use std::{
 use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
 
-use crate::config::DEFAULT_CONFIG_YAML;
+use crate::{assets, config::DEFAULT_CONFIG_YAML};
 
 #[derive(Debug, Clone)]
 pub struct StatePaths {
@@ -19,6 +19,11 @@ pub struct StatePaths {
     pub pi_sessions: PathBuf,
     pub pi_auth_json: PathBuf,
     pub workspace: PathBuf,
+    pub runtime_root: PathBuf,
+    pub runtime_harness_root: PathBuf,
+    pub runtime_pi_root: PathBuf,
+    pub runtime_pi_dockerfile: PathBuf,
+    pub runtime_compose_yaml: PathBuf,
     pub ssh_dir: PathBuf,
     pub known_hosts: PathBuf,
     pub cache: PathBuf,
@@ -48,6 +53,11 @@ impl StatePaths {
         let pi_sessions = pi_root.join("sessions");
         let pi_auth_json = pi_config.join("auth.json");
         let workspace = root.join("workspace");
+        let runtime_root = root.join("runtime");
+        let runtime_harness_root = runtime_root.join("harness");
+        let runtime_pi_root = runtime_harness_root.join("pi");
+        let runtime_pi_dockerfile = runtime_pi_root.join("Dockerfile");
+        let runtime_compose_yaml = runtime_root.join("compose.yaml");
         let ssh_dir = root.join("ssh");
         let known_hosts = ssh_dir.join("known_hosts");
         let cache = root.join("cache");
@@ -64,6 +74,11 @@ impl StatePaths {
             pi_sessions,
             pi_auth_json,
             workspace,
+            runtime_root,
+            runtime_harness_root,
+            runtime_pi_root,
+            runtime_pi_dockerfile,
+            runtime_compose_yaml,
             ssh_dir,
             known_hosts,
             cache,
@@ -81,6 +96,16 @@ impl StatePaths {
 
         ensure_file(&self.config_yaml, DEFAULT_CONFIG_YAML, &mut report)?;
         ensure_file(&self.known_hosts, "", &mut report)?;
+        write_managed_file(
+            &self.runtime_compose_yaml,
+            assets::MANAGED_COMPOSE_YAML,
+            &mut report,
+        )?;
+        write_managed_file(
+            &self.runtime_pi_dockerfile,
+            assets::MANAGED_PI_DOCKERFILE,
+            &mut report,
+        )?;
 
         Ok(report)
     }
@@ -95,6 +120,9 @@ impl StatePaths {
             self.pi_skills.clone(),
             self.pi_sessions.clone(),
             self.workspace.clone(),
+            self.runtime_root.clone(),
+            self.runtime_harness_root.clone(),
+            self.runtime_pi_root.clone(),
             self.ssh_dir.clone(),
             self.cache.clone(),
         ]
@@ -213,6 +241,41 @@ fn ensure_file(path: &Path, contents: &str, report: &mut EnsureReport) -> Result
 
     fs::write(path, contents)
         .with_context(|| format!("failed to create file: {}", display_path(path)))?;
+    report.created.push(path.to_path_buf());
+    Ok(())
+}
+
+fn write_managed_file(path: &Path, contents: &str, report: &mut EnsureReport) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        ensure_dir(parent, report)?;
+    }
+
+    if path.exists() {
+        if !path.is_file() {
+            bail!(
+                "Expected managed runtime file path exists as a directory: {}\nRemove or rename it, then run: vr init",
+                display_path(path)
+            );
+        }
+
+        let current = fs::read_to_string(path).with_context(|| {
+            format!(
+                "failed to read managed runtime file: {}",
+                display_path(path)
+            )
+        })?;
+        if current == contents {
+            report.existing.push(path.to_path_buf());
+            return Ok(());
+        }
+    }
+
+    fs::write(path, contents).with_context(|| {
+        format!(
+            "failed to write managed runtime file: {}",
+            display_path(path)
+        )
+    })?;
     report.created.push(path.to_path_buf());
     Ok(())
 }
