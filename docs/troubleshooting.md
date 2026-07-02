@@ -241,3 +241,76 @@ vr doctor
 ```
 
 The MVP intentionally uses container root inside rootless Docker because earlier non-root attempts hit bind-mount write issues.
+
+## Commits are authored as root
+
+Symptom:
+
+```text
+root <root@...>
+```
+
+Cause: Git author/committer identity was not configured or inherited into the room.
+
+Check host Git identity:
+
+```bash
+git config --global user.name
+git config --global user.email
+```
+
+Check Vegasroom:
+
+```bash
+vr doctor
+vr shell
+```
+
+Inside the room:
+
+```bash
+echo "$GIT_AUTHOR_NAME <$GIT_AUTHOR_EMAIL>"
+git config --global user.name
+git config --global user.email
+git var GIT_AUTHOR_IDENT
+```
+
+Set an explicit room identity:
+
+```yaml
+git:
+  inherit_host: true
+  user_name: Dan Scanlen
+  user_email: dan@example.com
+```
+
+For a deploy-key-specific identity, edit the selected key entry:
+
+```yaml
+ssh:
+  selected_keys:
+    - path: ~/.ssh/id_ed25519_vegasroom
+      fingerprint: SHA256:abc123...
+      git_user_name: Vegasroom Deploy
+      git_user_email: vegasroom-deploy@example.com
+```
+
+Then rerun:
+
+```bash
+vr doctor
+vr shell
+```
+
+
+## Checking Git identity in doctor
+
+`vr doctor` should report these Git-related checks:
+
+```text
+PASS: Config Git section - ~/.vegasroom/config.yaml contains a git section
+PASS: Git identity - <name> <<email>> from <source>; will be injected into the room
+PASS: Room Git identity - <name> <<email>> is available inside the room
+```
+
+If `Room Git identity` is skipped, run `vr init --build` so the Pi image exists.

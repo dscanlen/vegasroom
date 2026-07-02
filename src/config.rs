@@ -22,6 +22,11 @@ ssh:
   mode: auto
   selected_keys: []
 
+git:
+  inherit_host: true
+  user_name:
+  user_email:
+
 harness:
   pi:
     enabled: true
@@ -51,6 +56,9 @@ pub struct Config {
 
     #[serde(default)]
     pub ssh: SshConfig,
+
+    #[serde(default)]
+    pub git: GitConfig,
 
     #[serde(default)]
     pub harness: HarnessConfig,
@@ -83,6 +91,18 @@ pub struct SshConfig {
     pub selected_keys: Vec<SelectedSshKey>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitConfig {
+    #[serde(default = "default_true")]
+    pub inherit_host: bool,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_name: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_email: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SshMode {
@@ -105,6 +125,12 @@ pub struct SelectedSshKey {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_type: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_user_name: Option<String>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub git_user_email: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -233,6 +259,16 @@ impl Default for SshConfig {
         Self {
             mode: SshMode::Auto,
             selected_keys: Vec::new(),
+        }
+    }
+}
+
+impl Default for GitConfig {
+    fn default() -> Self {
+        Self {
+            inherit_host: true,
+            user_name: None,
+            user_email: None,
         }
     }
 }

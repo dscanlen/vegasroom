@@ -81,6 +81,8 @@ impl DiscoveredSshKey {
             fingerprint: self.fingerprint.clone(),
             comment: self.comment.clone(),
             key_type: self.key_type.clone(),
+            git_user_name: None,
+            git_user_email: None,
         }
     }
 }
@@ -320,7 +322,7 @@ impl ConfigureUiState {
         roots: Vec<PathBuf>,
         follow_symlinks: bool,
     ) -> Self {
-        let original_selected = selected_keys_from(&keys, &selected);
+        let original_selected = selected_keys_from(&keys, &selected, &config.ssh.selected_keys);
         Self {
             keys,
             selected,
@@ -370,7 +372,8 @@ impl ConfigureUiState {
     }
 
     fn rescan(&mut self) -> Result<()> {
-        let current_selected = selected_keys_from(&self.keys, &self.selected);
+        let current_selected =
+            selected_keys_from(&self.keys, &self.selected, &self.config.ssh.selected_keys);
         let mut keys = discover_keys(&self.roots, self.follow_symlinks)?;
         keys.sort_by(|a, b| a.display_path.cmp(&b.display_path));
         let selected = initial_selection(&keys, &current_selected);
@@ -385,7 +388,8 @@ impl ConfigureUiState {
     }
 
     fn is_dirty(&self) -> bool {
-        selected_keys_from(&self.keys, &self.selected) != self.original_selected
+        selected_keys_from(&self.keys, &self.selected, &self.config.ssh.selected_keys)
+            != self.original_selected
     }
 
     fn selected_count(&self) -> usize {
@@ -398,45 +402,125 @@ fn save_selected_keys(
     keys: &[DiscoveredSshKey],
     selected: &[bool],
 ) -> Result<()> {
+    let previous = config.ssh.selected_keys.clone();
     config.ssh.mode = SshMode::Auto;
-    config.ssh.selected_keys = selected_keys_from(keys, selected);
+    config.ssh.selected_keys = selected_keys_from(keys, selected, &previous);
     config.save_to_default_path()
 }
 
-fn selected_keys_from(keys: &[DiscoveredSshKey], selected: &[bool]) -> Vec<SelectedSshKey> {
+fn selected_keys_from(
+    keys: &[DiscoveredSshKey],
+    selected: &[bool],
+    existing: &[SelectedSshKey],
+) -> Vec<SelectedSshKey> {
     keys.iter()
         .zip(selected.iter())
         .filter(|(_, is_selected)| **is_selected)
-        .map(|(key, _)| key.to_selected())
+        .map(|(key, _)| {
+            let mut selected_key = key.to_selected();
+            if let Some(existing_key) = matching_existing_key(key, existing) {
+                selected_key.git_user_name = existing_key.git_user_name.clone();
+                selected_key.git_user_email = existing_key.git_user_email.clone();
+            }
+            selected_key
+        })
         .collect()
+}
+
+fn matching_existing_key<'a>(
+    key: &DiscoveredSshKey,
+    existing: &'a [SelectedSshKey],
+) -> Option<&'a SelectedSshKey> {
+    if let Some(fingerprint) = &key.fingerprint {
+        if let Some(found) = existing
+            .iter()
+            .find(|selected| selected.fingerprint.as_ref() == Some(fingerprint))
+        {
+            return Some(found);
+        }
+    }
+
+    existing.iter().find(|selected| {
+        let selected_path = expand_tilde(&selected.path);
+        selected.path == key.display_path
+            || selected_path == key.path
+            || selected_path
+                .canonicalize()
+                .map(|path| path == key.path)
+                .unwrap_or(false)
+    })
 }
 
 fn render_configure_ui(state: &ConfigureUiState) -> Result<()> {
     let mut stdout = io::stdout();
     let (width, height) = terminal::size().unwrap_or((100, 30));
-    let width = width.max(40);
-    let height = height.max(16);
+    let width = width.max(1);
+    let height = height.max(1);
 
-    execute!(
-        stdout,
-        terminal::Clear(ClearType::All),
-        cursor::MoveTo(0, 0)
-    )
-    .context("failed to redraw SSH configure UI")?;
+    let lines = build_configure_ui_lines(state, width, height);
+    draw_tui_lines(&mut stdout, width, height, &lines)
+        .context("failed to redraw SSH configure UI")?;
+    stdout.flush()?;
+    Ok(())
+}
 
-    let mut header = Vec::new();
-    header.push("Vegasroom SSH Key Configuration".to_owned());
-    header.extend(wrap_text_to_width(
+#[derive(Debug, Clone, Copy)]
+enum TuiLineStyle {
+    Normal,
+    Selected,
+    Highlighted,
+    SelectedHighlighted,
+}
+
+#[derive(Debug, Clone)]
+struct TuiLine {
+    text: String,
+    style: TuiLineStyle,
+}
+
+impl TuiLine {
+    fn normal(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            style: TuiLineStyle::Normal,
+        }
+    }
+
+    fn selected(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            style: TuiLineStyle::Selected,
+        }
+    }
+
+    fn highlighted(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            style: TuiLineStyle::Highlighted,
+        }
+    }
+
+    fn selected_highlighted(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            style: TuiLineStyle::SelectedHighlighted,
+        }
+    }
+}
+
+fn build_configure_ui_lines(state: &ConfigureUiState, width: u16, height: u16) -> Vec<TuiLine> {
+    let mut lines = Vec::new();
+
+    lines.push(TuiLine::normal("Vegasroom SSH Key Configuration"));
+    for line in wrap_text_to_width(
         "Use ↑/↓ or k/j to move, Enter or Space to select, s to save, q to quit, r to rescan.",
         width,
         "",
         "",
-    ));
-    header.push(String::new());
-
-    for line in &header {
-        write_plain_line(&mut stdout, line)?;
+    ) {
+        lines.push(TuiLine::normal(line));
     }
+    lines.push(TuiLine::normal(""));
 
     let dirty = if state.is_dirty() {
         "unsaved changes"
@@ -444,63 +528,50 @@ fn render_configure_ui(state: &ConfigureUiState) -> Result<()> {
         "saved"
     };
     let mut footer = Vec::new();
-    footer.push(String::new());
-    footer.extend(wrap_text_to_width(
-        "Actions: [s Save]  [q Quit]",
-        width,
-        "",
-        "",
-    ));
-    footer.extend(wrap_text_to_width(
+    footer.push(TuiLine::normal(""));
+    for line in wrap_text_to_width("Actions: [s Save]  [q Quit]", width, "", "") {
+        footer.push(TuiLine::normal(line));
+    }
+    for line in wrap_text_to_width(
         &format!("Status: {} selected · {dirty}", state.selected_count()),
         width,
         "",
         "",
-    ));
+    ) {
+        footer.push(TuiLine::normal(line));
+    }
     if let Some(message) = &state.last_message {
-        footer.extend(wrap_text_to_width(message, width, "", ""));
+        for line in wrap_text_to_width(message, width, "", "") {
+            footer.push(TuiLine::normal(line));
+        }
     }
 
-    let used_fixed_rows = header.len() + footer.len();
+    let used_fixed_rows = lines.len() + footer.len();
     let available_rows = usize::from(height).saturating_sub(used_fixed_rows).max(1);
-    let detail_rows = if state.keys.is_empty() {
-        0
-    } else {
-        available_rows
-            .clamp(6, 10)
-            .min(available_rows.saturating_sub(3).max(0))
-    };
-    let list_rows = available_rows.saturating_sub(detail_rows).max(1);
 
     if state.keys.is_empty() {
         for line in wrap_text_to_width("No SSH private keys were detected.", width, "", "") {
-            write_plain_line(&mut stdout, &line)?;
+            lines.push(TuiLine::normal(line));
         }
     } else {
-        render_key_list(&mut stdout, state, width, list_rows)?;
-        render_highlighted_key_details(&mut stdout, state, width, detail_rows)?;
+        let detail_rows = available_rows
+            .clamp(6, 10)
+            .min(available_rows.saturating_sub(3).max(0));
+        let list_rows = available_rows.saturating_sub(detail_rows).max(1);
+        append_key_list_lines(&mut lines, state, width, list_rows);
+        append_highlighted_key_detail_lines(&mut lines, state, width, detail_rows);
     }
 
-    for line in &footer {
-        write_plain_line(&mut stdout, line)?;
-    }
-
-    stdout.flush()?;
-    Ok(())
+    lines.extend(footer);
+    lines
 }
 
-struct RenderedLine {
-    text: String,
-    selected: bool,
-    highlighted: bool,
-}
-
-fn render_key_list(
-    stdout: &mut io::Stdout,
+fn append_key_list_lines(
+    lines: &mut Vec<TuiLine>,
     state: &ConfigureUiState,
     width: u16,
     list_rows: usize,
-) -> Result<()> {
+) {
     let (start, end) = visible_list_window(state.keys.len(), state.highlighted, list_rows);
 
     let list_title = format!(
@@ -509,10 +580,10 @@ fn render_key_list(
         end,
         state.keys.len()
     );
-    write_plain_line(stdout, &truncate_to_width(&list_title, width))?;
+    lines.push(TuiLine::normal(truncate_to_width(&list_title, width)));
 
     if start > 0 {
-        write_plain_line(stdout, "  ↑ more keys above")?;
+        lines.push(TuiLine::normal("  ↑ more keys above"));
     }
 
     for index in start..end {
@@ -521,40 +592,37 @@ fn render_key_list(
         let highlighted = index == state.highlighted;
         let cursor = if highlighted { ">" } else { " " };
         let checkbox = if selected { "☑" } else { "☐" };
-        let mut row = format!("{cursor} {checkbox} {}", key.display_path);
-        row = truncate_to_width(&row, width);
-        write_styled_line(
-            stdout,
-            &RenderedLine {
-                text: row,
-                selected,
-                highlighted,
-            },
-        )?;
+        let row = truncate_to_width(&format!("{cursor} {checkbox} {}", key.display_path), width);
+
+        let line = match (selected, highlighted) {
+            (true, true) => TuiLine::selected_highlighted(row),
+            (true, false) => TuiLine::selected(row),
+            (false, true) => TuiLine::highlighted(row),
+            (false, false) => TuiLine::normal(row),
+        };
+        lines.push(line);
     }
 
     if end < state.keys.len() {
-        write_plain_line(stdout, "  ↓ more keys below")?;
+        lines.push(TuiLine::normal("  ↓ more keys below"));
     }
-
-    Ok(())
 }
 
-fn render_highlighted_key_details(
-    stdout: &mut io::Stdout,
+fn append_highlighted_key_detail_lines(
+    lines: &mut Vec<TuiLine>,
     state: &ConfigureUiState,
     width: u16,
     detail_rows: usize,
-) -> Result<()> {
+) {
     if detail_rows == 0 {
-        return Ok(());
+        return;
     }
 
-    write_plain_line(stdout, "")?;
-    write_plain_line(stdout, "Details")?;
+    lines.push(TuiLine::normal(""));
+    lines.push(TuiLine::normal("Details"));
 
     let Some(key) = state.keys.get(state.highlighted) else {
-        return Ok(());
+        return;
     };
 
     let selected = state
@@ -601,17 +669,12 @@ fn render_highlighted_key_details(
 
     let max_detail_lines = detail_rows.saturating_sub(2).max(1);
     for line in detail_lines.into_iter().take(max_detail_lines) {
-        write_styled_line(
-            stdout,
-            &RenderedLine {
-                text: line,
-                selected,
-                highlighted: false,
-            },
-        )?;
+        if selected {
+            lines.push(TuiLine::selected(line));
+        } else {
+            lines.push(TuiLine::normal(line));
+        }
     }
-
-    Ok(())
 }
 
 fn visible_list_window(total: usize, highlighted: usize, max_rows: usize) -> (usize, usize) {
@@ -659,56 +722,50 @@ fn truncate_to_width(text: &str, width: u16) -> String {
 
 fn render_quit_prompt() -> Result<()> {
     let mut stdout = io::stdout();
-    let (width, _) = terminal::size().unwrap_or((100, 30));
-    execute!(
-        stdout,
-        terminal::Clear(ClearType::All),
-        cursor::MoveTo(0, 0)
-    )
-    .context("failed to draw SSH configure quit prompt")?;
+    let (width, height) = terminal::size().unwrap_or((100, 30));
+    let width = width.max(1);
+    let height = height.max(1);
+
+    let mut lines = Vec::new();
     for line in wrap_text_to_width("You have unsaved SSH key selection changes.", width, "", "") {
-        write_plain_line(&mut stdout, &line)?;
+        lines.push(TuiLine::normal(line));
     }
-    write_plain_line(&mut stdout, "")?;
-    write_plain_line(&mut stdout, "Save before quitting?")?;
-    write_plain_line(&mut stdout, "  [y] save and quit")?;
-    write_plain_line(&mut stdout, "  [n] discard and quit")?;
+    lines.push(TuiLine::normal(""));
+    lines.push(TuiLine::normal("Save before quitting?"));
+    lines.push(TuiLine::normal("  [y] save and quit"));
+    lines.push(TuiLine::normal("  [n] discard and quit"));
+
+    draw_tui_lines(&mut stdout, width, height, &lines)
+        .context("failed to draw SSH configure quit prompt")?;
     stdout.flush()?;
     Ok(())
 }
 
-fn write_plain_line(stdout: &mut io::Stdout, line: &str) -> Result<()> {
-    // Raw terminal mode does not guarantee that a line feed returns the
-    // cursor to column zero. Always anchor each rendered line at column 0
-    // and advance with CRLF to avoid the stepped-line effect where each
-    // next line starts where the previous one ended.
-    execute!(
-        stdout,
-        cursor::MoveToColumn(0),
-        terminal::Clear(ClearType::CurrentLine)
-    )?;
-    write!(stdout, "{line}\r\n")?;
-    Ok(())
-}
+fn draw_tui_lines(
+    stdout: &mut io::Stdout,
+    width: u16,
+    height: u16,
+    lines: &[TuiLine],
+) -> Result<()> {
+    execute!(stdout, terminal::Clear(ClearType::All))?;
 
-fn write_styled_line(stdout: &mut io::Stdout, line: &RenderedLine) -> Result<()> {
-    let style = match (line.selected, line.highlighted) {
-        (true, true) => "\x1b[32;7m",
-        (true, false) => "\x1b[32m",
-        (false, true) => "\x1b[7m",
-        (false, false) => "",
-    };
+    let max_rows = usize::from(height);
+    for (row, line) in lines.iter().take(max_rows).enumerate() {
+        execute!(
+            stdout,
+            cursor::MoveTo(0, row as u16),
+            terminal::Clear(ClearType::CurrentLine)
+        )?;
 
-    execute!(
-        stdout,
-        cursor::MoveToColumn(0),
-        terminal::Clear(ClearType::CurrentLine)
-    )?;
-    if style.is_empty() {
-        write!(stdout, "{}\r\n", line.text)?;
-    } else {
-        write!(stdout, "{}{}{}\r\n", style, line.text, RESET)?;
+        let text = truncate_to_width(&line.text, width);
+        match line.style {
+            TuiLineStyle::Normal => write!(stdout, "{text}")?,
+            TuiLineStyle::Selected => write!(stdout, "{GREEN}{text}{RESET}")?,
+            TuiLineStyle::Highlighted => write!(stdout, "\x1b[7m{text}{RESET}")?,
+            TuiLineStyle::SelectedHighlighted => write!(stdout, "\x1b[32;7m{text}{RESET}")?,
+        }
     }
+
     Ok(())
 }
 
@@ -839,6 +896,11 @@ pub fn status() -> Result<i32> {
                             .map(|v| format!(" {v}"))
                             .unwrap_or_default(),
                     );
+                    if let (Some(name), Some(email)) =
+                        (&selected.git_user_name, &selected.git_user_email)
+                    {
+                        println!("      Git identity override: {name} <{email}>");
+                    }
                 }
                 Err(err) => println!("WARN: {display} - could not inspect key: {err:#}"),
             }

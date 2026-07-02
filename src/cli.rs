@@ -1,3 +1,5 @@
+use std::fs;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 
@@ -123,16 +125,29 @@ fn launch_shell() -> Result<i32> {
 }
 
 fn repair_managed_runtime_config() -> Result<()> {
+    let state = StatePaths::default()?;
     let mut config = Config::load_or_default()?;
-    if config.uses_managed_compose_file()? {
-        return Ok(());
+    let mut changed = false;
+
+    if !config.uses_managed_compose_file()? {
+        config.set_managed_compose_file()?;
+        changed = true;
+        println!(
+            "Configured managed Compose runtime: {}",
+            config.docker.compose_file
+        );
     }
 
-    config.set_managed_compose_file()?;
-    config.save_to_default_path()?;
-    println!(
-        "Configured managed Compose runtime: {}",
-        config.docker.compose_file
-    );
+    let needs_git_section = fs::read_to_string(&state.config_yaml)
+        .map(|contents| !contents.contains("\ngit:"))
+        .unwrap_or(true);
+    if needs_git_section {
+        changed = true;
+    }
+
+    if changed {
+        config.save_to_default_path()?;
+    }
+
     Ok(())
 }

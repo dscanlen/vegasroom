@@ -81,3 +81,21 @@ Post-MVP work should revisit:
 - optional read-only workspace mode
 - warnings for dangerous mount paths
 - clearer credential lifecycle controls
+
+## Git identity injection
+
+Git commit identity is not treated as proof of authentication. SSH keys authenticate transport operations such as clone, fetch, and push. Git commits still need an explicit author and committer identity.
+
+Vegasroom injects Git identity into the room through generated runtime configuration under `~/.vegasroom/cache/`. The generated Compose override sets:
+
+```text
+GIT_CONFIG_GLOBAL
+GIT_AUTHOR_NAME
+GIT_AUTHOR_EMAIL
+GIT_COMMITTER_NAME
+GIT_COMMITTER_EMAIL
+```
+
+This avoids accidental `root <root@...>` commits while preserving the MVP container-root runtime used for bind-mount compatibility.
+
+Deploy keys do not provide a human profile or email address to Git. For deploy-key workflows, configure `git_user_name` and `git_user_email` on the selected key, or set top-level `git.user_name` and `git.user_email`.

@@ -173,6 +173,39 @@ SSH_AUTH_SOCK=/tmp/vegasroom/ssh-agent.sock
 
 This allows Git-over-SSH without copying private key files. It is still powerful: processes in the container can ask the forwarded agent to sign SSH authentication requests while the socket is mounted.
 
+## Git identity model
+
+The MVP container still runs as root inside rootless Docker for bind-mount compatibility, but Git author/committer identity is injected separately. This prevents commits made by Pi or shell commands from falling back to `root <root@...>`.
+
+By default, Vegasroom inherits the host global Git identity:
+
+```bash
+git config --global user.name
+git config --global user.email
+```
+
+You can override it in `~/.vegasroom/config.yaml`:
+
+```yaml
+git:
+  inherit_host: true
+  user_name: Dan Scanlen
+  user_email: dan@example.com
+```
+
+Selected SSH keys can also carry explicit Git identity metadata for repo-specific or deploy-key workflows:
+
+```yaml
+ssh:
+  selected_keys:
+    - path: ~/.ssh/id_ed25519_vegasroom
+      fingerprint: SHA256:abc123...
+      git_user_name: Vegasroom Deploy
+      git_user_email: vegasroom-deploy@example.com
+```
+
+At launch, Vegasroom injects `GIT_AUTHOR_*`, `GIT_COMMITTER_*`, and `GIT_CONFIG_GLOBAL` into the room.
+
 ## Pi login model
 
 Pi login is handled by Pi itself through interactive `/login`.
@@ -240,7 +273,7 @@ vr ssh configure /mnt/secrethost/.ssh
 vr ssh configure --follow-symlinks ~/.ssh
 ```
 
-Selected rows are displayed with a tick and green text. Unselected rows use an empty box and the default terminal color. The selector uses a fixed-height key list and a wrapped details pane for the highlighted key, so long paths stay readable without corrupting the list layout. Use arrow keys or `k`/`j` to move, Enter/Space to toggle, `s` to save without quitting, `q` to quit, and `r` to rescan. If there are unsaved changes, quitting prompts for `y` save-and-quit or `n` discard-and-quit.
+Selected rows are displayed with a tick and green text. Unselected rows use an empty box and the default terminal color. The selector uses a fixed-height key list and a wrapped details pane for the highlighted key, so long paths stay readable without corrupting the list layout. The TUI renders by absolute terminal coordinates rather than newline-driven output to avoid stepped-line behavior in raw terminal mode. Use arrow keys or `k`/`j` to move, Enter/Space to toggle, `s` to save without quitting, `q` to quit, and `r` to rescan. If there are unsaved changes, quitting prompts for `y` save-and-quit or `n` discard-and-quit.
 
 ### `vr ssh status`
 

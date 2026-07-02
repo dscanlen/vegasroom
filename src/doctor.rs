@@ -91,6 +91,7 @@ pub fn run() -> Result<i32> {
     }
 
     checks.push(check_path_file("Config", &state.config_yaml));
+    checks.push(check_config_git_section(&state.config_yaml));
     checks.push(check_known_hosts(&state.known_hosts));
     checks.push(check_dir_writable("Pi config writable", &state.pi_config));
     checks.push(check_dir_writable(
@@ -167,9 +168,11 @@ pub fn run() -> Result<i32> {
     checks.extend(check_ssh_configuration(&config, &host_agent));
     checks.push(check_host_ssh_agent(&host_agent));
     checks.push(check_ssh_auth_sock_env());
+    checks.push(check_git_identity(&config));
 
     if image_exists && compose_ready {
         checks.extend(check_container_ssh(&config));
+        checks.push(check_container_git_identity(&config));
         checks.extend(check_container_login_readiness(&config));
     } else if !compose_ready {
         checks.push(Check {
@@ -179,10 +182,22 @@ pub fn run() -> Result<i32> {
                 "skipped because the managed Compose runtime could not be resolved. Run: vr init."
                     .to_owned(),
         });
+        checks.push(Check {
+            status: Status::Warn,
+            name: "Room Git identity",
+            detail:
+                "skipped because the managed Compose runtime could not be resolved. Run: vr init."
+                    .to_owned(),
+        });
     } else {
         checks.push(Check {
             status: Status::Warn,
             name: "Container SSH checks",
+            detail: "skipped because the Pi image is missing. Run: vr init --build".to_owned(),
+        });
+        checks.push(Check {
+            status: Status::Warn,
+            name: "Room Git identity",
             detail: "skipped because the Pi image is missing. Run: vr init --build".to_owned(),
         });
     }
@@ -440,6 +455,67 @@ fn check_ssh_configuration(config: &Config, host_agent: &ssh::HostSshAgent) -> V
     ));
 
     checks
+}
+
+fn check_config_git_section(path: &Path) -> Check {
+    match fs::read_to_string(path) {
+        Ok(contents) if contents.lines().any(|line| line.trim_end() == "git:") => Check {
+            status: Status::Pass,
+            name: "Config Git section",
+            detail: "~/.vegasroom/config.yaml contains a git section".to_owned(),
+        },
+        Ok(_) => Check {
+            status: Status::Warn,
+            name: "Config Git section",
+            detail: "missing from ~/.vegasroom/config.yaml; run `vr init` to add git.inherit_host/user_name/user_email defaults".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Config Git section",
+            detail: format!("could not read config for git section check: {err:#}"),
+        },
+    }
+}
+
+fn check_git_identity(config: &Config) -> Check {
+    match docker::effective_git_identity(config) {
+        Some(identity) => Check {
+            status: Status::Pass,
+            name: "Git identity",
+            detail: format!(
+                "{} <{}> from {}; will be injected into the room",
+                identity.name, identity.email, identity.source
+            ),
+        },
+        None => Check {
+            status: Status::Warn,
+            name: "Git identity",
+            detail: "no Git user.name/user.email configured or inherited; commits may fall back to container root".to_owned(),
+        },
+    }
+}
+
+fn check_container_git_identity(config: &Config) -> Check {
+    match docker::container_git_identity(config) {
+        Ok(Some(identity)) => Check {
+            status: Status::Pass,
+            name: "Room Git identity",
+            detail: format!(
+                "{} <{}> is available inside the room",
+                identity.name, identity.email
+            ),
+        },
+        Ok(None) => Check {
+            status: Status::Warn,
+            name: "Room Git identity",
+            detail: "Git identity injection is not active inside the room".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Room Git identity",
+            detail: format!("could not check Git identity inside the room: {err:#}"),
+        },
+    }
 }
 
 fn check_host_ssh_agent(agent: &ssh::HostSshAgent) -> Check {

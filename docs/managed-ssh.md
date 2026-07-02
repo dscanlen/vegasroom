@@ -49,13 +49,13 @@ Following symlinks can scan outside the requested roots and can encounter loops,
 The selector displays:
 
 ```text
-[ ] unselected key
-[✓] selected key
+☐ unselected key
+☑ selected key
 ```
 
 Selected rows are green. Unselected rows use the default terminal color.
 
-The selector uses a fixed-height key list plus a details pane for the highlighted key. This keeps arrow-key navigation aligned even when paths are long. Long paths and metadata are wrapped in the details pane to the current terminal width with continuation indentation. The selector uses display-width calculations for wide glyphs such as checkboxes and arrows.
+The selector uses a fixed-height key list plus a details pane for the highlighted key. This keeps arrow-key navigation aligned even when paths are long. Long paths and metadata are wrapped in the details pane to the current terminal width with continuation indentation. The selector uses display-width calculations for wide glyphs such as checkboxes and arrows, and it renders rows by absolute terminal coordinates rather than newline-driven output so raw-mode terminals do not produce stepped line layouts.
 
 Controls:
 
@@ -97,9 +97,11 @@ ssh:
       fingerprint: SHA256:abc123...
       comment: dan@nomad
       key_type: ED25519
+      git_user_name: Dan Scanlen
+      git_user_email: dan@example.com
 ```
 
-Manual editing is supported. Fingerprints are stored so Vegasroom can warn if a selected path later points to a different key.
+`git_user_name` and `git_user_email` are optional. They let a selected key carry a repo/deploy-key-specific commit identity. Manual editing is supported. Fingerprints are stored so Vegasroom can warn if a selected path later points to a different key.
 
 ## Modes
 
@@ -161,3 +163,18 @@ In managed mode, Vegasroom runs `ssh-add` against selected host key files. The k
 Vegasroom does not store key passphrases.
 
 Managed SSH is a usability improvement, not complete credential isolation.
+
+
+## Git commit identity
+
+SSH authentication and Git commit authorship are separate. A successful SSH key proves transport access to GitHub, but it does not automatically set `git config user.name` or `user.email` inside the room. Deploy keys especially do not expose a human author profile.
+
+Vegasroom injects Git identity at runtime using this order:
+
+```text
+1. top-level git.user_name/git.user_email
+2. exactly one selected SSH key with git_user_name/git_user_email
+3. host global Git config when git.inherit_host is true
+```
+
+This prevents commits from falling back to `root <root@...>` while preserving the rootless-container runtime model.
