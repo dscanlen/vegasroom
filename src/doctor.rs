@@ -164,11 +164,12 @@ pub fn run() -> Result<i32> {
     };
 
     let host_agent = ssh::detect_host_agent();
+    checks.extend(check_ssh_configuration(&config, &host_agent));
     checks.push(check_host_ssh_agent(&host_agent));
     checks.push(check_ssh_auth_sock_env());
 
     if image_exists && compose_ready {
-        checks.extend(check_container_ssh(&config, &host_agent));
+        checks.extend(check_container_ssh(&config));
         checks.extend(check_container_login_readiness(&config));
     } else if !compose_ready {
         checks.push(Check {
@@ -193,6 +194,16 @@ pub fn run() -> Result<i32> {
     } else {
         Ok(0)
     }
+}
+
+fn command_available(name: &str) -> bool {
+    std::process::Command::new(name)
+        .arg("-h")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok()
 }
 
 fn check_bool(
@@ -352,6 +363,85 @@ fn check_pi_auth_state(path: &Path) -> Check {
     }
 }
 
+fn check_ssh_configuration(config: &Config, host_agent: &ssh::HostSshAgent) -> Vec<Check> {
+    let mut checks = Vec::new();
+
+    checks.push(Check {
+        status: Status::Pass,
+        name: "SSH mode",
+        detail: format!("configured mode is {:?}", config.ssh.mode),
+    });
+
+    if config.ssh.selected_keys.is_empty() {
+        checks.push(Check {
+            status: Status::Warn,
+            name: "Managed SSH keys",
+            detail: "no managed SSH keys configured. Run: vr ssh configure".to_owned(),
+        });
+    } else {
+        checks.push(Check {
+            status: Status::Pass,
+            name: "Managed SSH keys",
+            detail: format!("{} key(s) configured", config.ssh.selected_keys.len()),
+        });
+
+        for detail in ssh::selected_key_checks(config) {
+            let status = if detail.starts_with("PASS:") {
+                Status::Pass
+            } else if detail.starts_with("FAIL:") {
+                Status::Fail
+            } else {
+                Status::Warn
+            };
+            checks.push(Check {
+                status,
+                name: "Selected SSH key",
+                detail: detail
+                    .strip_prefix("PASS: ")
+                    .or_else(|| detail.strip_prefix("WARN: "))
+                    .or_else(|| detail.strip_prefix("FAIL: "))
+                    .unwrap_or(&detail)
+                    .to_owned(),
+            });
+        }
+    }
+
+    let next_launch = if ssh::managed_keys_configured(config) {
+        "managed temporary ssh-agent will be used before any ambient host agent"
+    } else if host_agent.is_ready() {
+        "host SSH_AUTH_SOCK will be forwarded"
+    } else {
+        "no SSH agent will be forwarded"
+    };
+    checks.push(Check {
+        status: if ssh::planned_ssh_available(config) {
+            Status::Pass
+        } else {
+            Status::Warn
+        },
+        name: "SSH next launch",
+        detail: next_launch.to_owned(),
+    });
+
+    checks.push(check_bool(
+        Status::Warn,
+        "Host ssh-agent binary",
+        command_available("ssh-agent"),
+        "ssh-agent is available on PATH",
+        "ssh-agent was not found on PATH; managed SSH cannot start",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
+        "Host ssh-add binary",
+        command_available("ssh-add"),
+        "ssh-add is available on PATH",
+        "ssh-add was not found on PATH; managed SSH cannot add selected keys",
+    ));
+
+    checks
+}
+
 fn check_host_ssh_agent(agent: &ssh::HostSshAgent) -> Check {
     match agent {
         ssh::HostSshAgent::Ready(_) => Check {
@@ -388,14 +478,14 @@ fn check_ssh_auth_sock_env() -> Check {
     }
 }
 
-fn check_container_ssh(config: &Config, agent: &ssh::HostSshAgent) -> Vec<Check> {
+fn check_container_ssh(config: &Config) -> Vec<Check> {
     let mut checks = Vec::new();
 
-    if !agent.is_ready() {
+    if !ssh::planned_ssh_available(config) {
         checks.push(Check {
             status: Status::Warn,
             name: "Container SSH_AUTH_SOCK",
-            detail: "skipped because no usable host SSH agent socket was detected".to_owned(),
+            detail: "skipped because no host agent or managed SSH keys are configured".to_owned(),
         });
         return checks;
     }
@@ -414,7 +504,7 @@ fn check_container_ssh(config: &Config, agent: &ssh::HostSshAgent) -> Vec<Check>
         Ok(None) => Check {
             status: Status::Warn,
             name: "Container SSH_AUTH_SOCK",
-            detail: "skipped because no usable host SSH agent socket was detected".to_owned(),
+            detail: "skipped because no host agent or managed SSH keys are configured".to_owned(),
         },
         Err(err) => Check {
             status: Status::Fail,
@@ -437,7 +527,7 @@ fn check_container_ssh(config: &Config, agent: &ssh::HostSshAgent) -> Vec<Check>
         Ok(None) => Check {
             status: Status::Warn,
             name: "Container ssh-add",
-            detail: "skipped because no usable host SSH agent socket was detected".to_owned(),
+            detail: "skipped because no host agent or managed SSH keys are configured".to_owned(),
         },
         Err(err) => Check {
             status: Status::Warn,
@@ -481,7 +571,7 @@ fn check_container_ssh(config: &Config, agent: &ssh::HostSshAgent) -> Vec<Check>
         Ok(None) => Check {
             status: Status::Warn,
             name: "Container ssh-add -l",
-            detail: "skipped because no usable host SSH agent socket was detected".to_owned(),
+            detail: "skipped because no host agent or managed SSH keys are configured".to_owned(),
         },
         Err(err) => Check {
             status: Status::Warn,

@@ -21,6 +21,10 @@ docker:
   context: rootless
   compose_file: ~/.vegasroom/runtime/compose.yaml
 
+ssh:
+  mode: auto
+  selected_keys: []
+
 harness:
   pi:
     enabled: true
@@ -45,6 +49,8 @@ Currently active:
 - `docker.context`
 - `docker.compose_file`
 - `harness.pi.image`
+- `ssh.mode`
+- `ssh.selected_keys`
 
 Currently parsed but mostly future-facing:
 
@@ -78,3 +84,31 @@ Docker Compose is then invoked with `--project-directory ~/.vegasroom/runtime`, 
 ## State directories
 
 The source of truth for persistent state is `~/.vegasroom`. The managed Compose file currently uses this path directly for bind mounts.
+
+
+## SSH config
+
+Managed SSH stores selected key references in config. Private key contents and passphrases are not stored.
+
+Example:
+
+```yaml
+ssh:
+  mode: auto
+  selected_keys:
+    - path: ~/.ssh/id_ed25519
+      fingerprint: SHA256:abc123...
+      comment: dan@nomad
+      key_type: ED25519
+```
+
+Supported modes:
+
+```text
+auto     use managed keys if configured, otherwise host SSH_AUTH_SOCK if available
+host     only forward the existing host SSH_AUTH_SOCK
+managed  always start a temporary Vegasroom-managed ssh-agent
+off      do not forward SSH
+```
+
+Use `vr ssh configure` to edit this interactively, or edit the YAML manually.
