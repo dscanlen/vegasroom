@@ -16,5 +16,4 @@ crossterm = "0.28"
 directories = "5"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
-thiserror = "2"
 unicode-width = "0.2"

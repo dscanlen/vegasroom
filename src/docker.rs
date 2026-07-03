@@ -377,3 +377,24 @@ fn base_docker(config: &Config) -> Command {
     command.args(["--context", config.docker.context.as_str()]);
     command
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn git_identity_requires_name_and_email() {
+        let complete = git_identity_from_parts(
+            Some("Agent User".to_owned()),
+            Some("agent@example.com".to_owned()),
+            "test",
+        );
+        let missing_email = git_identity_from_parts(Some("Agent User".to_owned()), None, "test");
+        let missing_name =
+            git_identity_from_parts(None, Some("agent@example.com".to_owned()), "test");
+
+        assert!(complete.is_some());
+        assert!(missing_email.is_none());
+        assert!(missing_name.is_none());
+    }
+}

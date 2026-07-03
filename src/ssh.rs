@@ -1491,3 +1491,89 @@ fn private_key_permissions_ok(path: &Path) -> Option<bool> {
 fn private_key_permissions_ok(_path: &Path) -> Option<bool> {
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_ssh_keygen_fingerprint_with_comment_and_type() {
+        let metadata =
+            parse_ssh_keygen_fingerprint("256 SHA256:abc123 user@example.com test key (ED25519)");
+
+        assert_eq!(metadata.fingerprint.as_deref(), Some("SHA256:abc123"));
+        assert_eq!(
+            metadata.comment.as_deref(),
+            Some("user@example.com test key")
+        );
+        assert_eq!(metadata.key_type.as_deref(), Some("ED25519"));
+    }
+
+    #[test]
+    fn initial_selection_matches_by_fingerprint() {
+        let discovered = vec![DiscoveredSshKey {
+            path: PathBuf::from("/tmp/current-key"),
+            display_path: "/tmp/current-key".to_owned(),
+            fingerprint: Some("SHA256:abc123".to_owned()),
+            comment: None,
+            key_type: Some("ED25519".to_owned()),
+            has_public_pair: false,
+            permissions_ok: None,
+        }];
+        let selected = vec![SelectedSshKey {
+            path: "/old/path".to_owned(),
+            fingerprint: Some("SHA256:abc123".to_owned()),
+            comment: None,
+            key_type: None,
+            git_user_name: None,
+            git_user_email: None,
+        }];
+
+        assert_eq!(initial_selection(&discovered, &selected), vec![true]);
+    }
+
+    #[test]
+    fn selected_key_metadata_preserves_existing_git_identity() {
+        let discovered = vec![DiscoveredSshKey {
+            path: PathBuf::from("/tmp/current-key"),
+            display_path: "/tmp/current-key".to_owned(),
+            fingerprint: Some("SHA256:abc123".to_owned()),
+            comment: None,
+            key_type: Some("ED25519".to_owned()),
+            has_public_pair: false,
+            permissions_ok: None,
+        }];
+        let existing = vec![SelectedSshKey {
+            path: "/old/path".to_owned(),
+            fingerprint: Some("SHA256:abc123".to_owned()),
+            comment: None,
+            key_type: None,
+            git_user_name: Some("Agent User".to_owned()),
+            git_user_email: Some("agent@example.com".to_owned()),
+        }];
+
+        let selected = selected_keys_from(&discovered, &[true], &existing);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].git_user_name.as_deref(), Some("Agent User"));
+        assert_eq!(
+            selected[0].git_user_email.as_deref(),
+            Some("agent@example.com")
+        );
+    }
+
+    #[test]
+    fn truncation_respects_display_width_budget() {
+        let truncated = truncate_to_width("abcdef", 5);
+
+        assert_eq!(UnicodeWidthStr::width(truncated.as_str()), 3);
+        assert!(truncated.ends_with('…'));
+    }
+
+    #[test]
+    fn ssh_agent_socket_path_is_yaml_escaped() {
+        let escaped = yaml_double_quoted(Path::new(r#"/tmp/agent "quoted"/sock"#));
+
+        assert_eq!(escaped, r#"/tmp/agent \"quoted\"/sock"#);
+    }
+}

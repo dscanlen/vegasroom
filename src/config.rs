@@ -324,3 +324,59 @@ fn default_ssh_agent() -> String {
 fn default_network() -> String {
     "host".to_owned()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn built_in_default_config_parses() {
+        let config: Config = serde_yaml::from_str(DEFAULT_CONFIG_YAML).unwrap();
+
+        assert_eq!(config.default_harness, "pi");
+        assert_eq!(config.paths.root, "~/.vegasroom");
+        assert_eq!(config.paths.workspace, "~/.vegasroom/workspace");
+        assert_eq!(config.docker.context, "rootless");
+        assert_eq!(
+            config.docker.compose_file,
+            "~/.vegasroom/runtime/compose.yaml"
+        );
+        assert_eq!(config.ssh.mode, SshMode::Auto);
+        assert!(config.ssh.selected_keys.is_empty());
+        assert!(config.git.inherit_host);
+        assert!(config.git.user_name.is_none());
+        assert!(config.git.user_email.is_none());
+        assert!(config.harness.pi.enabled);
+        assert_eq!(config.harness.pi.image, "vegasroom/pi:local");
+        assert_eq!(config.harness.pi.command, "pi");
+        assert_eq!(config.harness.pi.network, "host");
+    }
+
+    #[test]
+    fn partial_config_uses_defaults_for_missing_sections() {
+        let config: Config = serde_yaml::from_str("docker:\n  context: test-context\n").unwrap();
+
+        assert_eq!(config.docker.context, "test-context");
+        assert_eq!(config.paths.workspace, "~/.vegasroom/workspace");
+        assert_eq!(config.ssh.mode, SshMode::Auto);
+        assert_eq!(config.harness.pi.command, "pi");
+    }
+
+    #[test]
+    fn config_round_trips_selected_key_metadata() {
+        let mut config = Config::default();
+        config.ssh.selected_keys.push(SelectedSshKey {
+            path: "~/.ssh/id_ed25519".to_owned(),
+            fingerprint: Some("SHA256:test".to_owned()),
+            comment: Some("agent@example".to_owned()),
+            key_type: Some("ED25519".to_owned()),
+            git_user_name: Some("Agent User".to_owned()),
+            git_user_email: Some("agent@example.com".to_owned()),
+        });
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        let reparsed: Config = serde_yaml::from_str(&serialized).unwrap();
+
+        assert_eq!(reparsed.ssh.selected_keys, config.ssh.selected_keys);
+    }
+}

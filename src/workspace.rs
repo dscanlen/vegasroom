@@ -276,3 +276,88 @@ struct WorkspaceRequest {
     path: PathBuf,
     auto_create: bool,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    struct TempDir {
+        path: PathBuf,
+    }
+
+    impl TempDir {
+        fn new(name: &str) -> Self {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = env::temp_dir().join(format!(
+                "vegasroom-test-{name}-{}-{nanos}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self { path }
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
+    #[test]
+    fn default_workspace_resolves_configured_existing_directory() {
+        let root = TempDir::new("workspace-root");
+        let mut config = Config::default();
+        config.paths.workspace = root.path.display().to_string();
+
+        let resolved = resolve_workspace(None, &config).unwrap();
+
+        assert_eq!(resolved.path, root.path.canonicalize().unwrap());
+        assert!(!resolved.created);
+    }
+
+    #[test]
+    fn dot_workspace_resolves_current_directory() {
+        let config = Config::default();
+        let resolved = resolve_workspace(Some("."), &config).unwrap();
+
+        assert_eq!(
+            resolved.path,
+            env::current_dir().unwrap().canonicalize().unwrap()
+        );
+        assert!(!resolved.created);
+    }
+
+    #[test]
+    fn missing_absolute_workspace_fails_without_creating_it() {
+        let root = TempDir::new("missing-absolute-parent");
+        let missing = root.path.join("missing");
+        let config = Config::default();
+
+        let err = resolve_workspace(Some(&missing.display().to_string()), &config).unwrap_err();
+
+        assert!(err.to_string().contains("Workspace path does not exist"));
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn workspace_names_cannot_look_like_flags() {
+        let config = Config::default();
+        let err = resolve_workspace(Some("--session"), &config).unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("Workspace names cannot start with '-'"));
+    }
+
+    #[test]
+    fn root_workspace_is_refused() {
+        let state = StatePaths::default().unwrap();
+        let err = validate_workspace_path(Path::new("/"), &state).unwrap_err();
+
+        assert!(err.to_string().contains("Refusing to mount /"));
+    }
+}
