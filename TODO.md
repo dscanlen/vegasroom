@@ -1,5 +1,7 @@
 # Vegasroom TODO
 
+This file is the canonical planning document for Vegasroom. `POST-MVP-OPTIONS.md` has been retired; useful post-MVP planning has been folded into this TODO.
+
 ## Current baseline
 
 Vegasroom has reached MVP. The current model is:
@@ -23,8 +25,10 @@ vr doctor reports readiness.
 vr pi launches Pi.
 vr shell opens the same room runtime for debugging.
 SSH agent forwarding works when available.
+Managed temporary ssh-agent support works for selected keys.
 Git-over-SSH works without copying private keys into the container.
 Pi login works and persists across ephemeral container launches.
+Workspace selection works for default, named, relative, tilde, current-directory, and absolute paths.
 ```
 
 Known MVP tradeoffs to preserve or address deliberately:
@@ -41,116 +45,466 @@ Claude support is deferred
 hardening is deferred
 ```
 
-Post-MVP work should build on the proven runtime. Do not redesign the M1–M5 model unless a specific defect requires it.
+Post-MVP work should build on the proven runtime. Do not redesign the M1-M6 model unless a specific defect requires it.
 
 ---
 
-## Priority order
+## Active recommended work order
 
-1. **M6 — Workspace and CLI ergonomics** **DONE**
-2. **M7 — Managed SSH and repo-specific Git access** **OUT OF SCOPE FOR NOW**
-3. **M8 — Host bootstrap** **OUT OF SCOPE FOR NOW**
-4. **M9 — Runtime hardening**
-5. **M10 — Second harness**
-6. **Git workflow polish**
+### 1. Fix Git identity runtime behavior
+
+**Status:** TODO
+
+Docs currently describe Git identity injection, but the runtime must be verified and fixed so commits inside the room do not fall back to `root <root@...>`.
+
+Tasks:
+
+```text
+honor git.user_name and git.user_email from config
+honor exactly one selected SSH key with git_user_name/git_user_email
+honor host global Git config only when git.inherit_host is true
+inject identity into the room consistently for vr pi, vr shell, and doctor container checks
+add tests for Git identity precedence
+update docs if behavior intentionally changes
+```
+
+Acceptance criteria:
+
+```text
+new commits inside the room use the intended identity
+vr doctor reports the effective identity accurately
+config, selected-key metadata, and host-inherited identity precedence are tested
+no root <root@...> fallback occurs when an identity is configured
+```
+
+### 2. Replace fixed cache override files with per-launch runtime files
+
+**Status:** TODO
+
+Current generated Compose overrides use fixed paths under `~/.vegasroom/cache`. This is simple but not ideal for concurrent sessions.
+
+Tasks:
+
+```text
+create a per-launch runtime/cache directory
+write SSH agent Compose overrides per invocation
+write Git identity overrides per invocation
+hold generated files with an RAII guard
+clean up generated files when the launch exits
+ensure concurrent vr pi / vr shell sessions cannot overwrite each other
+```
+
+Acceptance criteria:
+
+```text
+two Vegasroom sessions can run at the same time without override-file races
+SSH agent forwarding still works
+managed SSH agent cleanup still works
+Git identity injection still works
+cache cleanup is best-effort and safe
+```
+
+### 3. Make `vr doctor` faster and less repetitive
+
+**Status:** TODO
+
+`vr doctor` currently performs many independent checks. Some checks may launch separate containers and repeat setup work.
+
+Tasks:
+
+```text
+batch container checks into one or two Compose runs
+avoid repeated managed SSH setup during doctor
+separate host-only checks from container checks
+parse structured check output from the container
+keep PASS/WARN/FAIL output readable
+```
+
+Acceptance criteria:
+
+```text
+vr doctor remains clear and accurate
+container checks complete materially faster
+managed SSH passphrase prompts are not repeated unnecessarily
+failures still include actionable remediation text
+```
+
+### 4. Simplify and make config fields honest
+
+**Status:** TODO
+
+Some config fields are parsed but only partially honored. Either wire them fully or mark/remove them until they are real.
+
+Review these fields:
+
+```text
+paths.root
+harness.pi.enabled
+harness.pi.image
+harness.pi.command
+harness.pi.ssh_agent
+harness.pi.network
+commented Claude config
+```
+
+Tasks:
+
+```text
+decide which fields are active now versus future-facing
+make harness.pi.image control the Compose image, or remove image configurability for now
+make harness.pi.network control runtime networking, or document that environment overrides are the current mechanism
+remove misleading defaults from docs
+add config tests for active fields
+```
+
+Acceptance criteria:
+
+```text
+every documented active config field has runtime effect
+every future-facing field is clearly labeled or removed from defaults
+README and docs/config.md match implementation
+```
+
+### 5. Refactor large modules after tests are in place
+
+**Status:** TODO
+
+The baseline tests are now present. Refactoring can proceed with less risk.
+
+Targets:
+
+```text
+split src/ssh.rs into discovery/runtime/status/ui modules
+split src/doctor.rs into grouped host/container/runtime checks
+keep public behavior unchanged while refactoring
+avoid mixing refactors with security hardening
+```
+
+Acceptance criteria:
+
+```text
+no CLI behavior changes
+all tests pass
+module boundaries are clearer
+large unrelated functions are reduced
+future M9/M10 work becomes easier
+```
+
+### 6. Clean up CLI parsing without expanding the command surface
+
+**Status:** TODO
+
+The manual parsing supports Pi pass-through ergonomics, but it should stay well tested and minimal.
+
+Preserve the current command surface:
+
+```bash
+vr
+vr init
+vr init --build
+vr doctor
+vr ssh configure
+vr ssh status
+vr pi [workspace] [pi-args...]
+vr shell [workspace]
+```
+
+Tasks:
+
+```text
+keep tests for ambiguous cases
+avoid adding new commands unless a milestone requires them
+make help text and parsing behavior match exactly
+consider a small parser helper type if it improves readability
+```
+
+Acceptance criteria:
+
+```text
+vr defaults to Pi
+Pi argument pass-through remains stable
+workspace parsing remains stable
+help output remains accurate
+```
+
+### 7. M9 - Runtime hardening
+
+**Status:** TODO
+
+Improve security posture without breaking current Pi, SSH, Git, and login flows.
+
+Scope:
+
+```text
+move away from container-root runtime where possible
+reduce container capabilities
+review host networking
+explore Docker bridge networking again after rootless issues are understood
+add safer mount policy
+add read-only workspace option
+add dangerous path warnings or prompts
+block obviously dangerous workspace paths
+add clearer trust-boundary docs
+```
+
+Constraints:
+
+```text
+do not break Pi login persistence
+do not break SSH agent forwarding
+do not break Git-over-SSH
+do not reintroduce the M1 bind-mount failures
+do not switch networking models without a proof
+do not describe the result as a hardened sandbox until it is actually hardened
+```
+
+Candidate staged implementation:
+
+```text
+add opt-in capability drop / no-new-privileges settings
+test non-root container runtime with the final mount model
+add UID/GID mapping options if needed
+add optional read-only workspace mode
+consider tmpfs for /tmp and other scratch paths
+review read-only root filesystem feasibility
+prove bridge networking before changing defaults
+make proven safe hardening defaults only after validation
+```
+
+Acceptance criteria:
+
+```text
+Pi still launches
+Pi login still persists
+Git-over-SSH still works
+vr shell still works
+the container no longer needs root, or the reason root remains is documented
+host networking is reduced or the reason it remains is documented
+risky mount paths are warned, prompted, or blocked
+security docs are updated honestly
+```
+
+### 8. Improve workspace mount policy
+
+**Status:** TODO
+
+Current workspace safety checks are useful but should become stricter and more explicit.
+
+Tasks:
+
+```text
+review symlinked workspace handling
+review symlinked Vegasroom state paths
+add stronger warnings or prompts for broad host mounts
+consider policy config for risky mounts: warn, prompt, deny
+add read-only workspace option as part of M9
+```
+
+Acceptance criteria:
+
+```text
+credential directories remain blocked
+/ and virtual system roots remain blocked
+symlink behavior is documented and tested
+broad host mounts are deliberate, not accidental
+```
+
+### 9. Prepare for M10 with a small harness descriptor
+
+**Status:** TODO
+
+Do this before adding a second harness. The goal is to make Pi use a small internal descriptor without creating a plugin system.
+
+Tasks:
+
+```text
+identify minimal harness fields: service name, image, command, state dirs, Dockerfile path
+adapt Pi code to use that descriptor
+keep Compose/runtime model unchanged
+avoid marketplace/plugin abstractions
+```
+
+Acceptance criteria:
+
+```text
+Pi behavior is unchanged
+harness-specific paths are isolated behind a small descriptor
+a second harness can be added with less duplication
+```
+
+### 10. Documentation consolidation
+
+**Status:** TODO
+
+Keep documentation accurate and reduce duplicated planning material.
+
+Tasks:
+
+```text
+keep README concise
+move detailed behavior into docs/
+keep TODO.md as canonical roadmap
+remove stale claims when implementation changes
+update docs/security.md after every M9 hardening change
+update docs/config.md whenever config semantics change
+```
+
+Acceptance criteria:
+
+```text
+README, docs, and implementation agree
+TODO statuses are explicit
+out-of-scope work remains clearly separated at the bottom of this file
+```
 
 ---
 
-## M7 — Managed SSH and repo-specific Git access
+## Completed work
 
-### Goal
+### MVP M1-M5 - Proven Pi runtime
 
+**Status:** DONE
+
+Completed capabilities:
+
+```text
+source-built Rust CLI wrapper
+managed Vegasroom state directory
+managed Compose runtime materialized by vr init
+local Pi image build through vr init --build
+vr doctor readiness checks
+vr pi launches Pi
+vr shell launches debug shell
+rootless Docker context usage
+SSH agent forwarding when host SSH_AUTH_SOCK is usable
+Pi login persistence through mounted Pi state
+```
+
+### M6 - Workspace and CLI ergonomics
+
+**Status:** DONE
+
+Completed capabilities:
+
+```text
+vr defaults to vr pi
+vr pi [workspace] [pi-args...]
+vr shell [workspace]
+default workspace support
+current-directory workspace support
+named managed workspace support
+relative path workspace support
+tilde path expansion
+absolute path support when path exists
+Pi argument pass-through
+workspace refusal rules for dangerous credential/system paths
+workspace docs
+```
+
+### Managed SSH single-key/simple-key workflow
+
+**Status:** DONE
+
+Completed capabilities:
+
+```text
+vr ssh configure
+vr ssh status
+recursive key discovery
+interactive TUI selection
+line-mode fallback
+temporary managed ssh-agent lifecycle
+selected key fingerprint checks
+no private key copying into the container
+no host ~/.ssh mount into the container
+```
+
+Note: repo-specific deploy-key routing is not part of this completed work. It is tracked as M7 and is out of scope for now.
+
+### Build/test baseline
+
+**Status:** DONE
+
+Completed capabilities:
+
+```text
+manual GitHub Actions workflow
+local scripts/check.sh
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features
+cargo test --locked --all-targets --all-features
+baseline unit tests for CLI/config/workspace/SSH helpers
+removed unused direct thiserror dependency
+```
+
+---
+
+## Out of scope for now
+
+The following milestones are deliberately out of scope for the current active work. Keep them at the bottom of this document until they are reactivated.
+
+### M7 - Managed SSH and repo-specific Git access
+
+**Status:** OUT OF SCOPE FOR NOW
+
+Goal:
+
+```text
 Support multiple SSH keys while ensuring repo-specific deploy keys are used for the right repository.
+```
 
-### Problem
+Problem:
 
 ```text
 SSH agents can hold multiple keys.
 GitHub deploy keys are often repository-specific.
 If the wrong key is offered first, auth can fail or select the wrong identity.
-Vegasroom currently forwards an agent socket but does not manage per-repo SSH identity selection.
+Vegasroom currently forwards an agent socket or managed temporary agent but does not manage per-repo SSH identity selection.
 ```
 
-### Constraints
+Constraints:
 
 ```text
-do not copy private keys into the container.
-do not mount host ~/.ssh into the container.
-do not store private key material or passphrases.
-preserve managed temporary ssh-agent lifecycle.
-private keys remain on the host and are only loaded into the temporary managed agent.
-the room receives only the agent socket and generated non-secret SSH config/state.
+do not copy private keys into the container
+do not mount host ~/.ssh into the container
+do not store private key material or passphrases
+preserve managed temporary ssh-agent lifecycle
+private keys remain on the host and are only loaded into the temporary managed agent
+the room receives only the agent socket and generated non-secret SSH config/state
 ```
 
-### Approaches to investigate
-
-#### 1. Room-local SSH config with host aliases
-
-Generate room-local SSH config under:
+Possible future approaches:
 
 ```text
-~/.vegasroom/ssh/config
+room-local SSH config with host aliases
+per-repo Git core.sshCommand
+repo-key helper commands
+selected-key metadata for intended repo or host patterns
 ```
 
-Example:
+Acceptance criteria when reactivated:
 
 ```text
-Host github.com-owner-repo
-  HostName github.com
-  User git
-  IdentitiesOnly yes
-  IdentityAgent /tmp/vegasroom/ssh-agent.sock
+a user can configure multiple deploy keys
+Git operations for repo A use repo A's deploy key
+Git operations for repo B use repo B's deploy key
+private keys remain on the host
+private keys are only loaded into the temporary managed agent
+the container receives only the agent socket and generated non-secret SSH config/state
+Git-over-SSH still works for the simple single-key case
 ```
 
-Then document clone URLs using the alias:
+### M8 - Host bootstrap
 
-```bash
-git clone git@github.com-owner-repo:OWNER/REPO.git
-```
+**Status:** OUT OF SCOPE FOR NOW
 
-#### 2. Per-repo Git `core.sshCommand`
-
-Use per-repo Git config inside `/workspace`:
-
-```bash
-git config core.sshCommand 'ssh -o IdentitiesOnly=yes -o IdentityAgent=/tmp/vegasroom/ssh-agent.sock ...'
-```
-
-#### 3. Repo-key helper commands
-
-Explore helper commands such as:
-
-```bash
-vr ssh repo add OWNER/REPO ~/.ssh/deploy_key_for_repo
-vr ssh repo list
-vr ssh repo remove OWNER/REPO
-```
-
-#### 4. Selected-key metadata
-
-Explore whether selected-key metadata can include intended repo or host patterns.
-
-### M7 acceptance criteria
+Goal:
 
 ```text
-a user can configure multiple deploy keys.
-Git operations for repo A use repo A's deploy key.
-Git operations for repo B use repo B's deploy key.
-private keys remain on the host.
-private keys are only loaded into the temporary managed agent.
-the container receives only the agent socket and generated non-secret SSH config/state.
-Git-over-SSH still works for the simple single-key case.
-```
-
----
-
-## M8 — Host bootstrap
-
-### Goal
-
 Make Vegasroom easier to set up on a fresh Linux machine by detecting, installing, and configuring host dependencies where practical.
+```
 
-### Current MVP behavior
+Current MVP behavior:
 
 ```text
 The user must already have Docker, Docker Compose, and a usable rootless Docker context.
@@ -158,16 +512,7 @@ Vegasroom diagnoses missing pieces with vr doctor.
 The user fixes Docker/rootless setup manually.
 ```
 
-### Desired behavior
-
-```text
-vr doctor detects missing host dependencies.
-vr bootstrap guides or performs safe setup steps.
-vr bootstrap can install or configure rootless Docker where supported.
-vr init remains a safe state-directory repair command.
-```
-
-### Commands to support
+Possible future commands:
 
 ```bash
 vr bootstrap
@@ -177,333 +522,28 @@ vr bootstrap --rootless-docker
 vr bootstrap --print-only
 ```
 
-### Suggested workflow
+Bootstrap policy if reactivated:
 
 ```text
-1. Detect Linux distribution.
-2. Detect Docker installation.
-3. Detect Docker Compose support.
-4. Detect rootless Docker support.
-5. Detect whether the current user can run the rootless Docker daemon.
-6. Detect whether a Docker context named rootless exists.
-7. Offer to install or configure missing pieces.
-8. Create or repair the rootless Docker context.
-9. Run a trivial container proof.
-10. Run vr doctor.
+do not install Docker silently
+do not run sudo without explicit confirmation
+do not overwrite existing Docker configuration
+do not replace a working Docker setup
+do not assume one Linux distribution
+prefer showing exact commands before running them
+provide --print-only for copy/paste installation
 ```
 
-Expected user flow:
-
-```bash
-vr bootstrap
-vr init --build
-vr doctor
-vr
-```
-
-Diagnostics only:
-
-```bash
-vr bootstrap --check
-```
-
-### Docker installation policy
+Acceptance criteria when reactivated:
 
 ```text
-do not install Docker silently.
-do not run sudo without explicit confirmation.
-do not overwrite existing Docker configuration.
-do not replace a working Docker setup.
-do not assume one Linux distribution.
-prefer showing the exact commands before running them.
-provide --print-only for copy/paste installation.
-```
-
-Useful supported paths:
-
-```text
-Fedora / RHEL-family
-Debian / Ubuntu-family
-Arch-family
-manual fallback
-```
-
-The first version does not need to support every distribution. It can detect unsupported systems and print manual instructions.
-
-### Rootless Docker setup
-
-`vr bootstrap --rootless-docker` should focus on making this work:
-
-```bash
-docker --context rootless info
-```
-
-Useful setup checks:
-
-```text
-dockerd-rootless-setuptool.sh exists
-rootless Docker daemon is installed
-user systemd is available
-linger is enabled if needed
-DOCKER_HOST is not conflicting
-Docker context rootless exists
-Docker context rootless points to the user daemon socket
-rootless daemon can run hello-world
-host networking works for the Vegasroom runtime
-```
-
-Possible setup actions:
-
-```text
-run dockerd-rootless-setuptool.sh install
-enable/start the user Docker service
-create a Docker context named rootless
-verify docker --context rootless info
-verify docker --context rootless run --rm --network host hello-world
-```
-
-### Alias and context handling
-
-Avoid relying on shell aliases. Vegasroom should keep using config:
-
-```yaml
-docker:
-  context: rootless
-```
-
-and internally invoke:
-
-```bash
-docker --context rootless ...
-```
-
-If bootstrap creates a context, it should create the context name that Vegasroom expects:
-
-```text
-rootless
-```
-
-If a user already has a differently named rootless context, bootstrap should either update:
-
-```text
-~/.vegasroom/config.yaml
-```
-
-to use that context, or ask whether to create an additional context named:
-
-```text
-rootless
-```
-
-Do not depend on aliases like:
-
-```bash
-alias docker='docker --context rootless'
-```
-
-Aliases are shell-specific and do not reliably apply to subprocesses launched by `vr`.
-
-### Relationship to `vr init`
-
-```text
-vr init
-  creates or repairs Vegasroom state only
-
-vr bootstrap
-  checks or modifies host dependencies
-
-vr doctor
-  reports readiness and exact remediation steps
-```
-
-`vr init --build` can remain available because building the local Pi image is part of project setup, not system installation.
-
-Plain `vr init` should not install Docker. It should stay safe and repeatable.
-
-### M8 acceptance criteria
-
-```text
-vr bootstrap --check reports Docker/rootless readiness clearly.
-vr bootstrap --print-only prints exact install/setup commands for the detected system.
-vr bootstrap --rootless-docker can configure the rootless Docker context on at least one supported Linux family.
-vr doctor recognizes the resulting setup.
-vr init --build succeeds after bootstrap.
-vr launches Pi without the user manually constructing Docker commands.
-Installing Docker is documented as a host modification.
-Rootless Docker is documented as a user daemon, not a hardened sandbox.
-Users can review commands before running them.
-```
-
----
-
-## M9 — Runtime hardening
-
-### Goal
-
-Improve the security posture of the container runtime without breaking the current working Pi, SSH, Git, and login flows.
-
-### Scope
-
-```text
-move away from container-root runtime
-reduce container capabilities
-review host networking
-explore Docker bridge networking again after rootless issues are understood
-add safer mount policy
-add read-only workspace option
-add dangerous path warnings
-document trust boundaries more explicitly
-```
-
-### Constraints
-
-```text
-do not break Pi login persistence.
-do not break SSH agent forwarding.
-do not break Git-over-SSH.
-do not reintroduce the M1 bind-mount failures.
-do not switch networking models without a proof.
-do not describe the result as a hardened sandbox until it is actually hardened.
-```
-
-### Candidate work
-
-```text
-test non-root container runtime again with the final mount model.
-add UID/GID mapping options.
-make workspace read-only optionally.
-warn before mounting broad host paths.
-block obviously dangerous workspace paths.
-reduce Linux capabilities.
-review whether host networking is still required after M4.
-document residual risk.
-```
-
-### M9 acceptance criteria
-
-```text
-Pi still launches.
-Pi login still persists.
-Git-over-SSH still works.
-vr shell still works.
-The container no longer needs root, or the reason root remains is documented.
-Host networking is reduced or the reason it remains is documented.
-Risky mount paths are warned or blocked.
-Security docs are updated honestly.
-```
-
----
-
-## M10 — Second harness
-
-### Goal
-
-Prove Vegasroom can support more than Pi by adding a second real harness, likely Claude.
-
-### Scope
-
-```text
-add vr claude
-validate the harness abstraction with a real second harness
-keep the config-driven model simple
-avoid premature plugin architecture
-reuse the proven Docker/Compose runtime model
-preserve per-harness state isolation
-```
-
-### Constraints
-
-```text
-do not build a harness marketplace.
-do not over-abstract before the second harness proves the abstraction.
-do not break vr pi.
-do not mix Pi and Claude state.
-do not add provider/API-key handling unless required by the harness milestone.
-```
-
-### Candidate work
-
-```text
-add harness/claude/Dockerfile
-add claude service or Compose override
-add config.harness.claude
-add vr claude
-add Claude state directories
-add doctor checks for the Claude image/state
-document Claude limitations
-```
-
-### M10 acceptance criteria
-
-```text
-vr pi still works.
-vr shell still works for Pi.
-vr claude launches the second harness.
-Pi and Claude state are isolated.
-The config model remains understandable.
-The runtime remains Docker/Compose-based.
-```
-
----
-
-## Git workflow polish
-
-### Goal
-
-Commits created from this environment should use the intended Git/GitHub profile identity instead of `root <root@...>`.
-
-### Current symptom
-
-```text
-Committer: root <root@nomad.localdomain>
-```
-
-### Tasks
-
-```text
-Configure repo-local or environment-level Git identity.
-Prefer repo-local config if this should only affect Vegasroom.
-Use the GitHub profile name/email intended for this project.
-Consider GitHub noreply email if privacy is desired.
-Amend any local-only commits before pushing when identity is wrong.
-Document how automation should identify itself in commits.
-```
-
-Useful commands:
-
-```bash
-git config user.name "<GitHub display name>"
-git config user.email "<GitHub email or noreply email>"
-git commit --amend --reset-author
-```
-
-### Open question
-
-```text
-Should future agent-created commits always use the user's Git identity, or a distinct bot/co-author identity?
-```
-
-### Acceptance criteria
-
-```text
-New commits no longer default to root <root@...>.
-The intended repo-local Git identity is documented.
-Local-only commits with the wrong identity can be amended safely.
-Agent-created commit identity policy is explicit.
-```
-
----
-
-## Documentation updates
-
-Keep documentation aligned as these tasks land:
-
-```text
-Document final vr pi and vr shell workspace syntax.
-Document Pi option pass-through syntax.
-Document SSH deploy-key setup and repo alias behavior.
-Document bootstrap safety policy and supported platforms.
-Document current trust boundaries and residual runtime risk.
-Document Git identity setup for automation-created commits.
-Keep POST-MVP-OPTIONS.md as background planning, or replace it with this TODO once the repo is ready.
+vr bootstrap --check reports Docker/rootless readiness clearly
+vr bootstrap --print-only prints exact install/setup commands for the detected system
+vr bootstrap --rootless-docker can configure the rootless Docker context on at least one supported Linux family
+vr doctor recognizes the resulting setup
+vr init --build succeeds after bootstrap
+vr launches Pi without the user manually constructing Docker commands
+installing Docker is documented as a host modification
+rootless Docker is documented as a user daemon, not a hardened sandbox
+users can review commands before running them
 ```
