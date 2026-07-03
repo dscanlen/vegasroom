@@ -301,3 +301,70 @@ Examples:
   vr shell my-git-repo"#
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn pi_invocation_without_args_uses_default_workspace_and_no_pi_args() {
+        let invocation = parse_pi_invocation(&[]);
+
+        assert!(invocation.workspace.is_none());
+        assert!(invocation.pi_args.is_empty());
+    }
+
+    #[test]
+    fn pi_invocation_treats_leading_flag_as_pi_arg() {
+        let invocation = parse_pi_invocation(&args(&["--session", "abc123"]));
+
+        assert!(invocation.workspace.is_none());
+        assert_eq!(invocation.pi_args, args(&["--session", "abc123"]));
+    }
+
+    #[test]
+    fn pi_invocation_accepts_workspace_before_pi_args() {
+        let invocation = parse_pi_invocation(&args(&[".", "--session", "abc123"]));
+
+        assert_eq!(invocation.workspace.as_deref(), Some("."));
+        assert_eq!(invocation.pi_args, args(&["--session", "abc123"]));
+    }
+
+    #[test]
+    fn pi_invocation_strips_separator_after_workspace() {
+        let invocation = parse_pi_invocation(&args(&["my-repo", "--", "--help"]));
+
+        assert_eq!(invocation.workspace.as_deref(), Some("my-repo"));
+        assert_eq!(invocation.pi_args, args(&["--help"]));
+    }
+
+    #[test]
+    fn pi_invocation_strips_separator_without_workspace() {
+        let invocation = parse_pi_invocation(&args(&["--", "--help"]));
+
+        assert!(invocation.workspace.is_none());
+        assert_eq!(invocation.pi_args, args(&["--help"]));
+    }
+
+    #[test]
+    fn shell_workspace_accepts_zero_or_one_argument() {
+        assert!(parse_shell_workspace(&[]).unwrap().is_none());
+        assert_eq!(
+            parse_shell_workspace(&args(&["my-repo"]))
+                .unwrap()
+                .as_deref(),
+            Some("my-repo")
+        );
+    }
+
+    #[test]
+    fn shell_workspace_rejects_extra_arguments() {
+        let err = parse_shell_workspace(&args(&["one", "two"])).unwrap_err();
+
+        assert!(err.to_string().contains("usage: vr shell [workspace]"));
+    }
+}
