@@ -556,7 +556,7 @@ fn build_configure_ui_lines(state: &ConfigureUiState, width: u16, height: u16) -
     } else {
         let detail_rows = available_rows
             .clamp(6, 10)
-            .min(available_rows.saturating_sub(3).max(0));
+            .min(available_rows.saturating_sub(3));
         let list_rows = available_rows.saturating_sub(detail_rows).max(1);
         append_key_list_lines(&mut lines, state, width, list_rows);
         append_highlighted_key_detail_lines(&mut lines, state, width, detail_rows);
