@@ -1,0 +1,15 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  # Enable this when automatic PR checks are desired and Actions minutes are acceptable.
+  # pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check formatting, lint, and tests
+        run: bash scripts/check.sh

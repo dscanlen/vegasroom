@@ -90,6 +90,22 @@ vr shell
 
 If you do not want to install `vr`, use `cargo run -- ...` from the repo.
 
+## Development checks
+
+Before opening a PR or handing off changes, run:
+
+```bash
+bash scripts/check.sh
+```
+
+This performs:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features
+cargo test --locked --all-targets --all-features
+```
+
 ## State directory
 
 Vegasroom uses:
