@@ -49,10 +49,10 @@ MVP-preserved runtime decisions:
 
 - rootless Docker context named `rootless`
 - Docker Compose service `pi`
-- local image `vegasroom/pi:local`
+- default local image `vegasroom/pi:local` from `harness.pi.image`
 - container-root runtime for now
-- `build.network=host`
-- `network_mode=host`
+- default `build.network=host` from `harness.pi.network`
+- default `network_mode=host` from `harness.pi.network`
 - workspace mounted read-write
 - Pi state mounted read-write
 - Vegas-managed SSH directory mounted, not host `~/.ssh`

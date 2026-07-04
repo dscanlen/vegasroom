@@ -41,7 +41,9 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
     let compose_file = config.resolved_compose_file()?;
     let project_dir = compose_project_dir(&compose_file)?;
 
-    let status = base_docker(config)
+    let mut command = base_docker(config);
+    apply_compose_config_env(&mut command, config);
+    let status = command
         .arg("compose")
         .arg("-f")
         .arg(&compose_file)
@@ -65,12 +67,7 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
 }
 
 pub fn run_pi(config: &Config, workspace: &ResolvedWorkspace, pi_args: &[String]) -> Result<i32> {
-    let mut compose_args = vec!["run".to_owned(), "--rm".to_owned(), "pi".to_owned()];
-    if !pi_args.is_empty() {
-        compose_args.push(config.harness.pi.command.clone());
-        compose_args.extend(pi_args.iter().cloned());
-    }
-    run_compose(config, workspace, &compose_args, true)
+    run_compose(config, workspace, &pi_compose_args(config, pi_args), true)
 }
 
 pub fn run_shell(config: &Config, workspace: &ResolvedWorkspace) -> Result<i32> {
@@ -153,7 +150,9 @@ pub fn context_usable(config: &Config) -> bool {
 
 pub fn can_run_trivial_container(config: &Config) -> bool {
     base_docker(config)
-        .args(["run", "--rm", "--network", "host", "hello-world"])
+        .args(["run", "--rm", "--network"])
+        .arg(&config.harness.pi.network)
+        .arg("hello-world")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -438,6 +437,7 @@ fn compose_base(
     let runtime_files = RuntimeFiles::new(&state)?;
 
     let mut command = base_docker(config);
+    apply_compose_config_env(&mut command, config);
     command
         .arg("compose")
         .arg("-f")
@@ -670,6 +670,24 @@ fn compose_project_dir(compose_file: &std::path::Path) -> Result<std::path::Path
         .context("Compose file has no parent directory")
 }
 
+fn pi_compose_args(config: &Config, pi_args: &[String]) -> Vec<String> {
+    let mut compose_args = vec![
+        "run".to_owned(),
+        "--rm".to_owned(),
+        "pi".to_owned(),
+        config.harness.pi.command.clone(),
+    ];
+    compose_args.extend(pi_args.iter().cloned());
+    compose_args
+}
+
+fn apply_compose_config_env(command: &mut Command, config: &Config) {
+    command
+        .env("VR_PI_IMAGE", &config.harness.pi.image)
+        .env("VR_PI_NETWORK_MODE", &config.harness.pi.network)
+        .env("VR_PI_BUILD_NETWORK", &config.harness.pi.network);
+}
+
 fn base_docker(config: &Config) -> Command {
     let mut command = Command::new("docker");
     command.args(["--context", config.docker.context.as_str()]);
@@ -679,6 +697,10 @@ fn base_docker(config: &Config) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn strings(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
 
     fn selected_key(path: &str, name: Option<&str>, email: Option<&str>) -> SelectedSshKey {
         SelectedSshKey {
@@ -697,6 +719,44 @@ mod tests {
             .map(|duration| duration.as_nanos())
             .unwrap_or_default();
         std::env::temp_dir().join(format!("vegasroom-{name}-{}-{nanos}", std::process::id()))
+    }
+
+    #[test]
+    fn pi_compose_args_always_uses_configured_command() {
+        let mut config = Config::default();
+        config.harness.pi.command = "custom-pi".to_owned();
+
+        assert_eq!(
+            pi_compose_args(&config, &[]),
+            strings(&["run", "--rm", "pi", "custom-pi"]),
+        );
+        assert_eq!(
+            pi_compose_args(&config, &["--session".to_owned(), "abc".to_owned()]),
+            strings(&["run", "--rm", "pi", "custom-pi", "--session", "abc"]),
+        );
+    }
+
+    #[test]
+    fn compose_config_env_uses_configured_image_and_network() {
+        let mut config = Config::default();
+        config.harness.pi.image = "example/pi:test".to_owned();
+        config.harness.pi.network = "bridge".to_owned();
+        let mut command = Command::new("docker");
+
+        apply_compose_config_env(&mut command, &config);
+
+        let envs = command
+            .get_envs()
+            .map(|(key, value)| {
+                (
+                    key.to_string_lossy().to_string(),
+                    value.map(|value| value.to_string_lossy().to_string()),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert!(envs.contains(&("VR_PI_IMAGE".to_owned(), Some("example/pi:test".to_owned()),)));
+        assert!(envs.contains(&("VR_PI_NETWORK_MODE".to_owned(), Some("bridge".to_owned()),)));
+        assert!(envs.contains(&("VR_PI_BUILD_NETWORK".to_owned(), Some("bridge".to_owned()),)));
     }
 
     #[test]

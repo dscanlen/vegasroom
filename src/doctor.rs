@@ -72,8 +72,14 @@ pub fn run() -> Result<i32> {
         Status::Fail,
         "Trivial container",
         docker::can_run_trivial_container(&config),
-        "Docker can run a trivial container with host networking",
-        "Docker could not run `hello-world` with `--network host`.",
+        format!(
+            "Docker can run a trivial container with --network {}",
+            config.harness.pi.network
+        ),
+        format!(
+            "Docker could not run `hello-world` with `--network {}`.",
+            config.harness.pi.network
+        ),
     ));
 
     for (name, path) in [
@@ -729,20 +735,26 @@ fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> {
 
     checks.push(check_bool(
         Status::Warn,
+        "Compose image setting",
+        contents.contains("image: ${VR_PI_IMAGE:-vegasroom/pi:local}"),
+        "image is controlled by harness.pi.image through VR_PI_IMAGE",
+        "Compose image is not controlled by VR_PI_IMAGE",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
         "Compose build network",
-        contents.contains("network: ${VR_PI_BUILD_NETWORK:-host}")
-            || contents.contains("network: host"),
-        "build.network host fallback is present",
-        "build.network host fallback was not found in compose.yaml",
+        contents.contains("network: ${VR_PI_BUILD_NETWORK:-host}"),
+        "build.network is controlled by harness.pi.network through VR_PI_BUILD_NETWORK",
+        "build.network is not controlled by VR_PI_BUILD_NETWORK",
     ));
 
     checks.push(check_bool(
         Status::Warn,
         "Compose runtime network",
-        contents.contains("network_mode: ${VR_PI_NETWORK_MODE:-host}")
-            || contents.contains("network_mode: host"),
-        "network_mode host fallback is present",
-        "network_mode host fallback was not found in compose.yaml",
+        contents.contains("network_mode: ${VR_PI_NETWORK_MODE:-host}"),
+        "network_mode is controlled by harness.pi.network through VR_PI_NETWORK_MODE",
+        "network_mode is not controlled by VR_PI_NETWORK_MODE",
     ));
 
     checks.push(check_bool(
