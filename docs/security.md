@@ -62,6 +62,10 @@ Private key files are not copied, but the mounted socket can still authorize SSH
 
 In managed SSH mode, Vegasroom runs `ssh-add` against selected private key files on the host, forwards only the temporary agent socket, and kills the temporary agent when the room exits. Vegasroom does not store key passphrases and does not mount host `~/.ssh` into the container.
 
+### Git identity injection
+
+When a Git identity is configured or inherited, Vegasroom writes a generated gitconfig under `~/.vegasroom/cache` and mounts it read-only into the room. The generated file contains commit author/committer name and email only; it does not contain SSH private keys or Git credentials.
+
 ### Pi auth state
 
 Pi login state may persist under:

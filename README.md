@@ -231,6 +231,20 @@ SSH_AUTH_SOCK=/tmp/vegasroom/ssh-agent.sock
 
 This allows Git-over-SSH without copying private key files. It is still powerful: processes in the container can ask the forwarded agent to sign SSH authentication requests while the socket is mounted.
 
+## Git identity model
+
+SSH authentication and Git commit authorship are separate. Vegasroom injects a Git identity into the room when one can be resolved, so commits do not fall back to the container user.
+
+Precedence:
+
+```text
+1. git.user_name and git.user_email in ~/.vegasroom/config.yaml
+2. exactly one selected SSH key with git_user_name and git_user_email
+3. host global Git config when git.inherit_host is true
+```
+
+The room receives Git identity through a generated Compose override and read-only generated gitconfig. Run `vr doctor` to see the effective identity.
+
 ## Pi login model
 
 Pi login is handled by Pi itself through interactive `/login`.
@@ -287,7 +301,7 @@ FAIL
 
 `WARN` means usable but degraded. `FAIL` means required functionality is missing.
 
-`vr doctor` also reports whether managed SSH keys are configured, whether key fingerprints still match, and whether the room can receive an SSH agent socket.
+`vr doctor` also reports whether managed SSH keys are configured, whether key fingerprints still match, whether the room can receive an SSH agent socket, and which Git identity will be available inside the room.
 
 ### `vr ssh configure`
 

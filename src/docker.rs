@@ -1,10 +1,14 @@
-use std::process::{Command, Output, Stdio};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::{Command, Output, Stdio},
+};
 
 use anyhow::{anyhow, Context, Result};
 
 use crate::{
-    config::Config,
-    paths::StatePaths,
+    config::{Config, SelectedSshKey},
+    paths::{display_path, StatePaths},
     ssh::{self, SshRuntime, SshRuntimeMode},
     workspace::{self, ResolvedWorkspace},
 };
@@ -228,11 +232,23 @@ fn compose_shell_status(config: &Config, script: &str) -> Result<bool> {
 }
 
 fn compose_shell_output(config: &Config, script: &str) -> Result<Output> {
+    compose_shell_output_with_ssh(config, script, true)
+}
+
+fn compose_shell_output_without_ssh(config: &Config, script: &str) -> Result<Output> {
+    compose_shell_output_with_ssh(config, script, false)
+}
+
+fn compose_shell_output_with_ssh(
+    config: &Config,
+    script: &str,
+    include_ssh_agent: bool,
+) -> Result<Output> {
     let workspace = workspace::default_workspace_for_compose(config)?;
     let mut invocation = compose_base(
         config,
         Some(&workspace),
-        true,
+        include_ssh_agent,
         false,
         SshRuntimeMode::NonInteractive,
     )?;
@@ -260,6 +276,7 @@ fn compose_base(
 ) -> Result<ComposeInvocation> {
     let compose_file = config.resolved_compose_file()?;
     let project_dir = compose_project_dir(&compose_file)?;
+    let state = StatePaths::default()?;
 
     let mut command = base_docker(config);
     command
@@ -274,7 +291,6 @@ fn compose_base(
     }
 
     let ssh_runtime = if include_ssh_agent {
-        let state = StatePaths::default()?;
         let runtime = ssh::prepare_agent_override(config, &state, warn_about_ssh, ssh_mode)?;
         if let Some(override_path) = runtime.override_path() {
             command.arg("-f").arg(override_path);
@@ -283,6 +299,11 @@ fn compose_base(
     } else {
         SshRuntime::empty()
     };
+
+    if let Some(git_override_path) = prepare_git_identity_override(config, &state, warn_about_ssh)?
+    {
+        command.arg("-f").arg(git_override_path);
+    }
 
     Ok(ComposeInvocation {
         command,
@@ -297,16 +318,30 @@ pub struct GitIdentity {
     pub source: String,
 }
 
-pub fn effective_git_identity(_config: &Config) -> Option<GitIdentity> {
-    let name = host_git_config_value("user.name").ok().flatten();
-    let email = host_git_config_value("user.email").ok().flatten();
-    git_identity_from_parts(name, email, "host git config")
+pub fn effective_git_identity(config: &Config) -> Option<GitIdentity> {
+    if let Some(identity) = configured_git_identity(config) {
+        return Some(identity);
+    }
+
+    if let Some(identity) = single_selected_key_git_identity(&config.ssh.selected_keys) {
+        return Some(identity);
+    }
+
+    if config.git.inherit_host {
+        return host_git_identity();
+    }
+
+    None
 }
 
 pub fn container_git_identity(config: &Config) -> Result<Option<GitIdentity>> {
-    let output = compose_shell_output(
+    if effective_git_identity(config).is_none() {
+        return Ok(None);
+    }
+
+    let output = compose_shell_output_without_ssh(
         config,
-        "name=$(git config --global --get user.name 2>/dev/null || true); email=$(git config --global --get user.email 2>/dev/null || true); if [ -n \"$name\" ] || [ -n \"$email\" ]; then printf '%s\\n%s' \"$name\" \"$email\"; fi",
+        "printf '%s\\n%s' \"${GIT_AUTHOR_NAME:-}\" \"${GIT_AUTHOR_EMAIL:-}\"",
     )?;
 
     if !output.status.success() {
@@ -326,28 +361,148 @@ pub fn container_git_identity(config: &Config) -> Result<Option<GitIdentity>> {
         .filter(|value| !value.is_empty())
         .map(str::to_owned);
 
-    Ok(git_identity_from_parts(name, email, "container git config"))
+    Ok(git_identity_from_parts(
+        name,
+        email,
+        "container environment",
+    ))
 }
 
-fn host_git_config_value(key: &str) -> Result<Option<String>> {
+fn prepare_git_identity_override(
+    config: &Config,
+    state: &StatePaths,
+    warn: bool,
+) -> Result<Option<PathBuf>> {
+    let Some(identity) = effective_git_identity(config) else {
+        if warn {
+            eprintln!(
+                "WARN: no Git identity configured or inherited; commits may fall back to the container user. Set git.user_name/git.user_email in ~/.vegasroom/config.yaml."
+            );
+        }
+        return Ok(None);
+    };
+
+    fs::create_dir_all(&state.cache).with_context(|| {
+        format!(
+            "failed to create cache directory: {}",
+            display_path(&state.cache)
+        )
+    })?;
+
+    let gitconfig_path = state.cache.join("gitconfig");
+    fs::write(&gitconfig_path, gitconfig_contents(&identity)).with_context(|| {
+        format!(
+            "failed to write Git identity config: {}",
+            display_path(&gitconfig_path)
+        )
+    })?;
+
+    let override_path = state.cache.join("git-identity.compose.yaml");
+    let contents = format!(
+        r#"services:
+  pi:
+    environment:
+      GIT_CONFIG_GLOBAL: /tmp/vegasroom/gitconfig
+      GIT_AUTHOR_NAME: "{name}"
+      GIT_AUTHOR_EMAIL: "{email}"
+      GIT_COMMITTER_NAME: "{name}"
+      GIT_COMMITTER_EMAIL: "{email}"
+    volumes:
+      - type: bind
+        source: "{gitconfig_path}"
+        target: /tmp/vegasroom/gitconfig
+        read_only: true
+"#,
+        name = yaml_double_quoted_str(&identity.name),
+        email = yaml_double_quoted_str(&identity.email),
+        gitconfig_path = yaml_double_quoted_path(&gitconfig_path),
+    );
+
+    fs::write(&override_path, contents).with_context(|| {
+        format!(
+            "failed to write Git identity Compose override: {}",
+            display_path(&override_path)
+        )
+    })?;
+
+    Ok(Some(override_path))
+}
+
+fn configured_git_identity(config: &Config) -> Option<GitIdentity> {
+    let name = non_empty_trimmed(config.git.user_name.as_deref())?;
+    let email = non_empty_trimmed(config.git.user_email.as_deref())?;
+
+    Some(GitIdentity {
+        name: name.to_owned(),
+        email: email.to_owned(),
+        source: "~/.vegasroom/config.yaml git.user_name/git.user_email".to_owned(),
+    })
+}
+
+fn single_selected_key_git_identity(keys: &[SelectedSshKey]) -> Option<GitIdentity> {
+    let mut identities = keys.iter().filter_map(selected_key_git_identity);
+    let identity = identities.next()?;
+
+    if identities.next().is_none() {
+        Some(identity)
+    } else {
+        None
+    }
+}
+
+fn selected_key_git_identity(key: &SelectedSshKey) -> Option<GitIdentity> {
+    let name = non_empty_trimmed(key.git_user_name.as_deref())?;
+    let email = non_empty_trimmed(key.git_user_email.as_deref())?;
+
+    Some(GitIdentity {
+        name: name.to_owned(),
+        email: email.to_owned(),
+        source: format!("selected SSH key metadata: {}", key.path),
+    })
+}
+
+fn host_git_identity() -> Option<GitIdentity> {
+    let name = host_git_config_value("user.name")?;
+    let email = host_git_config_value("user.email")?;
+
+    Some(GitIdentity {
+        name,
+        email,
+        source: "host git config --global".to_owned(),
+    })
+}
+
+fn host_git_config_value(key: &str) -> Option<String> {
     let output = Command::new("git")
         .args(["config", "--global", "--get", key])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::null())
         .output()
-        .context("failed to run host git config")?;
+        .ok()?;
 
     if !output.status.success() {
-        return Ok(None);
+        return None;
     }
 
     let value = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     if value.is_empty() {
-        Ok(None)
+        None
     } else {
-        Ok(Some(value))
+        Some(value)
     }
+}
+
+fn gitconfig_contents(identity: &GitIdentity) -> String {
+    format!(
+        "[user]\n\tname = {}\n\temail = {}\n[safe]\n\tdirectory = *\n[init]\n\tdefaultBranch = main\n",
+        git_config_value(&identity.name),
+        git_config_value(&identity.email),
+    )
+}
+
+fn git_config_value(value: &str) -> String {
+    value.replace(['\r', '\n'], " ")
 }
 
 fn git_identity_from_parts(
@@ -363,6 +518,21 @@ fn git_identity_from_parts(
         }),
         _ => None,
     }
+}
+
+fn non_empty_trimmed(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn yaml_double_quoted_path(value: &Path) -> String {
+    yaml_double_quoted_str(&value.display().to_string())
+}
+
+fn yaml_double_quoted_str(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace(['\r', '\n'], " ")
 }
 
 fn compose_project_dir(compose_file: &std::path::Path) -> Result<std::path::PathBuf> {
@@ -382,6 +552,17 @@ fn base_docker(config: &Config) -> Command {
 mod tests {
     use super::*;
 
+    fn selected_key(path: &str, name: Option<&str>, email: Option<&str>) -> SelectedSshKey {
+        SelectedSshKey {
+            path: path.to_owned(),
+            fingerprint: Some(format!("SHA256:{path}")),
+            comment: None,
+            key_type: Some("ED25519".to_owned()),
+            git_user_name: name.map(str::to_owned),
+            git_user_email: email.map(str::to_owned),
+        }
+    }
+
     #[test]
     fn git_identity_requires_name_and_email() {
         let complete = git_identity_from_parts(
@@ -396,5 +577,87 @@ mod tests {
         assert!(complete.is_some());
         assert!(missing_email.is_none());
         assert!(missing_name.is_none());
+    }
+
+    #[test]
+    fn configured_git_identity_takes_precedence() {
+        let mut config = Config::default();
+        config.git.user_name = Some("Configured User".to_owned());
+        config.git.user_email = Some("configured@example.com".to_owned());
+        config.ssh.selected_keys.push(selected_key(
+            "~/.ssh/id_ed25519",
+            Some("Key User"),
+            Some("key@example.com"),
+        ));
+
+        let identity = effective_git_identity(&config).unwrap();
+
+        assert_eq!(identity.name, "Configured User");
+        assert_eq!(identity.email, "configured@example.com");
+        assert!(identity.source.contains("config.yaml"));
+    }
+
+    #[test]
+    fn single_selected_key_git_identity_is_used() {
+        let mut config = Config::default();
+        config.git.inherit_host = false;
+        config.ssh.selected_keys.push(selected_key(
+            "~/.ssh/id_ed25519",
+            Some("Key User"),
+            Some("key@example.com"),
+        ));
+
+        let identity = effective_git_identity(&config).unwrap();
+
+        assert_eq!(identity.name, "Key User");
+        assert_eq!(identity.email, "key@example.com");
+        assert!(identity.source.contains("selected SSH key metadata"));
+    }
+
+    #[test]
+    fn multiple_selected_key_git_identities_are_ambiguous() {
+        let mut config = Config::default();
+        config.git.inherit_host = false;
+        config.ssh.selected_keys.push(selected_key(
+            "~/.ssh/id_one",
+            Some("One"),
+            Some("one@example.com"),
+        ));
+        config.ssh.selected_keys.push(selected_key(
+            "~/.ssh/id_two",
+            Some("Two"),
+            Some("two@example.com"),
+        ));
+
+        assert!(effective_git_identity(&config).is_none());
+    }
+
+    #[test]
+    fn disabled_host_inheritance_prevents_host_fallback() {
+        let mut config = Config::default();
+        config.git.inherit_host = false;
+
+        assert!(effective_git_identity(&config).is_none());
+    }
+
+    #[test]
+    fn gitconfig_sanitizes_newlines() {
+        let identity = GitIdentity {
+            name: "Agent\nUser".to_owned(),
+            email: "agent\r@example.com".to_owned(),
+            source: "test".to_owned(),
+        };
+        let contents = gitconfig_contents(&identity);
+
+        assert!(contents.contains("name = Agent User"));
+        assert!(contents.contains("email = agent @example.com"));
+        assert!(!contents.contains("Agent\nUser"));
+    }
+
+    #[test]
+    fn yaml_double_quoted_values_are_escaped() {
+        let escaped = yaml_double_quoted_str("Agent \\\"User\"\n");
+
+        assert_eq!(escaped, r#"Agent \\\"User\" "#);
     }
 }
