@@ -64,7 +64,7 @@ In managed SSH mode, Vegasroom runs `ssh-add` against selected private key files
 
 ### Git identity injection
 
-When a Git identity is configured or inherited, Vegasroom writes a generated gitconfig under `~/.vegasroom/cache` and mounts it read-only into the room. The generated file contains commit author/committer name and email only; it does not contain SSH private keys or Git credentials.
+When a Git identity is configured or inherited, Vegasroom writes a generated gitconfig under a per-launch directory in `~/.vegasroom/cache` and mounts it read-only into the room. The generated file contains commit author/committer name and email only; it does not contain SSH private keys or Git credentials. Per-launch generated runtime files are removed on normal exit on a best-effort basis.
 
 ### Pi auth state
 

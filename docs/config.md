@@ -160,7 +160,7 @@ Use `vr ssh configure` to edit this interactively, or edit the YAML manually.
 
 ## Git identity
 
-SSH authentication and Git commit identity are separate. Vegasroom injects Git identity into the room so commits do not fall back to the container user when an identity is configured.
+SSH authentication and Git commit identity are separate. Vegasroom injects Git identity into the room with per-launch generated runtime files so commits do not fall back to the container user when an identity is configured.
 
 Precedence:
 

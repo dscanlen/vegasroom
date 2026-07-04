@@ -1,7 +1,9 @@
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{anyhow, Context, Result};
@@ -264,7 +266,74 @@ fn compose_shell_output_with_ssh(
 
 struct ComposeInvocation {
     command: Command,
+    _runtime_files: RuntimeFiles,
     _ssh_runtime: SshRuntime,
+}
+
+static RUNTIME_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug)]
+struct RuntimeFiles {
+    dir: PathBuf,
+}
+
+impl RuntimeFiles {
+    fn new(state: &StatePaths) -> Result<Self> {
+        fs::create_dir_all(&state.cache).with_context(|| {
+            format!(
+                "failed to create cache directory: {}",
+                display_path(&state.cache)
+            )
+        })?;
+
+        for _ in 0..10 {
+            let dir = unique_runtime_dir(&state.cache);
+            match fs::create_dir(&dir) {
+                Ok(()) => return Ok(Self { dir }),
+                Err(err) if err.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(err) => {
+                    return Err(err).with_context(|| {
+                        format!(
+                            "failed to create per-launch runtime directory: {}",
+                            display_path(&dir)
+                        )
+                    });
+                }
+            }
+        }
+
+        Err(anyhow!(
+            "failed to allocate a unique per-launch runtime directory under {}",
+            display_path(&state.cache)
+        ))
+    }
+
+    fn dir(&self) -> &Path {
+        &self.dir
+    }
+}
+
+impl Drop for RuntimeFiles {
+    fn drop(&mut self) {
+        if self
+            .dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.starts_with("run-"))
+            .unwrap_or(false)
+        {
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+}
+
+fn unique_runtime_dir(cache: &Path) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let counter = RUNTIME_COUNTER.fetch_add(1, Ordering::Relaxed);
+    cache.join(format!("run-{}-{nanos}-{counter}", std::process::id()))
 }
 
 fn compose_base(
@@ -277,6 +346,7 @@ fn compose_base(
     let compose_file = config.resolved_compose_file()?;
     let project_dir = compose_project_dir(&compose_file)?;
     let state = StatePaths::default()?;
+    let runtime_files = RuntimeFiles::new(&state)?;
 
     let mut command = base_docker(config);
     command
@@ -291,7 +361,8 @@ fn compose_base(
     }
 
     let ssh_runtime = if include_ssh_agent {
-        let runtime = ssh::prepare_agent_override(config, &state, warn_about_ssh, ssh_mode)?;
+        let runtime =
+            ssh::prepare_agent_override(config, runtime_files.dir(), warn_about_ssh, ssh_mode)?;
         if let Some(override_path) = runtime.override_path() {
             command.arg("-f").arg(override_path);
         }
@@ -300,13 +371,15 @@ fn compose_base(
         SshRuntime::empty()
     };
 
-    if let Some(git_override_path) = prepare_git_identity_override(config, &state, warn_about_ssh)?
+    if let Some(git_override_path) =
+        prepare_git_identity_override(config, runtime_files.dir(), warn_about_ssh)?
     {
         command.arg("-f").arg(git_override_path);
     }
 
     Ok(ComposeInvocation {
         command,
+        _runtime_files: runtime_files,
         _ssh_runtime: ssh_runtime,
     })
 }
@@ -370,7 +443,7 @@ pub fn container_git_identity(config: &Config) -> Result<Option<GitIdentity>> {
 
 fn prepare_git_identity_override(
     config: &Config,
-    state: &StatePaths,
+    runtime_dir: &Path,
     warn: bool,
 ) -> Result<Option<PathBuf>> {
     let Some(identity) = effective_git_identity(config) else {
@@ -382,14 +455,14 @@ fn prepare_git_identity_override(
         return Ok(None);
     };
 
-    fs::create_dir_all(&state.cache).with_context(|| {
+    fs::create_dir_all(runtime_dir).with_context(|| {
         format!(
-            "failed to create cache directory: {}",
-            display_path(&state.cache)
+            "failed to create per-launch runtime directory: {}",
+            display_path(runtime_dir)
         )
     })?;
 
-    let gitconfig_path = state.cache.join("gitconfig");
+    let gitconfig_path = runtime_dir.join("gitconfig");
     fs::write(&gitconfig_path, gitconfig_contents(&identity)).with_context(|| {
         format!(
             "failed to write Git identity config: {}",
@@ -397,7 +470,7 @@ fn prepare_git_identity_override(
         )
     })?;
 
-    let override_path = state.cache.join("git-identity.compose.yaml");
+    let override_path = runtime_dir.join("git-identity.compose.yaml");
     let contents = format!(
         r#"services:
   pi:
@@ -561,6 +634,39 @@ mod tests {
             git_user_name: name.map(str::to_owned),
             git_user_email: email.map(str::to_owned),
         }
+    }
+
+    fn test_state_root(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default();
+        std::env::temp_dir().join(format!("vegasroom-{name}-{}-{nanos}", std::process::id()))
+    }
+
+    #[test]
+    fn runtime_files_use_unique_dirs_and_cleanup_on_drop() {
+        let root = test_state_root("runtime-files");
+        let state = StatePaths::from_root(root.clone());
+        let first_dir;
+        let second_dir;
+
+        {
+            let first = RuntimeFiles::new(&state).unwrap();
+            let second = RuntimeFiles::new(&state).unwrap();
+            first_dir = first.dir().to_path_buf();
+            second_dir = second.dir().to_path_buf();
+
+            assert_ne!(first_dir, second_dir);
+            assert!(first_dir.is_dir());
+            assert!(second_dir.is_dir());
+            assert_eq!(first_dir.parent(), Some(state.cache.as_path()));
+            assert_eq!(second_dir.parent(), Some(state.cache.as_path()));
+        }
+
+        assert!(!first_dir.exists());
+        assert!(!second_dir.exists());
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
