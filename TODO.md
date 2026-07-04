@@ -53,18 +53,18 @@ Post-MVP work should build on the proven runtime. Do not redesign the M1-M6 mode
 
 ### 1. Make `vr doctor` faster and less repetitive
 
-**Status:** TODO
+**Status:** DONE
 
-`vr doctor` currently performs many independent checks. Some checks may launch separate containers and repeat setup work.
+`vr doctor` now batches room-side checks into one base container probe plus one SSH probe when SSH is planned. The probes emit structured output that is parsed by the host while preserving readable PASS/WARN/FAIL doctor output.
 
-Tasks:
+Completed:
 
 ```text
-batch container checks into one or two Compose runs
-avoid repeated managed SSH setup during doctor
-separate host-only checks from container checks
-parse structured check output from the container
-keep PASS/WARN/FAIL output readable
+batched Pi config, Pi sessions, internet, and room Git identity checks into one Compose run
+batched SSH_AUTH_SOCK, ssh-add availability, and ssh-add -l checks into one SSH-aware Compose run
+avoided repeated managed SSH setup during doctor container checks
+kept host checks and container checks separate
+preserved actionable PASS/WARN/FAIL remediation text
 ```
 
 Acceptance criteria:

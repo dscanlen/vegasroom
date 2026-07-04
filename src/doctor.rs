@@ -171,9 +171,10 @@ pub fn run() -> Result<i32> {
     checks.push(check_git_identity(&config));
 
     if image_exists && compose_ready {
+        let container_probe = docker::container_doctor_probe(&config);
         checks.extend(check_container_ssh(&config));
-        checks.push(check_container_git_identity(&config));
-        checks.extend(check_container_login_readiness(&config));
+        checks.push(check_container_git_identity(&container_probe));
+        checks.extend(check_container_login_readiness(&container_probe));
     } else if !compose_ready {
         checks.push(Check {
             status: Status::Warn,
@@ -495,20 +496,22 @@ fn check_git_identity(config: &Config) -> Check {
     }
 }
 
-fn check_container_git_identity(config: &Config) -> Check {
-    match docker::container_git_identity(config) {
-        Ok(Some(identity)) => Check {
-            status: Status::Pass,
-            name: "Room Git identity",
-            detail: format!(
-                "{} <{}> is available inside the room",
-                identity.name, identity.email
-            ),
-        },
-        Ok(None) => Check {
-            status: Status::Warn,
-            name: "Room Git identity",
-            detail: "Git identity injection is not active inside the room".to_owned(),
+fn check_container_git_identity(probe: &Result<docker::ContainerDoctorProbe>) -> Check {
+    match probe {
+        Ok(probe) => match &probe.git_identity {
+            Some(identity) => Check {
+                status: Status::Pass,
+                name: "Room Git identity",
+                detail: format!(
+                    "{} <{}> is available inside the room",
+                    identity.name, identity.email
+                ),
+            },
+            None => Check {
+                status: Status::Warn,
+                name: "Room Git identity",
+                detail: "Git identity injection is not active inside the room".to_owned(),
+            },
         },
         Err(err) => Check {
             status: Status::Warn,
@@ -557,63 +560,72 @@ fn check_ssh_auth_sock_env() -> Check {
 fn check_container_ssh(config: &Config) -> Vec<Check> {
     let mut checks = Vec::new();
 
-    if !ssh::planned_ssh_available(config) {
-        checks.push(Check {
-            status: Status::Warn,
-            name: "Container SSH_AUTH_SOCK",
-            detail: "skipped because no host agent or managed SSH keys are configured".to_owned(),
-        });
-        return checks;
+    match docker::container_ssh_doctor_probe(config) {
+        Ok(None) => {
+            checks.push(Check {
+                status: Status::Warn,
+                name: "Container SSH_AUTH_SOCK",
+                detail: "skipped because no host agent or managed SSH keys are configured"
+                    .to_owned(),
+            });
+        }
+        Ok(Some(probe)) => {
+            checks.push(if probe.receives_ssh_auth_sock {
+                Check {
+                    status: Status::Pass,
+                    name: "Container SSH_AUTH_SOCK",
+                    detail: format!("container receives {}", ssh::CONTAINER_SSH_AUTH_SOCK),
+                }
+            } else {
+                Check {
+                    status: Status::Fail,
+                    name: "Container SSH_AUTH_SOCK",
+                    detail: "container did not receive a usable mounted SSH agent socket"
+                        .to_owned(),
+                }
+            });
+
+            checks.push(if probe.has_ssh_add {
+                Check {
+                    status: Status::Pass,
+                    name: "Container ssh-add",
+                    detail: "ssh-add is available inside the room".to_owned(),
+                }
+            } else {
+                Check {
+                    status: Status::Fail,
+                    name: "Container ssh-add",
+                    detail: "ssh-add was not found inside the room".to_owned(),
+                }
+            });
+
+            checks.push(check_container_ssh_add_result(probe.ssh_add));
+        }
+        Err(err) => {
+            checks.push(Check {
+                status: Status::Fail,
+                name: "Container SSH_AUTH_SOCK",
+                detail: format!("Docker could not mount/check the ssh-agent socket: {err:#}"),
+            });
+            checks.push(Check {
+                status: Status::Warn,
+                name: "Container ssh-add",
+                detail: "skipped because the container SSH probe failed".to_owned(),
+            });
+            checks.push(Check {
+                status: Status::Warn,
+                name: "Container ssh-add -l",
+                detail: "skipped because the container SSH probe failed".to_owned(),
+            });
+        }
     }
 
-    checks.push(match docker::container_receives_ssh_auth_sock(config) {
-        Ok(Some(true)) => Check {
-            status: Status::Pass,
-            name: "Container SSH_AUTH_SOCK",
-            detail: format!("container receives {}", ssh::CONTAINER_SSH_AUTH_SOCK),
-        },
-        Ok(Some(false)) => Check {
-            status: Status::Fail,
-            name: "Container SSH_AUTH_SOCK",
-            detail: "container did not receive a usable mounted SSH agent socket".to_owned(),
-        },
-        Ok(None) => Check {
-            status: Status::Warn,
-            name: "Container SSH_AUTH_SOCK",
-            detail: "skipped because no host agent or managed SSH keys are configured".to_owned(),
-        },
-        Err(err) => Check {
-            status: Status::Fail,
-            name: "Container SSH_AUTH_SOCK",
-            detail: format!("Docker could not mount/check the ssh-agent socket: {err:#}"),
-        },
-    });
+    checks
+}
 
-    checks.push(match docker::container_has_ssh_add(config) {
-        Ok(Some(true)) => Check {
-            status: Status::Pass,
-            name: "Container ssh-add",
-            detail: "ssh-add is available inside the room".to_owned(),
-        },
-        Ok(Some(false)) => Check {
-            status: Status::Fail,
-            name: "Container ssh-add",
-            detail: "ssh-add was not found inside the room".to_owned(),
-        },
-        Ok(None) => Check {
-            status: Status::Warn,
-            name: "Container ssh-add",
-            detail: "skipped because no host agent or managed SSH keys are configured".to_owned(),
-        },
-        Err(err) => Check {
-            status: Status::Warn,
-            name: "Container ssh-add",
-            detail: format!("could not check ssh-add inside the room: {err:#}"),
-        },
-    });
-
-    checks.push(match docker::container_ssh_add_l(config) {
-        Ok(Some(result)) if result.code == 0 => Check {
+fn check_container_ssh_add_result(result: docker::SshAddCheck) -> Check {
+    if result.code == 0 {
+        Check {
             status: Status::Pass,
             name: "Container ssh-add -l",
             detail: if result.stdout.is_empty() {
@@ -621,15 +633,17 @@ fn check_container_ssh(config: &Config) -> Vec<Check> {
             } else {
                 result.stdout
             },
-        },
-        Ok(Some(result)) if result.code == 1 => Check {
+        }
+    } else if result.code == 1 {
+        Check {
             status: Status::Warn,
             name: "Container ssh-add -l",
             detail:
                 "ssh-agent is reachable but has no loaded identities. Run `ssh-add` on the host."
                     .to_owned(),
-        },
-        Ok(Some(result)) => Check {
+        }
+    } else {
+        Check {
             status: Status::Fail,
             name: "Container ssh-add -l",
             detail: format!(
@@ -643,32 +657,20 @@ fn check_container_ssh(config: &Config) -> Vec<Check> {
                 },
                 result.stderr
             ),
-        },
-        Ok(None) => Check {
-            status: Status::Warn,
-            name: "Container ssh-add -l",
-            detail: "skipped because no host agent or managed SSH keys are configured".to_owned(),
-        },
-        Err(err) => Check {
-            status: Status::Warn,
-            name: "Container ssh-add -l",
-            detail: format!("could not run ssh-add -l inside the room: {err:#}"),
-        },
-    });
-
-    checks
+        }
+    }
 }
 
-fn check_container_login_readiness(config: &Config) -> Vec<Check> {
+fn check_container_login_readiness(probe: &Result<docker::ContainerDoctorProbe>) -> Vec<Check> {
     let mut checks = Vec::new();
 
-    checks.push(match docker::container_pi_config_writable(config) {
-        Ok(true) => Check {
+    checks.push(match probe {
+        Ok(probe) if probe.pi_config_writable => Check {
             status: Status::Pass,
             name: "Container Pi config writable",
             detail: "/home/agent/.pi/agent is writable inside the room".to_owned(),
         },
-        Ok(false) => Check {
+        Ok(_) => Check {
             status: Status::Fail,
             name: "Container Pi config writable",
             detail: "/home/agent/.pi/agent is not writable inside the room".to_owned(),
@@ -680,13 +682,13 @@ fn check_container_login_readiness(config: &Config) -> Vec<Check> {
         },
     });
 
-    checks.push(match docker::container_pi_sessions_writable(config) {
-        Ok(true) => Check {
+    checks.push(match probe {
+        Ok(probe) if probe.pi_sessions_writable => Check {
             status: Status::Pass,
             name: "Container Pi sessions writable",
             detail: "/home/agent/.pi/sessions is writable inside the room".to_owned(),
         },
-        Ok(false) => Check {
+        Ok(_) => Check {
             status: Status::Fail,
             name: "Container Pi sessions writable",
             detail: "/home/agent/.pi/sessions is not writable inside the room".to_owned(),
@@ -698,13 +700,13 @@ fn check_container_login_readiness(config: &Config) -> Vec<Check> {
         },
     });
 
-    checks.push(match docker::container_can_reach_internet(config) {
-        Ok(true) => Check {
+    checks.push(match probe {
+        Ok(probe) if probe.internet_reachable => Check {
             status: Status::Pass,
             name: "Container internet",
             detail: "container can reach https://pi.dev".to_owned(),
         },
-        Ok(false) => Check {
+        Ok(_) => Check {
             status: Status::Warn,
             name: "Container internet",
             detail: "container could not reach https://pi.dev; Pi login may fail".to_owned(),
