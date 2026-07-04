@@ -68,7 +68,7 @@ This is a tradeoff, not a hardening endpoint.
 
 Host private keys are not copied into the room. Host `~/.ssh` is not mounted.
 
-When `$SSH_AUTH_SOCK` points to a real socket, the CLI generates a Compose override under `~/.vegasroom/cache` and mounts the socket into the container at:
+When `$SSH_AUTH_SOCK` points to a real socket, the CLI generates a Compose override under a per-launch directory in `~/.vegasroom/cache` and mounts the socket into the container at:
 
 ```text
 /tmp/vegasroom/ssh-agent.sock

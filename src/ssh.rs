@@ -923,7 +923,7 @@ pub fn status() -> Result<i32> {
 
 pub fn prepare_agent_override(
     config: &Config,
-    state: &StatePaths,
+    runtime_dir: &Path,
     warn: bool,
     mode: SshRuntimeMode,
 ) -> Result<SshRuntime> {
@@ -932,23 +932,23 @@ pub fn prepare_agent_override(
             override_path: None,
             _managed_agent: None,
         }),
-        SshMode::Host => prepare_host_runtime(state, warn),
-        SshMode::Managed => prepare_managed_runtime(config, state, mode)
+        SshMode::Host => prepare_host_runtime(runtime_dir, warn),
+        SshMode::Managed => prepare_managed_runtime(config, runtime_dir, mode)
             .map_err(|err| anyhow!("managed SSH agent setup failed: {err:#}")),
         SshMode::Auto => {
             if !config.ssh.selected_keys.is_empty() {
-                match prepare_managed_runtime(config, state, mode) {
+                match prepare_managed_runtime(config, runtime_dir, mode) {
                     Ok(runtime) => Ok(runtime),
                     Err(err) => {
                         if warn {
                             eprintln!("WARN: managed SSH agent setup failed: {err:#}");
                             eprintln!("WARN: falling back to host SSH_AUTH_SOCK if available");
                         }
-                        prepare_host_runtime(state, warn)
+                        prepare_host_runtime(runtime_dir, warn)
                     }
                 }
             } else {
-                prepare_host_runtime(state, warn)
+                prepare_host_runtime(runtime_dir, warn)
             }
         }
     }
@@ -1003,7 +1003,7 @@ pub fn selected_key_checks(config: &Config) -> Vec<String> {
     details
 }
 
-fn prepare_host_runtime(state: &StatePaths, warn: bool) -> Result<SshRuntime> {
+fn prepare_host_runtime(runtime_dir: &Path, warn: bool) -> Result<SshRuntime> {
     let agent = detect_host_agent();
     if warn {
         if let Some(message) = agent.warning() {
@@ -1012,7 +1012,9 @@ fn prepare_host_runtime(state: &StatePaths, warn: bool) -> Result<SshRuntime> {
     }
 
     let override_path = match agent {
-        HostSshAgent::Ready(path) => Some(write_agent_compose_override_for_socket(state, &path)?),
+        HostSshAgent::Ready(path) => {
+            Some(write_agent_compose_override_for_socket(runtime_dir, &path)?)
+        }
         _ => None,
     };
 
@@ -1024,7 +1026,7 @@ fn prepare_host_runtime(state: &StatePaths, warn: bool) -> Result<SshRuntime> {
 
 fn prepare_managed_runtime(
     config: &Config,
-    state: &StatePaths,
+    runtime_dir: &Path,
     mode: SshRuntimeMode,
 ) -> Result<SshRuntime> {
     if config.ssh.selected_keys.is_empty() {
@@ -1036,7 +1038,7 @@ fn prepare_managed_runtime(
         add_key_to_agent(&agent, key, mode)?;
     }
 
-    let override_path = write_agent_compose_override_for_socket(state, &agent.socket)?;
+    let override_path = write_agent_compose_override_for_socket(runtime_dir, &agent.socket)?;
     Ok(SshRuntime {
         override_path: Some(override_path),
         _managed_agent: Some(agent),
@@ -1044,17 +1046,17 @@ fn prepare_managed_runtime(
 }
 
 fn write_agent_compose_override_for_socket(
-    state: &StatePaths,
+    runtime_dir: &Path,
     host_sock: &Path,
 ) -> Result<PathBuf> {
-    fs::create_dir_all(&state.cache).with_context(|| {
+    fs::create_dir_all(runtime_dir).with_context(|| {
         format!(
-            "failed to create cache directory: {}",
-            display_path(&state.cache)
+            "failed to create per-launch runtime directory: {}",
+            display_path(runtime_dir)
         )
     })?;
 
-    let override_path = state.cache.join("ssh-agent.compose.yaml");
+    let override_path = runtime_dir.join("ssh-agent.compose.yaml");
     let contents = format!(
         r#"services:
   pi:

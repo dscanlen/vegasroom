@@ -51,34 +51,7 @@ Post-MVP work should build on the proven runtime. Do not redesign the M1-M6 mode
 
 ## Active recommended work order
 
-### 1. Replace fixed cache override files with per-launch runtime files
-
-**Status:** TODO
-
-Current generated Compose overrides use fixed paths under `~/.vegasroom/cache`. This is simple but not ideal for concurrent sessions.
-
-Tasks:
-
-```text
-create a per-launch runtime/cache directory
-write SSH agent Compose overrides per invocation
-write Git identity overrides per invocation
-hold generated files with an RAII guard
-clean up generated files when the launch exits
-ensure concurrent vr pi / vr shell sessions cannot overwrite each other
-```
-
-Acceptance criteria:
-
-```text
-two Vegasroom sessions can run at the same time without override-file races
-SSH agent forwarding still works
-managed SSH agent cleanup still works
-Git identity injection still works
-cache cleanup is best-effort and safe
-```
-
-### 2. Make `vr doctor` faster and less repetitive
+### 1. Make `vr doctor` faster and less repetitive
 
 **Status:** TODO
 
@@ -103,7 +76,7 @@ managed SSH passphrase prompts are not repeated unnecessarily
 failures still include actionable remediation text
 ```
 
-### 3. Simplify and make config fields honest
+### 2. Simplify and make config fields honest
 
 **Status:** TODO
 
@@ -139,7 +112,7 @@ every future-facing field is clearly labeled or removed from defaults
 README and docs/config.md match implementation
 ```
 
-### 4. Refactor large modules after tests are in place
+### 3. Refactor large modules after tests are in place
 
 **Status:** TODO
 
@@ -164,7 +137,7 @@ large unrelated functions are reduced
 future M9/M10 work becomes easier
 ```
 
-### 5. Clean up CLI parsing without expanding the command surface
+### 4. Clean up CLI parsing without expanding the command surface
 
 **Status:** TODO
 
@@ -201,7 +174,7 @@ workspace parsing remains stable
 help output remains accurate
 ```
 
-### 6. M9 - Runtime hardening
+### 5. M9 - Runtime hardening
 
 **Status:** TODO
 
@@ -258,7 +231,7 @@ risky mount paths are warned, prompted, or blocked
 security docs are updated honestly
 ```
 
-### 7. Improve workspace mount policy
+### 6. Improve workspace mount policy
 
 **Status:** TODO
 
@@ -283,7 +256,7 @@ symlink behavior is documented and tested
 broad host mounts are deliberate, not accidental
 ```
 
-### 8. Prepare for M10 with a small harness descriptor
+### 7. Prepare for M10 with a small harness descriptor
 
 **Status:** TODO
 
@@ -306,7 +279,7 @@ harness-specific paths are isolated behind a small descriptor
 a second harness can be added with less duplication
 ```
 
-### 9. Documentation consolidation
+### 8. Documentation consolidation
 
 **Status:** TODO
 
@@ -421,11 +394,26 @@ Completed capabilities:
 git.user_name and git.user_email are honored when configured
 exactly one selected SSH key with git_user_name/git_user_email can provide identity
 host global Git config is inherited only when git.inherit_host is true
-Git identity is injected into the room through a generated Compose override
+Git identity is injected into the room through a per-launch generated Compose override
 GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME, and GIT_COMMITTER_EMAIL are set
 GIT_CONFIG_GLOBAL points to a generated read-only gitconfig inside the room
 vr doctor reports the effective host-side and room-side Git identity
 Git identity precedence has unit coverage
+```
+
+### Per-launch runtime cache files
+
+**Status:** DONE
+
+Completed capabilities:
+
+```text
+per-launch runtime directories are created under ~/.vegasroom/cache
+SSH agent Compose overrides are written per invocation
+Git identity Compose overrides and generated gitconfig files are written per invocation
+generated runtime files are held by an RAII guard while Docker Compose runs
+generated runtime directories are removed on normal exit on a best-effort basis
+concurrent vr pi / vr shell sessions no longer share fixed override file paths
 ```
 
 ---

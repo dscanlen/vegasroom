@@ -177,4 +177,4 @@ Vegasroom injects Git identity at runtime using this order:
 3. host global Git config when git.inherit_host is true
 ```
 
-This prevents commits from falling back to `root <root@...>` while preserving the rootless-container runtime model. The resolved identity is injected through a generated Compose override, commit-author/committer environment variables, and a read-only generated gitconfig mounted inside the room.
+This prevents commits from falling back to `root <root@...>` while preserving the rootless-container runtime model. The resolved identity is injected through a per-launch generated Compose override, commit-author/committer environment variables, and a read-only generated gitconfig mounted inside the room.

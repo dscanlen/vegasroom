@@ -243,7 +243,7 @@ Precedence:
 3. host global Git config when git.inherit_host is true
 ```
 
-The room receives Git identity through a generated Compose override and read-only generated gitconfig. Run `vr doctor` to see the effective identity.
+The room receives Git identity through a per-launch generated Compose override and read-only generated gitconfig. Run `vr doctor` to see the effective identity.
 
 ## Pi login model
 
