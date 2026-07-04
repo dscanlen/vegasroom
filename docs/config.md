@@ -25,6 +25,11 @@ ssh:
   mode: auto
   selected_keys: []
 
+git:
+  inherit_host: true
+  user_name:
+  user_email:
+
 harness:
   pi:
     enabled: true
@@ -53,6 +58,9 @@ Currently active:
 - `harness.pi.command`
 - `ssh.mode`
 - `ssh.selected_keys`
+- `git.inherit_host`
+- `git.user_name`
+- `git.user_email`
 
 Currently parsed but mostly future-facing:
 
@@ -149,3 +157,35 @@ off      do not forward SSH
 ```
 
 Use `vr ssh configure` to edit this interactively, or edit the YAML manually.
+
+## Git identity
+
+SSH authentication and Git commit identity are separate. Vegasroom injects Git identity into the room so commits do not fall back to the container user when an identity is configured.
+
+Precedence:
+
+```text
+1. top-level git.user_name and git.user_email
+2. exactly one selected SSH key with git_user_name and git_user_email
+3. host global Git config when git.inherit_host is true
+```
+
+Example top-level identity:
+
+```yaml
+git:
+  inherit_host: true
+  user_name: Dan Scanlen
+  user_email: dan@example.com
+```
+
+Example selected-key identity metadata:
+
+```yaml
+ssh:
+  selected_keys:
+    - path: ~/.ssh/id_ed25519
+      fingerprint: SHA256:abc123...
+      git_user_name: Dan Scanlen
+      git_user_email: dan@example.com
+```

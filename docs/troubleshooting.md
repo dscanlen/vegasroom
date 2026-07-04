@@ -264,6 +264,38 @@ ssh -T git@github.com
 
 Private keys should not appear inside `/root/.ssh` or `/home/agent/.ssh`.
 
+## Git commits use the wrong identity
+
+Run:
+
+```bash
+vr doctor
+```
+
+Check the `Git identity` and `Room Git identity` rows. If no identity is configured, set one in:
+
+```text
+~/.vegasroom/config.yaml
+```
+
+Example:
+
+```yaml
+git:
+  inherit_host: true
+  user_name: Dan Scanlen
+  user_email: dan@example.com
+```
+
+If `git.inherit_host` is true and `git.user_name` / `git.user_email` are empty, Vegasroom inherits the host global Git identity from:
+
+```bash
+git config --global user.name
+git config --global user.email
+```
+
+Selected SSH keys may also carry `git_user_name` and `git_user_email`, but this identity is used only when exactly one selected key has a complete identity.
+
 ## Pi login does not persist
 
 After `/login`, inspect:

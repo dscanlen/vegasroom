@@ -51,33 +51,7 @@ Post-MVP work should build on the proven runtime. Do not redesign the M1-M6 mode
 
 ## Active recommended work order
 
-### 1. Fix Git identity runtime behavior
-
-**Status:** TODO
-
-Docs currently describe Git identity injection, but the runtime must be verified and fixed so commits inside the room do not fall back to `root <root@...>`.
-
-Tasks:
-
-```text
-honor git.user_name and git.user_email from config
-honor exactly one selected SSH key with git_user_name/git_user_email
-honor host global Git config only when git.inherit_host is true
-inject identity into the room consistently for vr pi, vr shell, and doctor container checks
-add tests for Git identity precedence
-update docs if behavior intentionally changes
-```
-
-Acceptance criteria:
-
-```text
-new commits inside the room use the intended identity
-vr doctor reports the effective identity accurately
-config, selected-key metadata, and host-inherited identity precedence are tested
-no root <root@...> fallback occurs when an identity is configured
-```
-
-### 2. Replace fixed cache override files with per-launch runtime files
+### 1. Replace fixed cache override files with per-launch runtime files
 
 **Status:** TODO
 
@@ -104,7 +78,7 @@ Git identity injection still works
 cache cleanup is best-effort and safe
 ```
 
-### 3. Make `vr doctor` faster and less repetitive
+### 2. Make `vr doctor` faster and less repetitive
 
 **Status:** TODO
 
@@ -129,7 +103,7 @@ managed SSH passphrase prompts are not repeated unnecessarily
 failures still include actionable remediation text
 ```
 
-### 4. Simplify and make config fields honest
+### 3. Simplify and make config fields honest
 
 **Status:** TODO
 
@@ -165,7 +139,7 @@ every future-facing field is clearly labeled or removed from defaults
 README and docs/config.md match implementation
 ```
 
-### 5. Refactor large modules after tests are in place
+### 4. Refactor large modules after tests are in place
 
 **Status:** TODO
 
@@ -190,7 +164,7 @@ large unrelated functions are reduced
 future M9/M10 work becomes easier
 ```
 
-### 6. Clean up CLI parsing without expanding the command surface
+### 5. Clean up CLI parsing without expanding the command surface
 
 **Status:** TODO
 
@@ -227,7 +201,7 @@ workspace parsing remains stable
 help output remains accurate
 ```
 
-### 7. M9 - Runtime hardening
+### 6. M9 - Runtime hardening
 
 **Status:** TODO
 
@@ -284,7 +258,7 @@ risky mount paths are warned, prompted, or blocked
 security docs are updated honestly
 ```
 
-### 8. Improve workspace mount policy
+### 7. Improve workspace mount policy
 
 **Status:** TODO
 
@@ -309,7 +283,7 @@ symlink behavior is documented and tested
 broad host mounts are deliberate, not accidental
 ```
 
-### 9. Prepare for M10 with a small harness descriptor
+### 8. Prepare for M10 with a small harness descriptor
 
 **Status:** TODO
 
@@ -332,7 +306,7 @@ harness-specific paths are isolated behind a small descriptor
 a second harness can be added with less duplication
 ```
 
-### 10. Documentation consolidation
+### 9. Documentation consolidation
 
 **Status:** TODO
 
@@ -435,6 +409,23 @@ cargo clippy --locked --all-targets --all-features
 cargo test --locked --all-targets --all-features
 baseline unit tests for CLI/config/workspace/SSH helpers
 removed unused direct thiserror dependency
+```
+
+### Git identity runtime behavior
+
+**Status:** DONE
+
+Completed capabilities:
+
+```text
+git.user_name and git.user_email are honored when configured
+exactly one selected SSH key with git_user_name/git_user_email can provide identity
+host global Git config is inherited only when git.inherit_host is true
+Git identity is injected into the room through a generated Compose override
+GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME, and GIT_COMMITTER_EMAIL are set
+GIT_CONFIG_GLOBAL points to a generated read-only gitconfig inside the room
+vr doctor reports the effective host-side and room-side Git identity
+Git identity precedence has unit coverage
 ```
 
 ---
