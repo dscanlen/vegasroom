@@ -5,13 +5,14 @@ services:
       dockerfile: harness/pi/Dockerfile
       # Rootless fallback: avoid BuildKit trying to attach RUN containers
       # to the default bridge network on hosts where veth is unsupported.
+      # `vr` sets VR_PI_BUILD_NETWORK from harness.pi.network in config.
       network: ${VR_PI_BUILD_NETWORK:-host}
-    image: vegasroom/pi:local
+    image: ${VR_PI_IMAGE:-vegasroom/pi:local}
     # M1 rootless-Docker bind-mount compatibility: run as container root.
     # With rootless Docker this is still unprivileged on the host.
     user: "0:0"
-    # Rootless fallback for runtime container creation. Override with
-    # VR_PI_NETWORK_MODE=bridge after the host rootless network is healthy.
+    # Rootless fallback for runtime container creation. `vr` sets
+    # VR_PI_NETWORK_MODE from harness.pi.network in config.
     network_mode: ${VR_PI_NETWORK_MODE:-host}
     stdin_open: true
     tty: true

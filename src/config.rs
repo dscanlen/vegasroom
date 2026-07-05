@@ -8,10 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::paths::{display_path, expand_tilde, StatePaths};
 
-pub const DEFAULT_CONFIG_YAML: &str = r#"default_harness: pi
-
-paths:
-  root: ~/.vegasroom
+pub const DEFAULT_CONFIG_YAML: &str = r#"paths:
   workspace: ~/.vegasroom/workspace
 
 docker:
@@ -29,25 +26,13 @@ git:
 
 harness:
   pi:
-    enabled: true
     image: vegasroom/pi:local
     command: pi
-    ssh_agent: auto
     network: host
-
-  # claude:
-  #   enabled: false
-  #   image: vegasroom/claude:local
-  #   command: claude
-  #   ssh_agent: auto
-  #   network: host
 "#;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    #[serde(default = "default_harness")]
-    pub default_harness: String,
-
     #[serde(default)]
     pub paths: PathsConfig,
 
@@ -66,9 +51,6 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PathsConfig {
-    #[serde(default = "default_root")]
-    pub root: String,
-
     #[serde(default = "default_workspace")]
     pub workspace: String,
 }
@@ -141,17 +123,11 @@ pub struct HarnessConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PiHarnessConfig {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-
     #[serde(default = "default_pi_image")]
     pub image: String,
 
     #[serde(default = "default_pi_command")]
     pub command: String,
-
-    #[serde(default = "default_ssh_agent")]
-    pub ssh_agent: String,
 
     #[serde(default = "default_network")]
     pub network: String,
@@ -239,7 +215,6 @@ impl Default for Config {
 impl Default for PathsConfig {
     fn default() -> Self {
         Self {
-            root: default_root(),
             workspace: default_workspace(),
         }
     }
@@ -276,21 +251,11 @@ impl Default for GitConfig {
 impl Default for PiHarnessConfig {
     fn default() -> Self {
         Self {
-            enabled: true,
             image: default_pi_image(),
             command: default_pi_command(),
-            ssh_agent: default_ssh_agent(),
             network: default_network(),
         }
     }
-}
-
-fn default_harness() -> String {
-    "pi".to_owned()
-}
-
-fn default_root() -> String {
-    "~/.vegasroom".to_owned()
 }
 
 fn default_workspace() -> String {
@@ -317,10 +282,6 @@ fn default_pi_command() -> String {
     "pi".to_owned()
 }
 
-fn default_ssh_agent() -> String {
-    "auto".to_owned()
-}
-
 fn default_network() -> String {
     "host".to_owned()
 }
@@ -333,8 +294,6 @@ mod tests {
     fn built_in_default_config_parses() {
         let config: Config = serde_yaml::from_str(DEFAULT_CONFIG_YAML).unwrap();
 
-        assert_eq!(config.default_harness, "pi");
-        assert_eq!(config.paths.root, "~/.vegasroom");
         assert_eq!(config.paths.workspace, "~/.vegasroom/workspace");
         assert_eq!(config.docker.context, "rootless");
         assert_eq!(
@@ -346,10 +305,35 @@ mod tests {
         assert!(config.git.inherit_host);
         assert!(config.git.user_name.is_none());
         assert!(config.git.user_email.is_none());
-        assert!(config.harness.pi.enabled);
         assert_eq!(config.harness.pi.image, "vegasroom/pi:local");
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.network, "host");
+    }
+
+    #[test]
+    fn legacy_future_fields_are_accepted_but_not_serialized() {
+        let config: Config = serde_yaml::from_str(
+            r#"default_harness: claude
+paths:
+  root: /tmp/ignored
+  workspace: /tmp/workspace
+harness:
+  pi:
+    enabled: false
+    ssh_agent: off
+    image: example/pi:test
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.paths.workspace, "/tmp/workspace");
+        assert_eq!(config.harness.pi.image, "example/pi:test");
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert!(!serialized.contains("default_harness"));
+        assert!(!serialized.contains("root:"));
+        assert!(!serialized.contains("enabled:"));
+        assert!(!serialized.contains("ssh_agent:"));
     }
 
     #[test]

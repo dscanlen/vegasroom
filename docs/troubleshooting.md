@@ -48,13 +48,15 @@ cargo run -- init --build
 
 ## Build fails with rootless networking errors
 
-Confirm the Compose file preserves:
+Confirm the Compose file preserves the configured network substitutions:
 
 ```yaml
 build:
-  network: host
-network_mode: host
+  network: ${VR_PI_BUILD_NETWORK:-host}
+network_mode: ${VR_PI_NETWORK_MODE:-host}
 ```
+
+The default `harness.pi.network` value is `host`.
 
 Run:
 

@@ -30,14 +30,14 @@ Root inside a rootless Docker daemon is not the same as host root, but this is s
 
 ### Host networking
 
-The MVP uses:
+The MVP default uses:
 
 ```yaml
 build.network: host
 network_mode: host
 ```
 
-This preserves M1-M4 functionality, including rootless build behavior and login compatibility. It is not a network isolation model.
+These values come from `harness.pi.network`, which defaults to `host`. This preserves M1-M4 functionality, including rootless build behavior and login compatibility. It is not a network isolation model.
 
 ### Read-write mounts
 

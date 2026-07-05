@@ -11,10 +11,7 @@ Vegasroom config lives at:
 ## Default config
 
 ```yaml
-default_harness: pi
-
 paths:
-  root: ~/.vegasroom
   workspace: ~/.vegasroom/workspace
 
 docker:
@@ -32,44 +29,34 @@ git:
 
 harness:
   pi:
-    enabled: true
     image: vegasroom/pi:local
     command: pi
-    ssh_agent: auto
     network: host
-
-  # claude:
-  #   enabled: false
-  #   image: vegasroom/claude:local
-  #   command: claude
-  #   ssh_agent: auto
-  #   network: host
 ```
 
 ## Active fields
 
 Currently active:
 
-- `default_harness`
 - `paths.workspace`
 - `docker.context`
 - `docker.compose_file`
 - `harness.pi.image`
 - `harness.pi.command`
+- `harness.pi.network`
 - `ssh.mode`
 - `ssh.selected_keys`
 - `git.inherit_host`
 - `git.user_name`
 - `git.user_email`
 
-Currently parsed but mostly future-facing:
+Legacy/future-facing fields from earlier configs are ignored if present:
 
+- `default_harness`
 - `paths.root`
 - `harness.pi.enabled`
-- `harness.pi.command`
 - `harness.pi.ssh_agent`
-- `harness.pi.network`
-- commented Claude config
+- Claude harness config
 
 ## Managed runtime path
 
@@ -88,7 +75,7 @@ The installed `vr` binary embeds the MVP Compose file and Pi Dockerfile at compi
 
 Docker Compose is then invoked with `--project-directory ~/.vegasroom/runtime`, so installed `vr` commands work from any current directory and do not require the original git checkout to remain on disk.
 
-`docker.compose_file` is still stored in config for visibility and future flexibility, but the MVP default is the Vegasroom-managed runtime file.
+`docker.compose_file` controls the Compose file passed to Docker. The default is the Vegasroom-managed runtime file.
 
 ## State directories
 
@@ -115,9 +102,11 @@ resolves to:
 The managed Compose file receives the resolved host workspace through `VR_WORKSPACE` and mounts it at `/workspace`.
 
 
-## Pi command
+## Pi harness runtime fields
 
-`harness.pi.command` is used when `vr pi` passes arguments through to Pi. The default is:
+`harness.pi.image` controls the Compose image name used for build, image inspection, and runtime launch. Vegasroom passes it to Compose through `VR_PI_IMAGE`.
+
+`harness.pi.command` controls the command executed by `vr pi`, both with and without Pi arguments. The default is:
 
 ```yaml
 harness:
@@ -130,6 +119,8 @@ For example, this runs `pi --session <id>` inside the room:
 ```bash
 vr pi --session <id>
 ```
+
+`harness.pi.network` controls the configured Docker network mode for the MVP runtime. Vegasroom passes it to Compose through `VR_PI_NETWORK_MODE` and `VR_PI_BUILD_NETWORK`. The default remains `host` because that is the proven rootless Docker model.
 
 ## SSH config
 

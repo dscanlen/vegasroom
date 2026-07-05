@@ -35,8 +35,8 @@ Known MVP tradeoffs to preserve or address deliberately:
 
 ```text
 container runs as root inside rootless Docker
-network_mode=host is used
-build.network=host is used
+network_mode=host is used by default
+build.network=host is used by default
 workspace is mounted read-write
 Pi state/auth is mounted read-write
 SSH agent forwarding is powerful
@@ -78,30 +78,19 @@ failures still include actionable remediation text
 
 ### 2. Simplify and make config fields honest
 
-**Status:** TODO
+**Status:** DONE
 
-Some config fields are parsed but only partially honored. Either wire them fully or mark/remove them until they are real.
+Config defaults now only include fields with current runtime effect. Legacy/future-facing fields are ignored if present and no longer appear in generated defaults or docs examples.
 
-Review these fields:
-
-```text
-paths.root
-harness.pi.enabled
-harness.pi.image
-harness.pi.command
-harness.pi.ssh_agent
-harness.pi.network
-commented Claude config
-```
-
-Tasks:
+Completed:
 
 ```text
-decide which fields are active now versus future-facing
-make harness.pi.image control the Compose image, or remove image configurability for now
-make harness.pi.network control runtime networking, or document that environment overrides are the current mechanism
-remove misleading defaults from docs
-add config tests for active fields
+removed default_harness, paths.root, harness.pi.enabled, harness.pi.ssh_agent, and commented Claude config from generated defaults
+made harness.pi.image control the Compose image through VR_PI_IMAGE
+made harness.pi.command control vr pi with and without Pi arguments
+made harness.pi.network control runtime/build networking through VR_PI_NETWORK_MODE and VR_PI_BUILD_NETWORK
+updated README and docs/config.md to match implementation
+added config/runtime tests for legacy ignored fields, Pi command args, and Compose env wiring
 ```
 
 Acceptance criteria:

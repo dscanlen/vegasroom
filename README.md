@@ -137,15 +137,15 @@ Default layout:
 The runtime is intentionally the proven M1-M4 model:
 
 - Docker Compose service `pi` materialized under `~/.vegasroom/runtime`
-- image `vegasroom/pi:local`
+- default image `vegasroom/pi:local` from `harness.pi.image`
 - `docker --context rootless compose run --rm pi`
 - ephemeral container removed after exit
 - `/workspace` mounted from the resolved host workspace, defaulting to `~/.vegasroom/workspace`
 - Pi state mounted from `~/.vegasroom/harness/pi/...`
 - `~/.vegasroom/ssh` mounted as the container SSH directory
 - ssh-agent socket forwarded only when `$SSH_AUTH_SOCK` is usable, or through Vegasroom-managed SSH keys
-- `network_mode=host`
-- `build.network=host`
+- default `network_mode=host` from `harness.pi.network`
+- default `build.network=host` from `harness.pi.network`
 - container runs as root inside rootless Docker for MVP bind-mount compatibility
 
 

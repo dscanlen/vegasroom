@@ -27,12 +27,12 @@ docker --context rootless compose run --rm pi
 
 ## Compose networking
 
-M1 found that the default bridge path was not reliable on the target rootless setup. The MVP preserves:
+M1 found that the default bridge path was not reliable on the target rootless setup. The MVP default preserves host networking through `harness.pi.network: host`:
 
 ```yaml
 build:
-  network: host
-network_mode: host
+  network: ${VR_PI_BUILD_NETWORK:-host}
+network_mode: ${VR_PI_NETWORK_MODE:-host}
 ```
 
 This is a functional tradeoff. Hardening can revisit bridge or restricted networking later.
