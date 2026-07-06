@@ -103,17 +103,17 @@ README and docs/config.md match implementation
 
 ### 3. Refactor large modules after tests are in place
 
-**Status:** TODO
+**Status:** DONE
 
 The baseline tests are now present. Refactoring can proceed with less risk.
 
-Targets:
+Completed:
 
 ```text
+split src/doctor.rs into grouped host/container/path/runtime/output modules
 split src/ssh.rs into discovery/runtime/status/ui modules
-split src/doctor.rs into grouped host/container/runtime checks
-keep public behavior unchanged while refactoring
-avoid mixing refactors with security hardening
+kept public behavior unchanged while refactoring
+avoided mixing refactors with security hardening
 ```
 
 Acceptance criteria:
