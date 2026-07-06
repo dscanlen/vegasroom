@@ -147,6 +147,7 @@ The runtime is intentionally the proven M1-M4 model:
 - default `network_mode=host` from `harness.pi.network`
 - default `build.network=host` from `harness.pi.network`
 - container runs as root inside rootless Docker for MVP bind-mount compatibility
+- `no-new-privileges:true`, `cap_drop: ALL`, and `init: true` are enabled for low-risk runtime hardening
 
 
 ## Workspace model
@@ -375,7 +376,7 @@ Vegasroom MVP reduces accidental broad host filesystem access by only mounting e
 
 Known MVP tradeoffs:
 
-- container runs as root inside rootless Docker
+- container runs as root inside rootless Docker, with `no-new-privileges:true` and `cap_drop: ALL`
 - host networking is enabled
 - workspace is mounted read-write
 - Pi state and auth are mounted read-write

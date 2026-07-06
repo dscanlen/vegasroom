@@ -51,6 +51,7 @@ MVP-preserved runtime decisions:
 - Docker Compose service `pi`
 - default local image `vegasroom/pi:local` from `harness.pi.image`
 - container-root runtime for now
+- `no-new-privileges:true`, `cap_drop: ALL`, and `init: true` runtime hardening
 - default `build.network=host` from `harness.pi.network`
 - default `network_mode=host` from `harness.pi.network`
 - workspace mounted read-write

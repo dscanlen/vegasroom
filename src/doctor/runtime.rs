@@ -44,6 +44,30 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
 
     checks.push(check_bool(
         Status::Warn,
+        "No new privileges",
+        contents.contains("no-new-privileges:true"),
+        "no-new-privileges is enabled for the room container",
+        "no-new-privileges was not found in compose.yaml",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
+        "Capability drop",
+        contents.contains("cap_drop:") && contents.contains("- ALL"),
+        "all default Linux capabilities are dropped for the room container",
+        "cap_drop: ALL was not found in compose.yaml",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
+        "Container init",
+        contents.contains("init: true"),
+        "a minimal init process is enabled for child-process reaping",
+        "init: true was not found in compose.yaml",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
         "SSH directory mount model",
         contents.contains(".vegasroom/ssh")
             && contents.contains("target: /home/agent/.ssh")

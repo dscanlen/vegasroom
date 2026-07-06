@@ -165,9 +165,19 @@ help output remains accurate
 
 ### 5. M9 - Runtime hardening
 
-**Status:** TODO
+**Status:** IN PROGRESS
 
 Improve security posture without breaking current Pi, SSH, Git, and login flows.
+
+Completed so far:
+
+```text
+enabled no-new-privileges:true for the Pi room container
+dropped default Linux capabilities with cap_drop: ALL
+enabled Docker init process for child-process reaping
+added doctor checks for the low-risk Compose hardening settings
+updated security/design/README docs to describe the current hardening baseline
+```
 
 Scope:
 

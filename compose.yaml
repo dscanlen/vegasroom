@@ -11,6 +11,13 @@ services:
     # M1 rootless-Docker bind-mount compatibility: run as container root.
     # With rootless Docker this is still unprivileged on the host.
     user: "0:0"
+    # Low-risk runtime hardening: keep the proven root/network/mount model,
+    # but prevent privilege escalation and drop ambient Linux capabilities.
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     # Rootless fallback for runtime container creation. `vr` sets
     # VR_PI_NETWORK_MODE from harness.pi.network in config.
     network_mode: ${VR_PI_NETWORK_MODE:-host}

@@ -11,13 +11,16 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 - Does not copy SSH private keys into the container.
 - Forwards an SSH agent socket only when available.
 - Can start a temporary managed `ssh-agent` using user-selected host keys.
+- Enables `no-new-privileges:true` for the room container.
+- Drops the default Linux capability set with `cap_drop: ALL`.
+- Enables Docker's minimal init process for child-process reaping.
 
 ## What the MVP does not provide
 
 - It is not complete credential isolation.
 - It is not a hardened sandbox.
 - It does not restrict network access.
-- It does not run with a minimized capability profile.
+- It does not yet run as a non-root container user by default.
 - It does not manage provider API keys or secrets.
 
 ## Important tradeoffs
@@ -26,7 +29,7 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 
 The container currently runs as root. This was retained because it works with rootless Docker bind mounts on the target system.
 
-Root inside a rootless Docker daemon is not the same as host root, but this is still a tradeoff.
+Root inside a rootless Docker daemon is not the same as host root, but this is still a tradeoff. Current hardening keeps the proven rootless-Docker bind-mount model while adding `no-new-privileges:true` and `cap_drop: ALL` to reduce the power of container root. Non-root runtime remains deferred until Pi login, sessions, Git, SSH, and workspace writes can be validated with the final mount model.
 
 ### Host networking
 
@@ -82,7 +85,6 @@ Post-MVP work should revisit:
 
 - non-root container user
 - network restrictions
-- capability reduction
 - stricter mount policy and optional confirmation prompts
 - optional read-only workspace mode
 - warnings for dangerous mount paths
