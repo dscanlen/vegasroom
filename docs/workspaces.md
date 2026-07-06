@@ -141,15 +141,16 @@ Explicit separator:
 vr pi -- --session <id>
 vr pi . -- --session <id>
 vr -- --session <id>
+vr -- ask Pi a question
 ```
 
-Top-level default pass-through is supported because `vr` defaults to `vr pi`:
+Top-level default pass-through is supported because `vr` defaults to `vr pi`, but direct top-level pass-through only applies when the first token begins with `-` and is not a Vegasroom help/version flag:
 
 ```bash
 vr --session <id>
 ```
 
-When ambiguous, prefer the explicit `--` form.
+When the first Pi argument is positional or ambiguous, prefer the explicit `--` form.
 
 ## Help behavior
 

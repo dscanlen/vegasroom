@@ -178,7 +178,7 @@ relative/path    relative to current host directory
 
 For `vr pi my-git-repo`, Vegasroom may create `~/.vegasroom/workspace/my-git-repo` if missing. External absolute paths must already exist. Credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube` are refused as workspaces.
 
-Pi-specific arguments can be passed through after the workspace:
+Pi-specific arguments can be passed through after the workspace, after an explicit separator, or at top level when the first token is a flag other than Vegasroom help/version flags:
 
 ```bash
 vr pi --session <id>
@@ -186,9 +186,10 @@ vr pi . --session <id>
 vr pi my-git-repo --session <id>
 vr pi . -- --help
 vr --session <id>
+vr -- ask Pi a question
 ```
 
-`vr pi --help` shows Vegasroom's Pi wrapper help. Use `vr pi -- --help` to pass `--help` to Pi itself.
+`vr pi --help` shows Vegasroom's Pi wrapper help. Use `vr pi -- --help` to pass `--help` to Pi itself. Use `vr -- ...` when the first Pi argument is positional or ambiguous.
 
 ## SSH model
 
@@ -353,6 +354,7 @@ Equivalent default:
 ```bash
 vr
 vr --session <id>
+vr -- ask Pi a question
 ```
 
 ### `vr shell`
