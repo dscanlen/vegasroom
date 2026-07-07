@@ -138,12 +138,36 @@ It also refuses virtual system roots such as:
 /run
 ```
 
+Vegasroom also refuses its own state directory outside the configured managed workspace root. With the default config, these are allowed:
+
+```text
+~/.vegasroom/workspace
+~/.vegasroom/workspace/my-project
+```
+
+These are refused:
+
+```text
+~/.vegasroom
+~/.vegasroom/cache
+~/.vegasroom/harness
+~/.vegasroom/runtime
+~/.vegasroom/ssh
+```
+
 Vegasroom warns, but does not necessarily fail, for broad or risky mounts such as:
 
 ```text
 host home directory
 system paths under /etc, /usr, /var, /tmp, and similar roots
-Vegasroom state outside ~/.vegasroom/workspace
+```
+
+## Symlinks
+
+Vegasroom validates the canonical workspace target, so symlinks to credential directories, virtual system roots, or protected Vegasroom state are refused. Safe symlinked project directories are allowed, but Vegasroom prints a warning such as:
+
+```text
+WARN: workspace path resolves through a symlink: ~/linked-project -> /real/project/path
 ```
 
 ## Pi argument pass-through

@@ -178,6 +178,8 @@ enabled Docker init process for child-process reaping
 added doctor checks for the low-risk Compose hardening settings
 added opt-in harness.pi.read_only_workspace for read-only /workspace mounts
 wired read-only workspace mode through VR_WORKSPACE_READ_ONLY for all workspace selections
+refused Vegasroom state mounts outside the managed workspace
+added warnings for safe symlinked workspace paths while still blocking symlinks to refused targets
 updated security/design/README/workspace/config docs to describe the current hardening baseline
 ```
 

@@ -58,7 +58,7 @@ Set `harness.pi.read_only_workspace: true` to mount only `/workspace` read-only.
 
 Processes inside the room can modify writable mounted paths.
 
-Workspace selection includes safety checks. Vegasroom refuses to mount `/`, virtual system roots, and common credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube`. It warns before broad mounts such as the host home directory or system paths. These checks reduce accidental exposure, but they are not a complete sandboxing policy.
+Workspace selection includes safety checks. Vegasroom refuses to mount `/`, virtual system roots, common credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube`, and Vegasroom state outside the configured managed workspace root. It validates canonical targets, so symlinks to blocked targets are refused. Safe symlinked project paths are allowed with a warning. Vegasroom still only warns before broad mounts such as the host home directory or system paths. These checks reduce accidental exposure, but they are not a complete sandboxing policy.
 
 ### SSH agent forwarding
 

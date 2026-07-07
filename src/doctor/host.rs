@@ -110,13 +110,17 @@ pub(super) fn check_workspace_mount_mode(config: &Config) -> Check {
         Check {
             status: Status::Pass,
             name: "Workspace mount mode",
-            detail: "harness.pi.read_only_workspace is true; /workspace should be mounted read-only".to_owned(),
+            detail:
+                "harness.pi.read_only_workspace is true; /workspace should be mounted read-only"
+                    .to_owned(),
         }
     } else {
         Check {
             status: Status::Pass,
             name: "Workspace mount mode",
-            detail: "harness.pi.read_only_workspace is false; /workspace will be mounted read-write".to_owned(),
+            detail:
+                "harness.pi.read_only_workspace is false; /workspace will be mounted read-write"
+                    .to_owned(),
         }
     }
 }
