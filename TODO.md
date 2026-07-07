@@ -288,6 +288,13 @@ Do this before adding a second harness. The goal is to make Pi use a small inter
 Completed current slice:
 
 ```text
+introduced descriptor-aware internal Docker helpers while preserving the existing Pi-specific public wrappers
+kept this as a refactor only with no CLI, config, or runtime behavior changes
+```
+
+Completed previous slice:
+
+```text
 finished descriptor adoption for remaining obvious Pi container path and service-name constants in Docker, SSH runtime, and doctor checks
 kept this as a refactor only with no CLI, config, or runtime behavior changes
 ```

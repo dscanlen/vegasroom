@@ -39,6 +39,32 @@ pub struct ContainerSshDoctorProbe {
 }
 
 pub fn build_pi_image(config: &Config) -> Result<()> {
+    build_harness_image(config, &harness::PI)
+}
+
+pub fn run_pi(config: &Config, workspace: &ResolvedWorkspace, pi_args: &[String]) -> Result<i32> {
+    run_harness_command(
+        config,
+        &harness::PI,
+        workspace,
+        harness_command(config, &harness::PI),
+        pi_args,
+    )
+}
+
+pub fn run_shell(config: &Config, workspace: &ResolvedWorkspace) -> Result<i32> {
+    run_harness_command(config, &harness::PI, workspace, "sh", &[])
+}
+
+pub fn ensure_pi_image_exists(config: &Config) -> Result<()> {
+    ensure_harness_image_exists(config, &harness::PI)
+}
+
+pub fn image_exists(config: &Config) -> Result<bool> {
+    harness_image_exists(config, &harness::PI)
+}
+
+fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
     let compose_file = config.resolved_compose_file()?;
     let project_dir = compose_project_dir(&compose_file)?;
 
@@ -50,7 +76,7 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
         .arg(&compose_file)
         .arg("--project-directory")
         .arg(&project_dir)
-        .args(["build", harness::PI.service_name])
+        .args(["build", descriptor.service_name])
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -67,35 +93,38 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
     }
 }
 
-pub fn run_pi(config: &Config, workspace: &ResolvedWorkspace, pi_args: &[String]) -> Result<i32> {
-    run_compose(config, workspace, &pi_compose_args(config, pi_args), true)
-}
-
-pub fn run_shell(config: &Config, workspace: &ResolvedWorkspace) -> Result<i32> {
+fn run_harness_command(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+    workspace: &ResolvedWorkspace,
+    command: &str,
+    args: &[String],
+) -> Result<i32> {
     run_compose(
         config,
         workspace,
-        &[
-            "run".to_owned(),
-            "--rm".to_owned(),
-            harness::PI.service_name.to_owned(),
-            "sh".to_owned(),
-        ],
+        &harness_compose_args(descriptor, command, args),
         true,
     )
 }
 
-pub fn ensure_pi_image_exists(config: &Config) -> Result<()> {
-    if image_exists(config)? {
+fn ensure_harness_image_exists(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+) -> Result<()> {
+    if harness_image_exists(config, descriptor)? {
         Ok(())
     } else {
-        Err(anyhow!("image not found: {}", config.harness.pi.image))
+        Err(anyhow!(
+            "image not found: {}",
+            harness_image(config, descriptor)
+        ))
     }
 }
 
-pub fn image_exists(config: &Config) -> Result<bool> {
+fn harness_image_exists(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<bool> {
     let status = base_docker(config)
-        .args(["image", "inspect", config.harness.pi.image.as_str()])
+        .args(["image", "inspect", harness_image(config, descriptor)])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -718,14 +747,34 @@ fn compose_project_dir(compose_file: &std::path::Path) -> Result<std::path::Path
         .context("Compose file has no parent directory")
 }
 
-fn pi_compose_args(config: &Config, pi_args: &[String]) -> Vec<String> {
+fn harness_image<'a>(config: &'a Config, descriptor: &harness::HarnessDescriptor) -> &'a str {
+    if descriptor.id == harness::PI.id {
+        config.harness.pi.image.as_str()
+    } else {
+        descriptor.default_image
+    }
+}
+
+fn harness_command<'a>(config: &'a Config, descriptor: &harness::HarnessDescriptor) -> &'a str {
+    if descriptor.id == harness::PI.id {
+        config.harness.pi.command.as_str()
+    } else {
+        descriptor.default_command
+    }
+}
+
+fn harness_compose_args(
+    descriptor: &harness::HarnessDescriptor,
+    command: &str,
+    args: &[String],
+) -> Vec<String> {
     let mut compose_args = vec![
         "run".to_owned(),
         "--rm".to_owned(),
-        harness::PI.service_name.to_owned(),
-        config.harness.pi.command.clone(),
+        descriptor.service_name.to_owned(),
+        command.to_owned(),
     ];
-    compose_args.extend(pi_args.iter().cloned());
+    compose_args.extend(args.iter().cloned());
     compose_args
 }
 
@@ -774,16 +823,21 @@ mod tests {
     }
 
     #[test]
-    fn pi_compose_args_always_uses_configured_command() {
+    fn harness_compose_args_uses_descriptor_service_and_configured_command() {
         let mut config = Config::default();
         config.harness.pi.command = "custom-pi".to_owned();
+        let command = harness_command(&config, &harness::PI);
 
         assert_eq!(
-            pi_compose_args(&config, &[]),
+            harness_compose_args(&harness::PI, command, &[]),
             strings(&["run", "--rm", "pi", "custom-pi"]),
         );
         assert_eq!(
-            pi_compose_args(&config, &["--session".to_owned(), "abc".to_owned()]),
+            harness_compose_args(
+                &harness::PI,
+                command,
+                &["--session".to_owned(), "abc".to_owned()]
+            ),
             strings(&["run", "--rm", "pi", "custom-pi", "--session", "abc"]),
         );
     }

@@ -146,13 +146,13 @@ Pi harness labels/messages
 
 Keep this as a refactor only. Do not add Claude/Codex yet.
 
-## Recommended next phase: descriptor-aware internal helpers
+## Completed continuation: descriptor-aware internal helpers
 
-Introduce internal helper functions that accept a descriptor while keeping public CLI behavior unchanged. Examples:
+This follow-up slice introduced internal helper functions that accept a descriptor while keeping public CLI behavior unchanged. Examples:
 
 ```rust
 build_harness_image(config, &harness::PI)
-run_harness_command(config, &harness::PI, workspace, args)
+run_harness_command(config, &harness::PI, workspace, command, args)
 ensure_harness_image_exists(config, &harness::PI)
 ```
 
