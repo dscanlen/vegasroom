@@ -1,4 +1,4 @@
-# Vegasroom
+# vegasroom
 
 Vegasroom is a source-built MVP for running the Pi Agent Harness inside an ephemeral rootless Docker container.
 
@@ -274,14 +274,6 @@ Pi auth state is expected to persist under:
 
 Do not store provider API keys in `~/.vegasroom/config.yaml`; provider/API-key handling is out of scope for this MVP.
 
-## More documentation
-
-- [Managed SSH](docs/managed-ssh.md)
-- [Workspaces](docs/workspaces.md)
-- [Security](docs/security.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Configuration](docs/config.md)
-
 ## Commands
 
 ### `vr init`
@@ -322,7 +314,7 @@ vr ssh configure /mnt/secrethost/.ssh
 vr ssh configure --follow-symlinks ~/.ssh
 ```
 
-Selected rows are displayed with a tick and green text. Unselected rows use an empty box and the default terminal color. The selector uses a fixed-height key list and a wrapped details pane for the highlighted key, so long paths stay readable without corrupting the list layout. The TUI renders by absolute terminal coordinates rather than newline-driven output to avoid stepped-line behavior in raw terminal mode. Use arrow keys or `k`/`j` to move, Enter/Space to toggle, `s` to save without quitting, `q` to quit, and `r` to rescan. If there are unsaved changes, quitting prompts for `y` save-and-quit or `n` discard-and-quit.
+Use arrow keys or `k`/`j` to move, Enter/Space to toggle, `s` to save, `q` to quit, and `r` to rescan. See `docs/managed-ssh.md` for details.
 
 ### `vr ssh status`
 
@@ -390,16 +382,16 @@ Known MVP tradeoffs:
 - Pi state and auth are mounted read-write
 - SSH agent forwarding can authorize SSH operations
 - provider/API-key handling is deferred
-- hardening is deferred
+- further hardening is deferred
 
 Read `docs/security.md` before evaluating isolation guarantees.
 
 ## Documentation
 
-- `docs/design.md`
-- `docs/rootless-docker.md`
-- `docs/config.md`
-- `docs/workspaces.md`
-- `docs/security.md`
-- `docs/troubleshooting.md`
-- `docs/m5-mvp-notes.md`
+- [Design](docs/design.md)
+- [Rootless Docker](docs/rootless-docker.md)
+- [Configuration](docs/config.md)
+- [Workspaces](docs/workspaces.md)
+- [Managed SSH](docs/managed-ssh.md)
+- [Security](docs/security.md)
+- [Troubleshooting](docs/troubleshooting.md)

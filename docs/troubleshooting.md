@@ -80,7 +80,6 @@ Move or delete the conflicting file, then rerun:
 vr init
 ```
 
-
 ## `vr` only works from the repo directory
 
 Current Vegasroom should not require the repo directory after installation. The installed binary embeds the runtime files and `vr init` materializes them into:
@@ -111,8 +110,6 @@ docker:
 ```
 
 After repair, `vr doctor`, `vr pi`, and `vr shell` should work from any current directory, even if the original git checkout has been removed.
-
-
 
 ## Workspace path does not exist
 
