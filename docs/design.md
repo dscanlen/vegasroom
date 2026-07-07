@@ -52,7 +52,7 @@ MVP-preserved runtime decisions:
 - default local image `vegasroom/pi:local` from `harness.pi.image`
 - container-root runtime for now
 - `no-new-privileges:true`, `cap_drop: ALL`, and `init: true` runtime hardening
-- default `build.network=host` from `harness.pi.network`
+- default `build.network=host` from `harness.pi.build_network`
 - default `network_mode=host` from `harness.pi.network`
 - workspace mounted read-write by default, with opt-in `harness.pi.read_only_workspace`
 - container root filesystem writable by default, with opt-in `harness.pi.read_only_rootfs`

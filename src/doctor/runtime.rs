@@ -20,7 +20,7 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
         Status::Warn,
         "Compose build network",
         contents.contains("network: ${VR_PI_BUILD_NETWORK:-host}"),
-        "build.network is controlled by harness.pi.network through VR_PI_BUILD_NETWORK",
+        "build.network is controlled by harness.pi.build_network through VR_PI_BUILD_NETWORK",
         "build.network is not controlled by VR_PI_BUILD_NETWORK",
     ));
 

@@ -29,6 +29,7 @@ harness:
     image: vegasroom/pi:local
     command: pi
     network: host
+    build_network: host
     read_only_workspace: false
     read_only_rootfs: false
 "#;
@@ -133,6 +134,9 @@ pub struct PiHarnessConfig {
 
     #[serde(default = "default_network")]
     pub network: String,
+
+    #[serde(default = "default_network")]
+    pub build_network: String,
 
     #[serde(default)]
     pub read_only_workspace: bool,
@@ -262,6 +266,7 @@ impl Default for PiHarnessConfig {
             image: default_pi_image(),
             command: default_pi_command(),
             network: default_network(),
+            build_network: default_network(),
             read_only_workspace: false,
             read_only_rootfs: false,
         }
@@ -318,6 +323,7 @@ mod tests {
         assert_eq!(config.harness.pi.image, "vegasroom/pi:local");
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.network, "host");
+        assert_eq!(config.harness.pi.build_network, "host");
         assert!(!config.harness.pi.read_only_workspace);
         assert!(!config.harness.pi.read_only_rootfs);
     }
@@ -356,6 +362,7 @@ harness:
         assert_eq!(config.paths.workspace, "~/.vegasroom/workspace");
         assert_eq!(config.ssh.mode, SshMode::Auto);
         assert_eq!(config.harness.pi.command, "pi");
+        assert_eq!(config.harness.pi.build_network, "host");
         assert!(!config.harness.pi.read_only_workspace);
         assert!(!config.harness.pi.read_only_rootfs);
     }
@@ -371,6 +378,21 @@ harness:
         .unwrap();
 
         assert!(config.harness.pi.read_only_workspace);
+    }
+
+    #[test]
+    fn pi_build_network_config_is_parsed_independently() {
+        let config: Config = serde_yaml::from_str(
+            r#"harness:
+  pi:
+    network: bridge
+    build_network: host
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.harness.pi.network, "bridge");
+        assert_eq!(config.harness.pi.build_network, "host");
     }
 
     #[test]

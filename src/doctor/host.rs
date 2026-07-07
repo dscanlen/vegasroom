@@ -105,6 +105,26 @@ pub(super) fn check_config_git_section(path: &Path) -> Check {
     }
 }
 
+pub(super) fn check_network_mode(config: &Config) -> Check {
+    let detail = if config.harness.pi.network == "host" {
+        format!(
+            "runtime network is host and build network is {}; host runtime networking is the proven MVP default but not a network isolation model",
+            config.harness.pi.build_network
+        )
+    } else {
+        format!(
+            "runtime network is {} and build network is {}; validate Docker build, internet, Git-over-SSH, and Pi /login before relying on this mode; bridge may break localhost OAuth callbacks",
+            config.harness.pi.network, config.harness.pi.build_network
+        )
+    };
+
+    Check {
+        status: Status::Pass,
+        name: "Network mode",
+        detail,
+    }
+}
+
 pub(super) fn check_read_only_rootfs_mode(config: &Config) -> Check {
     if config.harness.pi.read_only_rootfs {
         Check {

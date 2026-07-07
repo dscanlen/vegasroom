@@ -32,6 +32,7 @@ harness:
     image: vegasroom/pi:local
     command: pi
     network: host
+    build_network: host
     read_only_workspace: false
     read_only_rootfs: false
 ```
@@ -46,6 +47,7 @@ Currently active:
 - `harness.pi.image`
 - `harness.pi.command`
 - `harness.pi.network`
+- `harness.pi.build_network`
 - `harness.pi.read_only_workspace`
 - `harness.pi.read_only_rootfs`
 - `ssh.mode`
@@ -124,7 +126,9 @@ For example, this runs `pi --session <id>` inside the room:
 vr pi --session <id>
 ```
 
-`harness.pi.network` controls the configured Docker network mode for the MVP runtime. Vegasroom passes it to Compose through `VR_PI_NETWORK_MODE` and `VR_PI_BUILD_NETWORK`. The default remains `host` because that is the proven rootless Docker model.
+`harness.pi.network` controls the configured Docker network mode for the room runtime. Vegasroom passes it to Compose through `VR_PI_NETWORK_MODE`. The default remains `host` because that is the proven rootless Docker model. Treat non-host values such as `bridge` as validation experiments until outbound HTTPS, Git-over-SSH, and Pi `/login` have all been proven on the target rootless Docker setup. M9 bridge validation did not pass Pi `/login` because the OAuth flow redirected the host browser to a container-local `localhost:<port>` callback.
+
+`harness.pi.build_network` controls the Docker build network mode. Vegasroom passes it to Compose through `VR_PI_BUILD_NETWORK`. The default remains `host` because that is the proven rootless Docker build model. Keep this as `host` while testing `harness.pi.network: bridge`; BuildKit may reject `build.network: bridge`.
 
 `harness.pi.read_only_workspace` controls whether the resolved host workspace is mounted read-only at `/workspace`. The default is `false` so Pi can edit project files. When set to `true`, it applies to the default workspace and to explicit workspace arguments such as `vr pi .`, `vr pi my-repo`, and `vr pi /path/to/repo`.
 

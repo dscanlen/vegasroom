@@ -147,7 +147,8 @@ The runtime is intentionally the proven M1-M4 model:
 - container root filesystem can be made read-only with opt-in `harness.pi.read_only_rootfs: true`
 - ssh-agent socket forwarded only when `$SSH_AUTH_SOCK` is usable, or through Vegasroom-managed SSH keys
 - default `network_mode=host` from `harness.pi.network`
-- default `build.network=host` from `harness.pi.network`
+- default `build.network=host` from `harness.pi.build_network`
+- non-host runtime network modes such as `bridge` are validation experiments until build, Git, internet, and Pi `/login` all work
 - container runs as root inside rootless Docker for MVP bind-mount compatibility
 - `no-new-privileges:true`, `cap_drop: ALL`, and `init: true` are enabled for low-risk runtime hardening
 

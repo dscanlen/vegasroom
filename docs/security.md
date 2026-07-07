@@ -44,7 +44,11 @@ build.network: host
 network_mode: host
 ```
 
-These values come from `harness.pi.network`, which defaults to `host`. This preserves M1-M4 functionality, including rootless build behavior and login compatibility. It is not a network isolation model.
+These values come from `harness.pi.network` and `harness.pi.build_network`, which both default to `host`. This preserves M1-M4 functionality, including rootless build behavior and login compatibility. It is not a network isolation model.
+
+Bridge runtime networking is a hardening candidate, but it must be validated before becoming a default. Build networking is tracked separately through `harness.pi.build_network`; keep it on the proven `host` setting if BuildKit rejects `bridge`. A successful bridge-runtime test must include Docker image build, `vr doctor`, outbound HTTPS from the room, Git-over-SSH, and Pi `/login` with `BROWSER=echo` URL printing, host-browser completion, auth file persistence, and successful relaunch without repeated login.
+
+M9 bridge validation did not pass the Pi auth requirement: OAuth could open in the host browser, but the final redirect used a `localhost:<port>` callback that is reachable with host networking and not reachable from the host browser when Pi is isolated behind bridge networking. Host networking therefore remains the proven default for login compatibility.
 
 ### Read-only root filesystem
 

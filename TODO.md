@@ -88,7 +88,7 @@ Completed:
 removed default_harness, paths.root, harness.pi.enabled, harness.pi.ssh_agent, and commented Claude config from generated defaults
 made harness.pi.image control the Compose image through VR_PI_IMAGE
 made harness.pi.command control vr pi with and without Pi arguments
-made harness.pi.network control runtime/build networking through VR_PI_NETWORK_MODE and VR_PI_BUILD_NETWORK
+made harness.pi.network control networking through Compose env wiring; M9 later split runtime and build network fields
 updated README and docs/config.md to match implementation
 added config/runtime tests for legacy ignored fields, Pi command args, and Compose env wiring
 ```
@@ -183,7 +183,10 @@ added warnings for safe symlinked workspace paths while still blocking symlinks 
 tested non-root node runtime and documented that it breaks workspace bind-mount writes under the current rootless Docker model
 added opt-in harness.pi.read_only_rootfs for read-only container root filesystem with tmpfs scratch paths
 moved generated SSH/Git runtime mounts from /tmp/vegasroom to /run paths for read-only rootfs compatibility
-updated security/design/README/workspace/config docs to describe the current hardening baseline
+split runtime network and build network config so bridge runtime validation can keep BuildKit on the proven host build network
+added doctor visibility and documentation for bridge-network validation including Pi /login auth flow
+documented M9 bridge runtime validation result: OAuth reaches the provider but fails the localhost callback requirement, so host networking remains the proven default
+updated security/design/README/workspace/config/rootless Docker docs to describe the current hardening baseline
 ```
 
 Scope:
