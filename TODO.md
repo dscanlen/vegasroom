@@ -128,11 +128,11 @@ future M9/M10 work becomes easier
 
 ### 4. Clean up CLI parsing without expanding the command surface
 
-**Status:** TODO
+**Status:** DONE
 
-The manual parsing supports Pi pass-through ergonomics, but it should stay well tested and minimal.
+The manual parsing supports Pi pass-through ergonomics while keeping the command surface stable.
 
-Preserve the current command surface:
+Preserved command surface:
 
 ```bash
 vr
@@ -145,13 +145,13 @@ vr pi [workspace] [pi-args...]
 vr shell [workspace]
 ```
 
-Tasks:
+Completed:
 
 ```text
-keep tests for ambiguous cases
-avoid adding new commands unless a milestone requires them
-make help text and parsing behavior match exactly
-consider a small parser helper type if it improves readability
+kept tests for ambiguous cases
+avoided adding new commands
+kept help text and parsing behavior aligned
+kept parsing isolated in small helper types/functions such as ManualLaunch, PiInvocation, parse_manual_launch, parse_pi_invocation, and parse_shell_workspace
 ```
 
 Acceptance criteria:
