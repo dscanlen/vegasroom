@@ -165,7 +165,7 @@ help output remains accurate
 
 ### 5. M9 - Runtime hardening
 
-**Status:** IN PROGRESS
+**Status:** DONE
 
 Improve security posture without breaking current Pi, SSH, Git, and login flows.
 
@@ -244,9 +244,21 @@ security docs are updated honestly
 
 ### 6. Improve workspace mount policy
 
-**Status:** TODO
+**Status:** DONE
 
 Current workspace safety checks are useful but should become stricter and more explicit.
+
+Completed during M9:
+
+```text
+reviewed symlinked workspace handling
+safe symlinked project paths now warn
+symlinks to blocked canonical targets are refused
+Vegasroom state outside the configured workspace root is refused
+workspace.risky_mount_policy supports warn/deny for warning-level risky mounts
+read-only workspace mode is available through harness.pi.read_only_workspace
+workspace docs and tests cover the stricter policy
+```
 
 Tasks:
 
@@ -269,9 +281,17 @@ broad host mounts are deliberate, not accidental
 
 ### 7. Prepare for M10 with a small harness descriptor
 
-**Status:** TODO
+**Status:** IN PROGRESS
 
 Do this before adding a second harness. The goal is to make Pi use a small internal descriptor without creating a plugin system.
+
+Completed so far:
+
+```text
+added an internal Pi harness descriptor for service name, display name, default image, default command, Dockerfile path, container home, state dirs, and auth state path
+wired descriptor constants into config defaults, state paths, Docker Compose service invocations, and doctor Dockerfile checks
+kept CLI behavior and Compose/runtime model unchanged
+```
 
 Tasks:
 

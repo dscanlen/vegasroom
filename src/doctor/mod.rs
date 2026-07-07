@@ -6,7 +6,7 @@ mod runtime;
 
 use anyhow::Result;
 
-use crate::{config::Config, docker, paths::StatePaths, ssh};
+use crate::{config::Config, docker, harness, paths::StatePaths, ssh};
 
 use self::{
     container::{
@@ -131,7 +131,7 @@ pub fn run() -> Result<i32> {
             if let Some(project_dir) = compose_file.parent() {
                 checks.push(check_path_file(
                     "Managed Pi Dockerfile",
-                    &project_dir.join("harness/pi/Dockerfile"),
+                    &project_dir.join(harness::PI.dockerfile_path),
                 ));
             } else {
                 checks.push(Check {

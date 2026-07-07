@@ -1,5 +1,7 @@
 use std::{fs, path::Path};
 
+use crate::harness;
+
 use super::{check_bool, Check, Status};
 
 pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> {
@@ -11,7 +13,8 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
     checks.push(check_bool(
         Status::Warn,
         "Compose image setting",
-        contents.contains("image: ${VR_PI_IMAGE:-vegasroom/pi:local}"),
+        contents
+            .contains(format!("image: ${{VR_PI_IMAGE:-{}}}", harness::PI.default_image).as_str()),
         "image is controlled by harness.pi.image through VR_PI_IMAGE",
         "Compose image is not controlled by VR_PI_IMAGE",
     ));
@@ -85,7 +88,7 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
     ));
 
     if let Some(project_dir) = compose_file.parent() {
-        let dockerfile = project_dir.join("harness/pi/Dockerfile");
+        let dockerfile = project_dir.join(harness::PI.dockerfile_path);
         if let Ok(dockerfile_contents) = fs::read_to_string(&dockerfile) {
             checks.push(check_bool(
                 Status::Warn,

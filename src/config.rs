@@ -6,7 +6,10 @@ use std::{
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::paths::{display_path, expand_tilde, StatePaths};
+use crate::{
+    harness,
+    paths::{display_path, expand_tilde, StatePaths},
+};
 
 pub const DEFAULT_CONFIG_YAML: &str = r#"paths:
   workspace: ~/.vegasroom/workspace
@@ -318,11 +321,11 @@ fn default_true() -> bool {
 }
 
 fn default_pi_image() -> String {
-    "vegasroom/pi:local".to_owned()
+    harness::PI.default_image.to_owned()
 }
 
 fn default_pi_command() -> String {
-    "pi".to_owned()
+    harness::PI.default_command.to_owned()
 }
 
 fn default_network() -> String {

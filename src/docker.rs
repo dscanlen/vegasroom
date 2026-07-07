@@ -10,6 +10,7 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::{
     config::{Config, SelectedSshKey},
+    harness,
     paths::{display_path, StatePaths},
     ssh::{self, SshRuntime, SshRuntimeMode},
     workspace::{self, ResolvedWorkspace},
@@ -49,7 +50,7 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
         .arg(&compose_file)
         .arg("--project-directory")
         .arg(&project_dir)
-        .args(["build", "pi"])
+        .args(["build", harness::PI.service_name])
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -77,7 +78,7 @@ pub fn run_shell(config: &Config, workspace: &ResolvedWorkspace) -> Result<i32> 
         &[
             "run".to_owned(),
             "--rm".to_owned(),
-            "pi".to_owned(),
+            harness::PI.service_name.to_owned(),
             "sh".to_owned(),
         ],
         true,
@@ -325,7 +326,7 @@ fn compose_shell_output_with_ssh(
     )?;
     invocation
         .command
-        .args(["run", "--rm", "pi", "sh", "-lc", script])
+        .args(["run", "--rm", harness::PI.service_name, "sh", "-lc", script])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -715,7 +716,7 @@ fn pi_compose_args(config: &Config, pi_args: &[String]) -> Vec<String> {
     let mut compose_args = vec![
         "run".to_owned(),
         "--rm".to_owned(),
-        "pi".to_owned(),
+        harness::PI.service_name.to_owned(),
         config.harness.pi.command.clone(),
     ];
     compose_args.extend(pi_args.iter().cloned());
