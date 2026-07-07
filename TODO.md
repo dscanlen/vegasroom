@@ -288,6 +288,13 @@ Do this before adding a second harness. The goal is to make Pi use a small inter
 Completed current slice:
 
 ```text
+documented the minimal near-term multi-harness config direction before adding a second harness
+kept this as planning/documentation only with no active config, CLI, or runtime behavior changes
+```
+
+Completed previous slice:
+
+```text
 introduced descriptor-aware internal Docker helpers while preserving the existing Pi-specific public wrappers
 kept this as a refactor only with no CLI, config, or runtime behavior changes
 ```
@@ -306,6 +313,7 @@ added an internal Pi harness descriptor for service name, display name, default 
 wired descriptor constants into config defaults, state paths, Docker Compose service invocations, and doctor Dockerfile checks
 wired descriptor-derived Pi container paths into Docker doctor probes and doctor output
 wired descriptor-derived Compose service names into generated SSH, Git identity, and read-only-rootfs overrides
+added descriptor-aware Docker helper functions used by the existing Pi wrappers
 kept CLI behavior and Compose/runtime model unchanged
 ```
 

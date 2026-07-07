@@ -166,11 +166,11 @@ ensure_pi_image_exists(...)
 
 Those wrappers should delegate to descriptor-aware internals. This keeps the command surface stable while reducing future duplication.
 
-## Recommended next phase: decide minimal multi-harness config shape
+## Completed continuation: decide minimal multi-harness config shape
 
-Before adding Claude Code, decide how to represent harness-specific config without moving too much shared runtime config.
+This slice documented how to represent harness-specific config without moving too much shared runtime config. This was a documentation/planning slice only; it does not make Claude or Codex active config yet.
 
-Recommended near-term shape:
+Recommended near-term future shape:
 
 ```yaml
 harness:
@@ -189,7 +189,7 @@ harness:
     command: codex
 ```
 
-For now, keep shared Docker/runtime hardening fields on Pi until a second harness proves what should be shared. Avoid a large config migration before it is necessary.
+Decision: for now, keep shared Docker/runtime hardening fields on Pi until a second harness proves what should be shared. Avoid a large config migration before it is necessary.
 
 Potential future shared runtime section, but not recommended in the immediate next step:
 
