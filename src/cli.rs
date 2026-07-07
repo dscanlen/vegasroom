@@ -5,9 +5,44 @@ use clap::{Parser, Subcommand};
 
 use crate::{alert, config::Config, docker, doctor, paths::StatePaths, ssh, workspace};
 
+const TOP_LEVEL_AFTER_HELP: &str = r#"Examples:
+  vr init --build
+  vr doctor
+  vr
+  vr pi .
+  vr shell .
+  vr ssh configure
+
+Use `vr pi --help` for Pi workspace and pass-through help.
+Use `vr shell --help` for shell workspace help."#;
+
+const INIT_AFTER_HELP: &str = r#"Examples:
+  vr init
+  vr init --build"#;
+
+const DOCTOR_AFTER_HELP: &str = r#"Examples:
+  vr doctor"#;
+
+const SSH_AFTER_HELP: &str = r#"Examples:
+  vr ssh configure
+  vr ssh configure ~/.ssh ~/work-keys
+  vr ssh status"#;
+
+const SSH_CONFIGURE_AFTER_HELP: &str = r#"Examples:
+  vr ssh configure
+  vr ssh configure ~/.ssh ~/work-keys
+  vr ssh configure --follow-symlinks ~/.ssh"#;
+
+const SSH_STATUS_AFTER_HELP: &str = r#"Examples:
+  vr ssh status"#;
+
 #[derive(Debug, Parser)]
 #[command(name = "vr")]
-#[command(about = "Vegasroom CLI", version)]
+#[command(
+    about = "Run Pi inside a Vegasroom container.",
+    version,
+    after_help = TOP_LEVEL_AFTER_HELP
+)]
 pub struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -16,6 +51,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     /// Create or repair Vegasroom local state and managed runtime files.
+    #[command(after_help = INIT_AFTER_HELP)]
     Init {
         /// Build the local Pi image after creating state.
         #[arg(long)]
@@ -23,34 +59,43 @@ pub enum Commands {
     },
 
     /// Check whether the local system is ready to run Vegasroom.
+    #[command(after_help = DOCTOR_AFTER_HELP)]
     Doctor,
 
     /// Configure or inspect Vegasroom SSH key behavior.
+    #[command(after_help = SSH_AFTER_HELP)]
     Ssh {
         #[command(subcommand)]
         command: SshCommands,
     },
 
     /// Launch Pi in the proven Docker/Compose runtime.
+    ///
+    /// Use `vr pi --help` for workspace and pass-through syntax.
     Pi,
 
     /// Launch a shell in the same Docker/Compose runtime.
+    ///
+    /// Use `vr shell --help` for workspace syntax.
     Shell,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum SshCommands {
     /// Recursively scan SSH key roots and interactively choose managed keys.
+    #[command(after_help = SSH_CONFIGURE_AFTER_HELP)]
     Configure {
         /// Follow symlinked directories while scanning. This can scan outside the requested roots.
         #[arg(long)]
         follow_symlinks: bool,
 
         /// Optional scan roots. Defaults to ~/.ssh when omitted.
+        #[arg(value_name = "PATH")]
         paths: Vec<String>,
     },
 
     /// Show managed SSH key configuration and next-launch behavior.
+    #[command(after_help = SSH_STATUS_AFTER_HELP)]
     Status,
 }
 
@@ -297,6 +342,10 @@ Usage:
   vr [pi-flags...]
   vr -- [pi-args...]
 
+Arguments:
+  workspace       Optional host workspace to mount at /workspace
+  pi-args         Arguments passed through to Pi
+
 Workspace resolution:
   no workspace     ~/.vegasroom/workspace
   .                current host directory
@@ -336,6 +385,9 @@ fn shell_help_text() -> &'static str {
 Usage:
   vr shell [workspace]
 
+Arguments:
+  workspace       Optional host workspace to mount at /workspace
+
 Workspace resolution:
   no workspace     ~/.vegasroom/workspace
   .                current host directory
@@ -347,12 +399,16 @@ Workspace resolution:
 Examples:
   vr shell
   vr shell .
-  vr shell my-git-repo"#
+  vr shell my-git-repo
+
+Notes:
+  Shell does not accept pass-through command arguments."#
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::CommandFactory;
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -362,6 +418,13 @@ mod tests {
         let mut argv = vec!["vr".to_owned()];
         argv.extend(args(values));
         argv
+    }
+
+    fn top_level_help() -> String {
+        let mut command = Cli::command();
+        let mut buffer = Vec::new();
+        command.write_long_help(&mut buffer).unwrap();
+        String::from_utf8(buffer).unwrap()
     }
 
     #[test]
@@ -525,9 +588,22 @@ mod tests {
     }
 
     #[test]
+    fn top_level_help_includes_consistent_examples() {
+        let help = top_level_help();
+
+        assert!(help.contains("Run Pi inside a Vegasroom container."));
+        assert!(help.contains("Examples:"));
+        assert!(help.contains("vr init --build"));
+        assert!(help.contains("vr pi ."));
+        assert!(help.contains("Use `vr pi --help`"));
+    }
+
+    #[test]
     fn pi_help_describes_actual_top_level_pass_through_behavior() {
         let help = pi_help_text();
 
+        assert!(help.contains("Usage:\n  vr pi [workspace] [pi-args...]"));
+        assert!(help.contains("Arguments:\n  workspace"));
         assert!(help.contains("vr [pi-flags...]"));
         assert!(help.contains("vr -- [pi-args...]"));
         assert!(
@@ -541,6 +617,8 @@ mod tests {
         let help = shell_help_text();
 
         assert!(help.contains("Usage:\n  vr shell [workspace]"));
+        assert!(help.contains("Arguments:\n  workspace"));
+        assert!(help.contains("Notes:"));
         assert!(!help.contains("shell [workspace] [args"));
     }
 }
