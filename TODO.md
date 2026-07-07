@@ -281,49 +281,21 @@ broad host mounts are deliberate, not accidental
 
 ### 7. Prepare for M10 with a small harness descriptor
 
-**Status:** IN PROGRESS
+**Status:** DONE
 
-Do this before adding a second harness. The goal is to make Pi use a small internal descriptor without creating a plugin system.
+Do this before adding a second harness. The goal was to make Pi use a small internal descriptor without creating a plugin system.
 
-Completed current slice:
-
-```text
-documented the minimal near-term multi-harness config direction before adding a second harness
-kept this as planning/documentation only with no active config, CLI, or runtime behavior changes
-```
-
-Completed previous slice:
-
-```text
-introduced descriptor-aware internal Docker helpers while preserving the existing Pi-specific public wrappers
-kept this as a refactor only with no CLI, config, or runtime behavior changes
-```
-
-Completed previous slice:
-
-```text
-finished descriptor adoption for remaining obvious Pi container path and service-name constants in Docker, SSH runtime, and doctor checks
-kept this as a refactor only with no CLI, config, or runtime behavior changes
-```
-
-Completed so far:
+Completed:
 
 ```text
 added an internal Pi harness descriptor for service name, display name, default image, default command, Dockerfile path, container home, state dirs, and auth state path
 wired descriptor constants into config defaults, state paths, Docker Compose service invocations, and doctor Dockerfile checks
 wired descriptor-derived Pi container paths into Docker doctor probes and doctor output
 wired descriptor-derived Compose service names into generated SSH, Git identity, and read-only-rootfs overrides
-added descriptor-aware Docker helper functions used by the existing Pi wrappers
+introduced descriptor-aware internal Docker helpers while preserving the existing Pi-specific public wrappers
+documented the minimal near-term multi-harness config direction before adding a second harness
 kept CLI behavior and Compose/runtime model unchanged
-```
-
-Tasks:
-
-```text
-identify minimal harness fields: service name, image, command, state dirs, Dockerfile path
-adapt Pi code to use that descriptor
-keep Compose/runtime model unchanged
-avoid marketplace/plugin abstractions
+retired the temporary harness descriptor handover document after folding its outcomes back into TODO/docs
 ```
 
 Acceptance criteria:
