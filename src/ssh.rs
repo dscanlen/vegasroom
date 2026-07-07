@@ -14,7 +14,7 @@ pub use runtime::{
 pub use status::status;
 pub use ui::configure;
 
-pub const CONTAINER_SSH_AUTH_SOCK: &str = "/tmp/vegasroom/ssh-agent.sock";
+pub const CONTAINER_SSH_AUTH_SOCK: &str = "/run/vegasroom-ssh-agent.sock";
 
 #[derive(Debug, Clone)]
 pub enum HostSshAgent {

@@ -15,6 +15,7 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 - Drops the default Linux capability set with `cap_drop: ALL`.
 - Enables Docker's minimal init process for child-process reaping.
 - Supports an opt-in read-only `/workspace` mount with `harness.pi.read_only_workspace: true`.
+- Supports an opt-in read-only container root filesystem with `harness.pi.read_only_rootfs: true`.
 
 ## What the MVP does not provide
 
@@ -44,6 +45,22 @@ network_mode: host
 ```
 
 These values come from `harness.pi.network`, which defaults to `host`. This preserves M1-M4 functionality, including rootless build behavior and login compatibility. It is not a network isolation model.
+
+### Read-only root filesystem
+
+`harness.pi.read_only_rootfs: true` enables a per-launch Compose override with:
+
+```yaml
+read_only: true
+tmpfs:
+  - /tmp
+  - /run
+  - /var/tmp
+```
+
+This reduces unintended write surface inside the live container by making image/system paths such as `/usr`, `/etc`, `/root`, and `/var` read-only unless another explicit mount covers them. It does not make host bind mounts read-only. `/workspace`, Pi state, SSH state, and cache keep their own configured mount behavior.
+
+This option is disabled by default until Pi, login, SSH, Git, and common shell workflows are validated on target hosts.
 
 ### Read-write mounts
 
@@ -91,6 +108,6 @@ Post-MVP work should revisit:
 - non-root container user through a UID/GID mapping approach that preserves bind-mount writes
 - network restrictions
 - stricter mount policy and optional confirmation prompts
-- broader read-only profiles beyond `/workspace`
+- proving whether `harness.pi.read_only_rootfs` can become a safe default
 - warnings for dangerous mount paths
 - clearer credential lifecycle controls

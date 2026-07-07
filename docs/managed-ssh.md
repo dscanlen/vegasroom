@@ -146,7 +146,7 @@ When managed SSH is used for `vr pi` or `vr shell`:
 2. Vegasroom starts ssh-agent with an explicit socket path.
 3. Vegasroom runs ssh-add for selected keys on the host.
 4. Vegasroom writes a temporary Compose override.
-5. The room receives SSH_AUTH_SOCK=/tmp/vegasroom/ssh-agent.sock.
+5. The room receives SSH_AUTH_SOCK=/run/vegasroom-ssh-agent.sock.
 6. Docker Compose runs the room.
 7. When the room exits, Vegasroom kills the temporary ssh-agent.
 8. Vegasroom removes the temp directory.

@@ -181,6 +181,8 @@ wired read-only workspace mode through VR_WORKSPACE_READ_ONLY for all workspace 
 refused Vegasroom state mounts outside the managed workspace
 added warnings for safe symlinked workspace paths while still blocking symlinks to refused targets
 tested non-root node runtime and documented that it breaks workspace bind-mount writes under the current rootless Docker model
+added opt-in harness.pi.read_only_rootfs for read-only container root filesystem with tmpfs scratch paths
+moved generated SSH/Git runtime mounts from /tmp/vegasroom to /run paths for read-only rootfs compatibility
 updated security/design/README/workspace/config docs to describe the current hardening baseline
 ```
 

@@ -105,6 +105,26 @@ pub(super) fn check_config_git_section(path: &Path) -> Check {
     }
 }
 
+pub(super) fn check_read_only_rootfs_mode(config: &Config) -> Check {
+    if config.harness.pi.read_only_rootfs {
+        Check {
+            status: Status::Pass,
+            name: "Read-only rootfs mode",
+            detail:
+                "harness.pi.read_only_rootfs is true; the container root filesystem will be mounted read-only with tmpfs scratch paths"
+                    .to_owned(),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Read-only rootfs mode",
+            detail:
+                "harness.pi.read_only_rootfs is false; the container root filesystem remains writable"
+                    .to_owned(),
+        }
+    }
+}
+
 pub(super) fn check_workspace_mount_mode(config: &Config) -> Check {
     if config.harness.pi.read_only_workspace {
         Check {
