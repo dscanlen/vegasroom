@@ -8,6 +8,7 @@ use std::{
 use anyhow::{anyhow, bail, Context, Result};
 
 use crate::{
+    alert,
     config::{Config, SelectedSshKey, SshMode},
     harness,
     paths::{display_path, expand_tilde},
@@ -82,8 +83,11 @@ pub fn prepare_agent_override(
                     Ok(runtime) => Ok(runtime),
                     Err(err) => {
                         if warn {
-                            eprintln!("WARN: managed SSH agent setup failed: {err:#}");
-                            eprintln!("WARN: falling back to host SSH_AUTH_SOCK if available");
+                            eprintln!("{}: managed SSH agent setup failed: {err:#}", alert::warn());
+                            eprintln!(
+                                "{}: falling back to host SSH_AUTH_SOCK if available",
+                                alert::warn()
+                            );
                         }
                         prepare_host_runtime(runtime_dir, warn)
                     }

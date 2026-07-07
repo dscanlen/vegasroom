@@ -1,3 +1,4 @@
+mod alert;
 mod assets;
 mod cli;
 mod config;

@@ -3,7 +3,7 @@ use std::env;
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 
-use crate::{config::Config, docker, doctor, paths::StatePaths, ssh, workspace};
+use crate::{alert, config::Config, docker, doctor, paths::StatePaths, ssh, workspace};
 
 #[derive(Debug, Parser)]
 #[command(name = "vr")]
@@ -265,7 +265,7 @@ fn print_workspace_messages(workspace: &workspace::ResolvedWorkspace, config: &C
     }
 
     for warning in &workspace.warnings {
-        eprintln!("WARN: {warning}");
+        eprintln!("{}: {warning}", alert::warn());
     }
 }
 

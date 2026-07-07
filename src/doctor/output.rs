@@ -1,11 +1,13 @@
+use crate::alert;
+
 use super::{Check, Status};
 
 pub(super) fn print_checks(checks: &[Check]) {
     for check in checks {
         let label = match check.status {
-            Status::Pass => "PASS",
-            Status::Warn => "WARN",
-            Status::Fail => "FAIL",
+            Status::Pass => alert::pass(),
+            Status::Warn => alert::warn(),
+            Status::Fail => alert::fail(),
         };
         println!("{label}: {} - {}", check.name, check.detail);
     }
@@ -23,5 +25,10 @@ pub(super) fn print_checks(checks: &[Check]) {
         .filter(|check| check.status == Status::Fail)
         .count();
 
-    println!("\nSummary: {pass} PASS, {warn} WARN, {fail} FAIL");
+    println!(
+        "\nSummary: {pass} {}, {warn} {}, {fail} {}",
+        alert::pass(),
+        alert::warn(),
+        alert::fail()
+    );
 }

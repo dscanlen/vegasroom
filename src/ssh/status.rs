@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::{
+    alert,
     config::{Config, SshMode},
     paths::{display_path, expand_tilde},
 };
@@ -22,23 +23,29 @@ pub fn status() -> Result<i32> {
             let path = expand_tilde(&selected.path);
             let display = display_path(&path);
             if !path.exists() {
-                println!("WARN: {display} - missing");
+                println!("{}: {display} - missing", alert::warn());
                 continue;
             }
 
             match fingerprint_key(&path) {
                 Ok(metadata) => {
                     let fp_status = match (&selected.fingerprint, &metadata.fingerprint) {
-                        (Some(expected), Some(actual)) if expected == actual => "PASS",
+                        (Some(expected), Some(actual)) if expected == actual => alert::pass(),
                         (Some(expected), Some(actual)) => {
-                            println!("FAIL: {display} - fingerprint changed: expected {expected}, got {actual}");
+                            println!(
+                                "{}: {display} - fingerprint changed: expected {expected}, got {actual}",
+                                alert::fail()
+                            );
                             continue;
                         }
                         (Some(expected), None) => {
-                            println!("WARN: {display} - could not verify configured fingerprint {expected}");
+                            println!(
+                                "{}: {display} - could not verify configured fingerprint {expected}",
+                                alert::warn()
+                            );
                             continue;
                         }
-                        _ => "PASS",
+                        _ => alert::pass(),
                     };
                     println!(
                         "{fp_status}: {display}{}{}{}",
@@ -64,7 +71,10 @@ pub fn status() -> Result<i32> {
                         println!("      Git identity override: {name} <{email}>");
                     }
                 }
-                Err(err) => println!("WARN: {display} - could not inspect key: {err:#}"),
+                Err(err) => println!(
+                    "{}: {display} - could not inspect key: {err:#}",
+                    alert::warn()
+                ),
             }
         }
     }
@@ -72,13 +82,16 @@ pub fn status() -> Result<i32> {
     println!();
     println!("Host agent:");
     match &host_agent {
-        HostSshAgent::Ready(_) => println!("PASS: {}", host_agent.status_detail()),
-        _ => println!("WARN: {}", host_agent.status_detail()),
+        HostSshAgent::Ready(_) => println!("{}: {}", alert::pass(), host_agent.status_detail()),
+        _ => println!("{}: {}", alert::warn(), host_agent.status_detail()),
     }
 
     println!();
     println!("Next launch:");
-    println!("{}", next_launch_detail(&config, &host_agent));
+    println!(
+        "{}",
+        alert::color_status_prefix(&next_launch_detail(&config, &host_agent))
+    );
 
     Ok(0)
 }

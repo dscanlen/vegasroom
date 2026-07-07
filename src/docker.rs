@@ -9,6 +9,7 @@ use std::{
 use anyhow::{anyhow, Context, Result};
 
 use crate::{
+    alert,
     config::{Config, SelectedSshKey},
     harness,
     paths::{display_path, StatePaths},
@@ -580,7 +581,8 @@ fn prepare_git_identity_override(
     let Some(identity) = effective_git_identity(config) else {
         if warn {
             eprintln!(
-                "WARN: no Git identity configured or inherited; commits may fall back to the container user. Set git.user_name/git.user_email in ~/.vegasroom/config.yaml."
+                "{}: no Git identity configured or inherited; commits may fall back to the container user. Set git.user_name/git.user_email in ~/.vegasroom/config.yaml.",
+                alert::warn()
             );
         }
         return Ok(None);

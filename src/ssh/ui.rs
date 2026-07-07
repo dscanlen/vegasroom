@@ -13,6 +13,7 @@ use crossterm::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
+    alert,
     config::{Config, SelectedSshKey, SshMode},
     paths::{display_path, expand_tilde, StatePaths},
 };
@@ -32,7 +33,10 @@ pub fn configure(paths: &[String], follow_symlinks: bool) -> Result<i32> {
         println!("  {}", display_path(root));
     }
     if follow_symlinks {
-        println!("WARN: following symlinks can scan outside the requested roots.");
+        println!(
+            "{}: following symlinks can scan outside the requested roots.",
+            alert::warn()
+        );
     }
 
     let mut discovered = discover_keys(&roots, follow_symlinks)?;
@@ -529,7 +533,7 @@ fn append_highlighted_key_detail_lines(
     ));
     if let Some(false) = key.permissions_ok {
         detail_lines.extend(wrap_text_to_width(
-            "WARN: permissions appear broad",
+            "Permissions appear broad",
             width,
             "  ",
             "       ",
@@ -740,7 +744,7 @@ fn print_selector(keys: &[DiscoveredSshKey], selected: &[bool]) -> Result<()> {
             if key.has_public_pair { " [pub]" } else { "" },
             match key.permissions_ok {
                 Some(true) => "",
-                Some(false) => " WARN: broad permissions",
+                Some(false) => " broad permissions",
                 None => "",
             }
         );
