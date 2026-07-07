@@ -7,6 +7,7 @@ use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
 
 use crate::{
+    alert,
     config::{Config, RiskyMountPolicy},
     paths::{display_path, expand_tilde, StatePaths},
 };
@@ -93,7 +94,8 @@ fn materialize_workspace(
     if request.path.exists() {
         if !request.path.is_dir() {
             bail!(
-                "FAIL: Workspace path is not a directory: {}",
+                "{}: Workspace path is not a directory: {}",
+                alert::fail(),
                 display_path(&request.path)
             );
         }
@@ -107,7 +109,8 @@ fn materialize_workspace(
         created = true;
     } else {
         bail!(
-            "FAIL: Workspace path does not exist: {}\nCreate it first or choose an existing directory.",
+            "{}: Workspace path does not exist: {}\nCreate it first or choose an existing directory.",
+            alert::fail(),
             display_path(&request.path)
         );
     }
@@ -136,13 +139,14 @@ fn validate_workspace_path(
     risky_mount_policy: RiskyMountPolicy,
 ) -> Result<Vec<String>> {
     if path == Path::new("/") {
-        bail!("FAIL: Refusing to mount / as a workspace.");
+        bail!("{}: Refusing to mount / as a workspace.", alert::fail());
     }
 
     for blocked in blocked_virtual_roots() {
         if is_under_or_same(path, Path::new(blocked)) {
             bail!(
-                "FAIL: Refusing to mount dangerous system path as a workspace: {}",
+                "{}: Refusing to mount dangerous system path as a workspace: {}",
+                alert::fail(),
                 path.display()
             );
         }
@@ -170,7 +174,8 @@ fn validate_workspace_path(
         for blocked in blocked_credential_roots(&home, state) {
             if is_under_or_same(path, &blocked) {
                 bail!(
-                    "FAIL: Refusing to mount credential directory as a workspace: {}",
+                    "{}: Refusing to mount credential directory as a workspace: {}",
+                    alert::fail(),
                     display_path(path)
                 );
             }
@@ -200,7 +205,8 @@ fn validate_workspace_path(
         .unwrap_or_else(|_| allowed_workspace_root.to_path_buf());
     if is_under_or_same(path, &state_root) && !is_under_or_same(path, &allowed_workspace_root) {
         bail!(
-            "FAIL: Refusing to mount Vegasroom state outside the managed workspace as /workspace: {}",
+            "{}: Refusing to mount Vegasroom state outside the managed workspace as /workspace: {}",
+            alert::fail(),
             display_path(path)
         );
     }
@@ -218,7 +224,10 @@ fn handle_risky_mount(
             warnings.push(message);
             Ok(())
         }
-        RiskyMountPolicy::Deny => bail!("FAIL: Risky workspace mount denied by policy: {message}"),
+        RiskyMountPolicy::Deny => bail!(
+            "{}: Risky workspace mount denied by policy: {message}",
+            alert::fail()
+        ),
     }
 }
 
@@ -285,12 +294,13 @@ fn risky_system_roots() -> &'static [&'static str] {
 
 fn reject_unsafe_workspace_name(name: &str) -> Result<()> {
     if name == "." || name == ".." {
-        bail!("FAIL: Invalid workspace name: {name}");
+        bail!("{}: Invalid workspace name: {name}", alert::fail());
     }
 
     if name.starts_with('-') {
         bail!(
-            "FAIL: Workspace names cannot start with '-': {name}\nUse `vr pi -- {name}` to pass it to Pi, or use `./{name}` for a host path."
+            "{}: Workspace names cannot start with '-': {name}\nUse `vr pi -- {name}` to pass it to Pi, or use `./{name}` for a host path.",
+            alert::fail()
         );
     }
 

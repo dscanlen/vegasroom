@@ -8,6 +8,7 @@ use std::{
 use anyhow::{bail, Context, Result};
 
 use crate::{
+    alert,
     config::SelectedSshKey,
     paths::{display_path, expand_tilde},
 };
@@ -35,7 +36,11 @@ pub(super) fn discover_keys(
 
     for root in roots {
         if !root.exists() {
-            println!("WARN: scan root does not exist: {}", display_path(root));
+            println!(
+                "{}: scan root does not exist: {}",
+                alert::warn(),
+                display_path(root)
+            );
             continue;
         }
         scan_path(root, follow_symlinks, &mut visited_dirs, &mut keys)?;

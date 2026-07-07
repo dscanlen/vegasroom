@@ -48,7 +48,11 @@ impl HostSshAgent {
         if self.is_ready() {
             None
         } else {
-            Some(format!("WARN: {}", self.status_detail()))
+            Some(format!(
+                "{}: {}",
+                crate::alert::warn(),
+                self.status_detail()
+            ))
         }
     }
 }
