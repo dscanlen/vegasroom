@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
 
 use crate::{
-    config::Config,
+    config::{Config, RiskyMountPolicy},
     paths::{display_path, expand_tilde, StatePaths},
 };
 
@@ -70,7 +70,12 @@ pub fn resolve_workspace(input: Option<&str>, config: &Config) -> Result<Resolve
         }
     };
 
-    materialize_workspace(request, &state)
+    materialize_workspace(
+        request,
+        &state,
+        &workspace_root,
+        config.workspace.risky_mount_policy,
+    )
 }
 
 pub fn default_workspace_for_compose(config: &Config) -> Result<ResolvedWorkspace> {
@@ -80,6 +85,8 @@ pub fn default_workspace_for_compose(config: &Config) -> Result<ResolvedWorkspac
 fn materialize_workspace(
     request: WorkspaceRequest,
     state: &StatePaths,
+    workspace_root: &Path,
+    risky_mount_policy: RiskyMountPolicy,
 ) -> Result<ResolvedWorkspace> {
     let mut created = false;
 
@@ -111,7 +118,9 @@ fn materialize_workspace(
             display_path(&request.path)
         )
     })?;
-    let warnings = validate_workspace_path(&canonical, state)?;
+    let mut warnings =
+        validate_workspace_path(&canonical, state, workspace_root, risky_mount_policy)?;
+    warnings.extend(symlink_workspace_warnings(&request.path, &canonical)?);
 
     Ok(ResolvedWorkspace {
         path: canonical,
@@ -120,7 +129,12 @@ fn materialize_workspace(
     })
 }
 
-fn validate_workspace_path(path: &Path, state: &StatePaths) -> Result<Vec<String>> {
+fn validate_workspace_path(
+    path: &Path,
+    state: &StatePaths,
+    allowed_workspace_root: &Path,
+    risky_mount_policy: RiskyMountPolicy,
+) -> Result<Vec<String>> {
     if path == Path::new("/") {
         bail!("FAIL: Refusing to mount / as a workspace.");
     }
@@ -143,10 +157,14 @@ fn validate_workspace_path(path: &Path, state: &StatePaths) -> Result<Vec<String
             .unwrap_or_else(|_| base_dirs.home_dir().to_path_buf());
 
         if path == home {
-            warnings.push(format!(
-                "mounting the host home directory as /workspace exposes broad host files: {}",
-                display_path(path)
-            ));
+            handle_risky_mount(
+                risky_mount_policy,
+                format!(
+                    "mounting the host home directory as /workspace exposes broad host files: {}",
+                    display_path(path)
+                ),
+                &mut warnings,
+            )?;
         }
 
         for blocked in blocked_credential_roots(&home, state) {
@@ -161,10 +179,14 @@ fn validate_workspace_path(path: &Path, state: &StatePaths) -> Result<Vec<String
 
     for risky in risky_system_roots() {
         if is_under_or_same(path, Path::new(risky)) {
-            warnings.push(format!(
-                "mounting system path as /workspace may expose sensitive host files: {}",
-                path.display()
-            ));
+            handle_risky_mount(
+                risky_mount_policy,
+                format!(
+                    "mounting system path as /workspace may expose sensitive host files: {}",
+                    path.display()
+                ),
+                &mut warnings,
+            )?;
             break;
         }
     }
@@ -173,18 +195,60 @@ fn validate_workspace_path(path: &Path, state: &StatePaths) -> Result<Vec<String
         .root
         .canonicalize()
         .unwrap_or_else(|_| state.root.clone());
-    let workspace_root = state
-        .workspace
+    let allowed_workspace_root = allowed_workspace_root
         .canonicalize()
-        .unwrap_or_else(|_| state.workspace.clone());
-    if is_under_or_same(path, &state_root) && !is_under_or_same(path, &workspace_root) {
-        warnings.push(format!(
-            "mounting Vegasroom state outside the managed workspace may expose auth or cache data: {}",
+        .unwrap_or_else(|_| allowed_workspace_root.to_path_buf());
+    if is_under_or_same(path, &state_root) && !is_under_or_same(path, &allowed_workspace_root) {
+        bail!(
+            "FAIL: Refusing to mount Vegasroom state outside the managed workspace as /workspace: {}",
             display_path(path)
-        ));
+        );
     }
 
     Ok(warnings)
+}
+
+fn handle_risky_mount(
+    policy: RiskyMountPolicy,
+    message: String,
+    warnings: &mut Vec<String>,
+) -> Result<()> {
+    match policy {
+        RiskyMountPolicy::Warn => {
+            warnings.push(message);
+            Ok(())
+        }
+        RiskyMountPolicy::Deny => bail!("FAIL: Risky workspace mount denied by policy: {message}"),
+    }
+}
+
+fn symlink_workspace_warnings(requested: &Path, canonical: &Path) -> Result<Vec<String>> {
+    let requested_abs = absolutize(requested.to_path_buf())?;
+    if !path_has_symlink_component(&requested_abs) {
+        return Ok(Vec::new());
+    }
+
+    Ok(vec![format!(
+        "workspace path resolves through a symlink: {} -> {}",
+        display_path(&requested_abs),
+        display_path(canonical)
+    )])
+}
+
+fn path_has_symlink_component(path: &Path) -> bool {
+    let mut current = PathBuf::new();
+
+    for component in path.components() {
+        current.push(component.as_os_str());
+        if fs::symlink_metadata(&current)
+            .map(|metadata| metadata.file_type().is_symlink())
+            .unwrap_or(false)
+        {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn blocked_credential_roots(home: &Path, state: &StatePaths) -> Vec<PathBuf> {
@@ -356,8 +420,159 @@ mod tests {
     #[test]
     fn root_workspace_is_refused() {
         let state = StatePaths::default().unwrap();
-        let err = validate_workspace_path(Path::new("/"), &state).unwrap_err();
+        let err = validate_workspace_path(
+            Path::new("/"),
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap_err();
 
         assert!(err.to_string().contains("Refusing to mount /"));
+    }
+
+    #[test]
+    fn risky_system_workspace_warns_when_policy_is_warn() {
+        let state = StatePaths::default().unwrap();
+        let warnings = validate_workspace_path(
+            Path::new("/tmp"),
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap();
+
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("mounting system path as /workspace")));
+    }
+
+    #[test]
+    fn risky_system_workspace_is_refused_when_policy_is_deny() {
+        let state = StatePaths::default().unwrap();
+        let err = validate_workspace_path(
+            Path::new("/tmp"),
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Deny,
+        )
+        .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("Risky workspace mount denied by policy"));
+    }
+
+    #[test]
+    fn vegasroom_state_outside_managed_workspace_is_refused() {
+        let root = TempDir::new("state-refusal");
+        let state = StatePaths::from_root(root.path.join(".vegasroom"));
+        fs::create_dir_all(&state.workspace).unwrap();
+        fs::create_dir_all(&state.cache).unwrap();
+
+        let err = validate_workspace_path(
+            &state.cache.canonicalize().unwrap(),
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("Refusing to mount Vegasroom state outside the managed workspace"));
+    }
+
+    #[test]
+    fn managed_workspace_under_vegasroom_state_is_allowed() {
+        let root = TempDir::new("state-workspace-allowed");
+        let state = StatePaths::from_root(root.path.join(".vegasroom"));
+        let repo = state.workspace.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+
+        let warnings = validate_workspace_path(
+            &repo.canonicalize().unwrap(),
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap();
+
+        assert!(!warnings
+            .iter()
+            .any(|warning| warning.contains("Vegasroom state")));
+    }
+
+    #[test]
+    fn configured_workspace_root_under_vegasroom_state_is_allowed() {
+        let root = TempDir::new("custom-state-workspace-allowed");
+        let state = StatePaths::from_root(root.path.join(".vegasroom"));
+        let configured_workspace = state.root.join("projects");
+        let repo = configured_workspace.join("repo");
+        fs::create_dir_all(&repo).unwrap();
+
+        let warnings = validate_workspace_path(
+            &repo.canonicalize().unwrap(),
+            &state,
+            &configured_workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap();
+
+        assert!(!warnings
+            .iter()
+            .any(|warning| warning.contains("Vegasroom state")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_workspace_emits_warning() {
+        let root = TempDir::new("symlink-warning");
+        let real = root.path.join("real-project");
+        let link = root.path.join("linked-project");
+        let state = StatePaths::from_root(root.path.join(".vegasroom"));
+        fs::create_dir_all(&real).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let resolved = materialize_workspace(
+            WorkspaceRequest {
+                path: link,
+                auto_create: false,
+            },
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap();
+
+        assert!(resolved
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("workspace path resolves through a symlink")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_to_credential_directory_is_refused() {
+        let root = TempDir::new("symlink-credential-refusal");
+        let state = StatePaths::from_root(root.path.join(".vegasroom"));
+        let link = root.path.join("ssh-link");
+        fs::create_dir_all(&state.ssh_dir).unwrap();
+        std::os::unix::fs::symlink(&state.ssh_dir, &link).unwrap();
+
+        let err = materialize_workspace(
+            WorkspaceRequest {
+                path: link,
+                auto_create: false,
+            },
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("Refusing to mount credential directory"));
     }
 }

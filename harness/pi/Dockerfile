@@ -25,7 +25,9 @@ RUN mkdir -p \
       /home/agent/.pi/sessions \
       /home/agent/.ssh \
       /home/agent/.cache \
-      /tmp/vegasroom
+      /tmp/vegasroom \
+    && rm -rf /root/.ssh \
+    && ln -s /home/agent/.ssh /root/.ssh
 
 WORKDIR /workspace
 

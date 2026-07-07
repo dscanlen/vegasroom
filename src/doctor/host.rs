@@ -105,6 +105,77 @@ pub(super) fn check_config_git_section(path: &Path) -> Check {
     }
 }
 
+pub(super) fn check_workspace_risky_mount_policy(config: &Config) -> Check {
+    Check {
+        status: Status::Pass,
+        name: "Workspace risky mount policy",
+        detail: format!(
+            "workspace.risky_mount_policy is {:?}",
+            config.workspace.risky_mount_policy
+        ),
+    }
+}
+
+pub(super) fn check_network_mode(config: &Config) -> Check {
+    let detail = if config.harness.pi.network == "host" {
+        format!(
+            "runtime network is host and build network is {}; host runtime networking is the proven MVP default but not a network isolation model",
+            config.harness.pi.build_network
+        )
+    } else {
+        format!(
+            "runtime network is {} and build network is {}; validate Docker build, internet, Git-over-SSH, and Pi /login before relying on this mode; bridge may break localhost OAuth callbacks",
+            config.harness.pi.network, config.harness.pi.build_network
+        )
+    };
+
+    Check {
+        status: Status::Pass,
+        name: "Network mode",
+        detail,
+    }
+}
+
+pub(super) fn check_read_only_rootfs_mode(config: &Config) -> Check {
+    if config.harness.pi.read_only_rootfs {
+        Check {
+            status: Status::Pass,
+            name: "Read-only rootfs mode",
+            detail:
+                "harness.pi.read_only_rootfs is true; the container root filesystem will be mounted read-only with tmpfs scratch paths"
+                    .to_owned(),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Read-only rootfs mode",
+            detail:
+                "harness.pi.read_only_rootfs is false; the container root filesystem remains writable"
+                    .to_owned(),
+        }
+    }
+}
+
+pub(super) fn check_workspace_mount_mode(config: &Config) -> Check {
+    if config.harness.pi.read_only_workspace {
+        Check {
+            status: Status::Pass,
+            name: "Workspace mount mode",
+            detail:
+                "harness.pi.read_only_workspace is true; /workspace should be mounted read-only"
+                    .to_owned(),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Workspace mount mode",
+            detail:
+                "harness.pi.read_only_workspace is false; /workspace will be mounted read-write"
+                    .to_owned(),
+        }
+    }
+}
+
 pub(super) fn check_git_identity(config: &Config) -> Check {
     match docker::effective_git_identity(config) {
         Some(identity) => Check {

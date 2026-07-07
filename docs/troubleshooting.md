@@ -56,7 +56,7 @@ build:
 network_mode: ${VR_PI_NETWORK_MODE:-host}
 ```
 
-The default `harness.pi.network` value is `host`.
+The default `harness.pi.network` and `harness.pi.build_network` values are `host`. If BuildKit reports `network mode "bridge" not supported by buildkit`, keep `harness.pi.build_network: host` while testing non-host runtime networking through `harness.pi.network`.
 
 Run:
 

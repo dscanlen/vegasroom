@@ -88,7 +88,7 @@ Completed:
 removed default_harness, paths.root, harness.pi.enabled, harness.pi.ssh_agent, and commented Claude config from generated defaults
 made harness.pi.image control the Compose image through VR_PI_IMAGE
 made harness.pi.command control vr pi with and without Pi arguments
-made harness.pi.network control runtime/build networking through VR_PI_NETWORK_MODE and VR_PI_BUILD_NETWORK
+made harness.pi.network control networking through Compose env wiring; M9 later split runtime and build network fields
 updated README and docs/config.md to match implementation
 added config/runtime tests for legacy ignored fields, Pi command args, and Compose env wiring
 ```
@@ -165,9 +165,31 @@ help output remains accurate
 
 ### 5. M9 - Runtime hardening
 
-**Status:** TODO
+**Status:** IN PROGRESS
 
 Improve security posture without breaking current Pi, SSH, Git, and login flows.
+
+Completed so far:
+
+```text
+enabled no-new-privileges:true for the Pi room container
+dropped default Linux capabilities with cap_drop: ALL
+enabled Docker init process for child-process reaping
+added doctor checks for the low-risk Compose hardening settings
+added opt-in harness.pi.read_only_workspace for read-only /workspace mounts
+wired read-only workspace mode through VR_WORKSPACE_READ_ONLY for all workspace selections
+refused Vegasroom state mounts outside the managed workspace
+added warnings for safe symlinked workspace paths while still blocking symlinks to refused targets
+tested non-root node runtime and documented that it breaks workspace bind-mount writes under the current rootless Docker model
+added opt-in harness.pi.read_only_rootfs for read-only container root filesystem with tmpfs scratch paths
+moved generated SSH/Git runtime mounts from /tmp/vegasroom to /run paths for read-only rootfs compatibility
+split runtime network and build network config so bridge runtime validation can keep BuildKit on the proven host build network
+added doctor visibility and documentation for bridge-network validation including Pi /login auth flow
+documented M9 bridge runtime validation result: OAuth reaches the provider but fails the localhost callback requirement, so host networking remains the proven default
+replaced duplicate /root/.ssh bind mount with an image-level symlink to /home/agent/.ssh
+added workspace.risky_mount_policy warn/deny config for warning-level risky workspace mounts
+updated security/design/README/workspace/config/rootless Docker docs to describe the current hardening baseline
+```
 
 Scope:
 
@@ -199,7 +221,7 @@ Candidate staged implementation:
 ```text
 add opt-in capability drop / no-new-privileges settings
 test non-root container runtime with the final mount model
-add UID/GID mapping options if needed
+add UID/GID mapping options if needed; plain node/1000 runtime failed workspace write validation
 add optional read-only workspace mode
 consider tmpfs for /tmp and other scratch paths
 review read-only root filesystem feasibility

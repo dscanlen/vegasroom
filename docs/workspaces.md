@@ -15,7 +15,10 @@ volumes:
   - type: bind
     source: ${VR_WORKSPACE:-${HOME}/.vegasroom/workspace}
     target: /workspace
+    read_only: ${VR_WORKSPACE_READ_ONLY:-false}
 ```
+
+`harness.pi.read_only_workspace` controls `VR_WORKSPACE_READ_ONLY`. The default is `false`, so the agent can edit project files. When set to `true`, the resolved workspace is mounted read-only no matter how it was selected: default workspace, `.`, managed workspace name, relative path, tilde path, or absolute path.
 
 ## Commands
 
@@ -86,6 +89,28 @@ FAIL: Workspace path does not exist: /some/external/path
 Create it first or choose an existing directory.
 ```
 
+## Read-only workspace mode
+
+To inspect a project without allowing the room to write to `/workspace`, set:
+
+```yaml
+harness:
+  pi:
+    read_only_workspace: true
+```
+
+This is intentionally global for the Pi harness. It applies equally to:
+
+```bash
+vr pi
+vr pi .
+vr pi my-git-repo
+vr pi /absolute/project/path
+vr shell .
+```
+
+Pi state, sessions, SSH known_hosts, and cache mounts remain writable so login/session behavior and Git-over-SSH can continue to work. Only `/workspace` is read-only.
+
 ## Safety rules
 
 Vegasroom refuses to mount:
@@ -113,12 +138,52 @@ It also refuses virtual system roots such as:
 /run
 ```
 
-Vegasroom warns, but does not necessarily fail, for broad or risky mounts such as:
+Vegasroom also refuses its own state directory outside the configured managed workspace root. With the default config, these are allowed:
+
+```text
+~/.vegasroom/workspace
+~/.vegasroom/workspace/my-project
+```
+
+These are refused:
+
+```text
+~/.vegasroom
+~/.vegasroom/cache
+~/.vegasroom/harness
+~/.vegasroom/runtime
+~/.vegasroom/ssh
+```
+
+By default, Vegasroom warns for broad or risky mounts such as:
 
 ```text
 host home directory
 system paths under /etc, /usr, /var, /tmp, and similar roots
-Vegasroom state outside ~/.vegasroom/workspace
+```
+
+To make these warning-level risky mounts fail before Docker starts, set:
+
+```yaml
+workspace:
+  risky_mount_policy: deny
+```
+
+The default is:
+
+```yaml
+workspace:
+  risky_mount_policy: warn
+```
+
+This policy does not weaken hard blocks. Credential directories, virtual system roots, `/`, and protected Vegasroom state are always refused.
+
+## Symlinks
+
+Vegasroom validates the canonical workspace target, so symlinks to credential directories, virtual system roots, or protected Vegasroom state are refused. Safe symlinked project directories are allowed, but Vegasroom prints a warning such as:
+
+```text
+WARN: workspace path resolves through a symlink: ~/linked-project -> /real/project/path
 ```
 
 ## Pi argument pass-through

@@ -226,7 +226,7 @@ pub fn container_ssh_doctor_probe(config: &Config) -> Result<Option<ContainerSsh
         r#"
 set +e
 
-if test "$SSH_AUTH_SOCK" = '/tmp/vegasroom/ssh-agent.sock' && test -S "$SSH_AUTH_SOCK"; then
+if test "$SSH_AUTH_SOCK" = '/run/vegasroom-ssh-agent.sock' && test -S "$SSH_AUTH_SOCK"; then
   echo 'VR_CHECK ssh_auth_sock=pass'
 else
   echo 'VR_CHECK ssh_auth_sock=fail'
@@ -466,6 +466,12 @@ fn compose_base(
         command.arg("-f").arg(git_override_path);
     }
 
+    if let Some(read_only_rootfs_override_path) =
+        prepare_read_only_rootfs_override(config, runtime_files.dir())?
+    {
+        command.arg("-f").arg(read_only_rootfs_override_path);
+    }
+
     Ok(ComposeInvocation {
         command,
         _runtime_files: runtime_files,
@@ -494,6 +500,41 @@ pub fn effective_git_identity(config: &Config) -> Option<GitIdentity> {
     }
 
     None
+}
+
+fn prepare_read_only_rootfs_override(
+    config: &Config,
+    runtime_dir: &Path,
+) -> Result<Option<PathBuf>> {
+    if !config.harness.pi.read_only_rootfs {
+        return Ok(None);
+    }
+
+    fs::create_dir_all(runtime_dir).with_context(|| {
+        format!(
+            "failed to create per-launch runtime directory: {}",
+            display_path(runtime_dir)
+        )
+    })?;
+
+    let override_path = runtime_dir.join("read-only-rootfs.compose.yaml");
+    let contents = r#"services:
+  pi:
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /var/tmp
+"#;
+
+    fs::write(&override_path, contents).with_context(|| {
+        format!(
+            "failed to write read-only rootfs Compose override: {}",
+            display_path(&override_path)
+        )
+    })?;
+
+    Ok(Some(override_path))
 }
 
 fn prepare_git_identity_override(
@@ -530,7 +571,7 @@ fn prepare_git_identity_override(
         r#"services:
   pi:
     environment:
-      GIT_CONFIG_GLOBAL: /tmp/vegasroom/gitconfig
+      GIT_CONFIG_GLOBAL: /run/vegasroom-gitconfig
       GIT_AUTHOR_NAME: "{name}"
       GIT_AUTHOR_EMAIL: "{email}"
       GIT_COMMITTER_NAME: "{name}"
@@ -538,7 +579,7 @@ fn prepare_git_identity_override(
     volumes:
       - type: bind
         source: "{gitconfig_path}"
-        target: /tmp/vegasroom/gitconfig
+        target: /run/vegasroom-gitconfig
         read_only: true
 "#,
         name = yaml_double_quoted_str(&identity.name),
@@ -685,7 +726,11 @@ fn apply_compose_config_env(command: &mut Command, config: &Config) {
     command
         .env("VR_PI_IMAGE", &config.harness.pi.image)
         .env("VR_PI_NETWORK_MODE", &config.harness.pi.network)
-        .env("VR_PI_BUILD_NETWORK", &config.harness.pi.network);
+        .env("VR_PI_BUILD_NETWORK", &config.harness.pi.build_network)
+        .env(
+            "VR_WORKSPACE_READ_ONLY",
+            config.harness.pi.read_only_workspace.to_string(),
+        );
 }
 
 fn base_docker(config: &Config) -> Command {
@@ -737,10 +782,12 @@ mod tests {
     }
 
     #[test]
-    fn compose_config_env_uses_configured_image_and_network() {
+    fn compose_config_env_uses_configured_image_network_and_workspace_mode() {
         let mut config = Config::default();
         config.harness.pi.image = "example/pi:test".to_owned();
         config.harness.pi.network = "bridge".to_owned();
+        config.harness.pi.build_network = "host".to_owned();
+        config.harness.pi.read_only_workspace = true;
         let mut command = Command::new("docker");
 
         apply_compose_config_env(&mut command, &config);
@@ -756,7 +803,8 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(envs.contains(&("VR_PI_IMAGE".to_owned(), Some("example/pi:test".to_owned()),)));
         assert!(envs.contains(&("VR_PI_NETWORK_MODE".to_owned(), Some("bridge".to_owned()),)));
-        assert!(envs.contains(&("VR_PI_BUILD_NETWORK".to_owned(), Some("bridge".to_owned()),)));
+        assert!(envs.contains(&("VR_PI_BUILD_NETWORK".to_owned(), Some("host".to_owned()),)));
+        assert!(envs.contains(&("VR_WORKSPACE_READ_ONLY".to_owned(), Some("true".to_owned()),)));
     }
 
     #[test]
@@ -798,6 +846,30 @@ VR_SSH_ADD_CODE=1
 
         assert!(!first_dir.exists());
         assert!(!second_dir.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn read_only_rootfs_override_is_only_written_when_enabled() {
+        let root = test_state_root("read-only-rootfs");
+        fs::create_dir_all(&root).unwrap();
+        let mut config = Config::default();
+
+        assert!(prepare_read_only_rootfs_override(&config, &root)
+            .unwrap()
+            .is_none());
+
+        config.harness.pi.read_only_rootfs = true;
+        let override_path = prepare_read_only_rootfs_override(&config, &root)
+            .unwrap()
+            .unwrap();
+        let contents = fs::read_to_string(&override_path).unwrap();
+
+        assert!(contents.contains("read_only: true"));
+        assert!(contents.contains("- /tmp"));
+        assert!(contents.contains("- /run"));
+        assert!(contents.contains("- /var/tmp"));
+
         let _ = fs::remove_dir_all(root);
     }
 

@@ -11,6 +11,9 @@ use crate::paths::{display_path, expand_tilde, StatePaths};
 pub const DEFAULT_CONFIG_YAML: &str = r#"paths:
   workspace: ~/.vegasroom/workspace
 
+workspace:
+  risky_mount_policy: warn
+
 docker:
   context: rootless
   compose_file: ~/.vegasroom/runtime/compose.yaml
@@ -29,12 +32,18 @@ harness:
     image: vegasroom/pi:local
     command: pi
     network: host
+    build_network: host
+    read_only_workspace: false
+    read_only_rootfs: false
 "#;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub paths: PathsConfig,
+
+    #[serde(default)]
+    pub workspace: WorkspaceConfig,
 
     #[serde(default)]
     pub docker: DockerConfig,
@@ -53,6 +62,20 @@ pub struct Config {
 pub struct PathsConfig {
     #[serde(default = "default_workspace")]
     pub workspace: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceConfig {
+    #[serde(default)]
+    pub risky_mount_policy: RiskyMountPolicy,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RiskyMountPolicy {
+    #[default]
+    Warn,
+    Deny,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,6 +154,15 @@ pub struct PiHarnessConfig {
 
     #[serde(default = "default_network")]
     pub network: String,
+
+    #[serde(default = "default_network")]
+    pub build_network: String,
+
+    #[serde(default)]
+    pub read_only_workspace: bool,
+
+    #[serde(default)]
+    pub read_only_rootfs: bool,
 }
 
 impl Config {
@@ -220,6 +252,14 @@ impl Default for PathsConfig {
     }
 }
 
+impl Default for WorkspaceConfig {
+    fn default() -> Self {
+        Self {
+            risky_mount_policy: RiskyMountPolicy::Warn,
+        }
+    }
+}
+
 impl Default for DockerConfig {
     fn default() -> Self {
         Self {
@@ -254,6 +294,9 @@ impl Default for PiHarnessConfig {
             image: default_pi_image(),
             command: default_pi_command(),
             network: default_network(),
+            build_network: default_network(),
+            read_only_workspace: false,
+            read_only_rootfs: false,
         }
     }
 }
@@ -295,6 +338,7 @@ mod tests {
         let config: Config = serde_yaml::from_str(DEFAULT_CONFIG_YAML).unwrap();
 
         assert_eq!(config.paths.workspace, "~/.vegasroom/workspace");
+        assert_eq!(config.workspace.risky_mount_policy, RiskyMountPolicy::Warn);
         assert_eq!(config.docker.context, "rootless");
         assert_eq!(
             config.docker.compose_file,
@@ -308,6 +352,9 @@ mod tests {
         assert_eq!(config.harness.pi.image, "vegasroom/pi:local");
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.network, "host");
+        assert_eq!(config.harness.pi.build_network, "host");
+        assert!(!config.harness.pi.read_only_workspace);
+        assert!(!config.harness.pi.read_only_rootfs);
     }
 
     #[test]
@@ -342,8 +389,65 @@ harness:
 
         assert_eq!(config.docker.context, "test-context");
         assert_eq!(config.paths.workspace, "~/.vegasroom/workspace");
+        assert_eq!(config.workspace.risky_mount_policy, RiskyMountPolicy::Warn);
         assert_eq!(config.ssh.mode, SshMode::Auto);
         assert_eq!(config.harness.pi.command, "pi");
+        assert_eq!(config.harness.pi.build_network, "host");
+        assert!(!config.harness.pi.read_only_workspace);
+        assert!(!config.harness.pi.read_only_rootfs);
+    }
+
+    #[test]
+    fn workspace_risky_mount_policy_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"workspace:
+  risky_mount_policy: deny
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.workspace.risky_mount_policy, RiskyMountPolicy::Deny);
+    }
+
+    #[test]
+    fn pi_read_only_workspace_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"harness:
+  pi:
+    read_only_workspace: true
+"#,
+        )
+        .unwrap();
+
+        assert!(config.harness.pi.read_only_workspace);
+    }
+
+    #[test]
+    fn pi_build_network_config_is_parsed_independently() {
+        let config: Config = serde_yaml::from_str(
+            r#"harness:
+  pi:
+    network: bridge
+    build_network: host
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.harness.pi.network, "bridge");
+        assert_eq!(config.harness.pi.build_network, "host");
+    }
+
+    #[test]
+    fn pi_read_only_rootfs_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"harness:
+  pi:
+    read_only_rootfs: true
+"#,
+        )
+        .unwrap();
+
+        assert!(config.harness.pi.read_only_rootfs);
     }
 
     #[test]

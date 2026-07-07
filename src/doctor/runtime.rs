@@ -20,7 +20,7 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
         Status::Warn,
         "Compose build network",
         contents.contains("network: ${VR_PI_BUILD_NETWORK:-host}"),
-        "build.network is controlled by harness.pi.network through VR_PI_BUILD_NETWORK",
+        "build.network is controlled by harness.pi.build_network through VR_PI_BUILD_NETWORK",
         "build.network is not controlled by VR_PI_BUILD_NETWORK",
     ));
 
@@ -44,13 +44,58 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
 
     checks.push(check_bool(
         Status::Warn,
+        "No new privileges",
+        contents.contains("no-new-privileges:true"),
+        "no-new-privileges is enabled for the room container",
+        "no-new-privileges was not found in compose.yaml",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
+        "Capability drop",
+        contents.contains("cap_drop:") && contents.contains("- ALL"),
+        "all default Linux capabilities are dropped for the room container",
+        "cap_drop: ALL was not found in compose.yaml",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
+        "Container init",
+        contents.contains("init: true"),
+        "a minimal init process is enabled for child-process reaping",
+        "init: true was not found in compose.yaml",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
+        "Workspace read-only option",
+        contents.contains("read_only: ${VR_WORKSPACE_READ_ONLY:-false}"),
+        "workspace mount read-only mode is controlled by harness.pi.read_only_workspace",
+        "workspace mount is not controlled by VR_WORKSPACE_READ_ONLY",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
         "SSH directory mount model",
         contents.contains(".vegasroom/ssh")
             && contents.contains("target: /home/agent/.ssh")
-            && contents.contains("target: /root/.ssh"),
-        "SSH directory mount is preserved for Pi HOME and root SSH",
-        "SSH directory mount was not found for both /home/agent/.ssh and /root/.ssh in compose.yaml",
+            && !contents.contains("target: /root/.ssh"),
+        "SSH state is mounted once at /home/agent/.ssh",
+        "SSH directory mount should target /home/agent/.ssh without a duplicate /root/.ssh bind mount",
     ));
+
+    if let Some(project_dir) = compose_file.parent() {
+        let dockerfile = project_dir.join("harness/pi/Dockerfile");
+        if let Ok(dockerfile_contents) = fs::read_to_string(&dockerfile) {
+            checks.push(check_bool(
+                Status::Warn,
+                "Root SSH symlink model",
+                dockerfile_contents.contains("ln -s /home/agent/.ssh /root/.ssh"),
+                "/root/.ssh is created as an image-level symlink to /home/agent/.ssh",
+                "/root/.ssh image-level symlink to /home/agent/.ssh was not found in the Pi Dockerfile",
+            ));
+        }
+    }
 
     checks.push(Check {
         status: Status::Pass,

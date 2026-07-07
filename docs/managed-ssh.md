@@ -146,7 +146,7 @@ When managed SSH is used for `vr pi` or `vr shell`:
 2. Vegasroom starts ssh-agent with an explicit socket path.
 3. Vegasroom runs ssh-add for selected keys on the host.
 4. Vegasroom writes a temporary Compose override.
-5. The room receives SSH_AUTH_SOCK=/tmp/vegasroom/ssh-agent.sock.
+5. The room receives SSH_AUTH_SOCK=/run/vegasroom-ssh-agent.sock.
 6. Docker Compose runs the room.
 7. When the room exits, Vegasroom kills the temporary ssh-agent.
 8. Vegasroom removes the temp directory.
@@ -156,7 +156,7 @@ When managed SSH is used for `vr pi` or `vr shell`:
 
 Vegasroom does not copy SSH private keys into the container.
 
-Vegasroom does not mount host `~/.ssh` into the container.
+Vegasroom does not mount host `~/.ssh` into the container. The managed SSH state directory is mounted once at `/home/agent/.ssh`; `/root/.ssh` is an image-level symlink to `/home/agent/.ssh` for root-run SSH/Git compatibility.
 
 In managed mode, Vegasroom runs `ssh-add` against selected host key files. The keys remain on the host, but the room can ask the forwarded agent socket for SSH signatures while the room is running.
 

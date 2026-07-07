@@ -51,11 +51,14 @@ MVP-preserved runtime decisions:
 - Docker Compose service `pi`
 - default local image `vegasroom/pi:local` from `harness.pi.image`
 - container-root runtime for now
-- default `build.network=host` from `harness.pi.network`
+- `no-new-privileges:true`, `cap_drop: ALL`, and `init: true` runtime hardening
+- default `build.network=host` from `harness.pi.build_network`
 - default `network_mode=host` from `harness.pi.network`
-- workspace mounted read-write
+- workspace mounted read-write by default, with opt-in `harness.pi.read_only_workspace`
+- container root filesystem writable by default, with opt-in `harness.pi.read_only_rootfs`
 - Pi state mounted read-write
-- Vegas-managed SSH directory mounted, not host `~/.ssh`
+- Vegas-managed SSH directory mounted once at `/home/agent/.ssh`, not host `~/.ssh`
+- `/root/.ssh` provided as an image-level symlink to `/home/agent/.ssh` for root-run SSH/Git compatibility without a second bind mount
 - ssh-agent socket forwarded when available
 
 ## Why container root remains for MVP
@@ -71,7 +74,7 @@ Host private keys are not copied into the room. Host `~/.ssh` is not mounted.
 When `$SSH_AUTH_SOCK` points to a real socket, the CLI generates a Compose override under a per-launch directory in `~/.vegasroom/cache` and mounts the socket into the container at:
 
 ```text
-/tmp/vegasroom/ssh-agent.sock
+/run/vegasroom-ssh-agent.sock
 ```
 
 ## Login model

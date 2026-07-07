@@ -142,11 +142,15 @@ The runtime is intentionally the proven M1-M4 model:
 - ephemeral container removed after exit
 - `/workspace` mounted from the resolved host workspace, defaulting to `~/.vegasroom/workspace`
 - Pi state mounted from `~/.vegasroom/harness/pi/...`
-- `~/.vegasroom/ssh` mounted as the container SSH directory
+- `~/.vegasroom/ssh` mounted once at `/home/agent/.ssh`; `/root/.ssh` is an image-level symlink to that path for root-run SSH/Git compatibility
+- workspace mount can be made read-only with `harness.pi.read_only_workspace: true`
+- container root filesystem can be made read-only with opt-in `harness.pi.read_only_rootfs: true`
 - ssh-agent socket forwarded only when `$SSH_AUTH_SOCK` is usable, or through Vegasroom-managed SSH keys
 - default `network_mode=host` from `harness.pi.network`
-- default `build.network=host` from `harness.pi.network`
+- default `build.network=host` from `harness.pi.build_network`
+- non-host runtime network modes such as `bridge` are validation experiments until build, Git, internet, and Pi `/login` all work
 - container runs as root inside rootless Docker for MVP bind-mount compatibility
+- `no-new-privileges:true`, `cap_drop: ALL`, and `init: true` are enabled for low-risk runtime hardening
 
 
 ## Workspace model
@@ -176,7 +180,11 @@ relative/path    relative to current host directory
 /absolute/path   used directly if it exists
 ```
 
-For `vr pi my-git-repo`, Vegasroom may create `~/.vegasroom/workspace/my-git-repo` if missing. External absolute paths must already exist. Credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube` are refused as workspaces.
+For `vr pi my-git-repo`, Vegasroom may create `~/.vegasroom/workspace/my-git-repo` if missing. External absolute paths must already exist. Credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube` are refused as workspaces. Vegasroom state outside the configured managed workspace root is also refused. Safe symlinked project directories are allowed with a warning; symlinks to blocked targets are refused. Set `workspace.risky_mount_policy: deny` to refuse broad warning-level mounts such as the host home directory or `/tmp`.
+
+Set `harness.pi.read_only_workspace: true` in `~/.vegasroom/config.yaml` to mount `/workspace` read-only. This applies to the default workspace and to explicit command-line workspace arguments such as `vr pi .`, `vr pi my-git-repo`, and `vr pi /path/to/project`.
+
+Set `harness.pi.read_only_rootfs: true` to make the container root filesystem read-only while keeping explicit Vegasroom mounts and tmpfs scratch paths writable.
 
 Pi-specific arguments can be passed through after the workspace, after an explicit separator, or at top level when the first token is a flag other than Vegasroom help/version flags:
 
@@ -227,7 +235,7 @@ vr ssh status
 At launch, the container receives:
 
 ```bash
-SSH_AUTH_SOCK=/tmp/vegasroom/ssh-agent.sock
+SSH_AUTH_SOCK=/run/vegasroom-ssh-agent.sock
 ```
 
 This allows Git-over-SSH without copying private key files. It is still powerful: processes in the container can ask the forwarded agent to sign SSH authentication requests while the socket is mounted.
@@ -375,9 +383,10 @@ Vegasroom MVP reduces accidental broad host filesystem access by only mounting e
 
 Known MVP tradeoffs:
 
-- container runs as root inside rootless Docker
+- container runs as root inside rootless Docker, with `no-new-privileges:true` and `cap_drop: ALL`
 - host networking is enabled
-- workspace is mounted read-write
+- workspace is mounted read-write by default unless `harness.pi.read_only_workspace` is enabled
+- container root filesystem remains writable by default unless `harness.pi.read_only_rootfs` is enabled
 - Pi state and auth are mounted read-write
 - SSH agent forwarding can authorize SSH operations
 - provider/API-key handling is deferred

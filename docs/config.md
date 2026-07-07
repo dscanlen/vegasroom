@@ -14,6 +14,9 @@ Vegasroom config lives at:
 paths:
   workspace: ~/.vegasroom/workspace
 
+workspace:
+  risky_mount_policy: warn
+
 docker:
   context: rootless
   compose_file: ~/.vegasroom/runtime/compose.yaml
@@ -32,6 +35,9 @@ harness:
     image: vegasroom/pi:local
     command: pi
     network: host
+    build_network: host
+    read_only_workspace: false
+    read_only_rootfs: false
 ```
 
 ## Active fields
@@ -39,11 +45,15 @@ harness:
 Currently active:
 
 - `paths.workspace`
+- `workspace.risky_mount_policy`
 - `docker.context`
 - `docker.compose_file`
 - `harness.pi.image`
 - `harness.pi.command`
 - `harness.pi.network`
+- `harness.pi.build_network`
+- `harness.pi.read_only_workspace`
+- `harness.pi.read_only_rootfs`
 - `ssh.mode`
 - `ssh.selected_keys`
 - `git.inherit_host`
@@ -101,6 +111,17 @@ resolves to:
 
 The managed Compose file receives the resolved host workspace through `VR_WORKSPACE` and mounts it at `/workspace`.
 
+## Workspace policy fields
+
+`workspace.risky_mount_policy` controls what Vegasroom does with broad or risky workspace mounts that are not already hard-blocked. Supported values are:
+
+```text
+warn  print a warning and continue, preserving the current default behavior
+deny  refuse the risky workspace before Docker starts
+```
+
+Credential directories, virtual system roots, `/`, and Vegasroom state outside the configured workspace root are always refused regardless of this policy. The policy applies to warning-level paths such as the host home directory and risky system paths under `/tmp`, `/etc`, `/usr`, `/var`, and similar roots.
+
 
 ## Pi harness runtime fields
 
@@ -120,7 +141,13 @@ For example, this runs `pi --session <id>` inside the room:
 vr pi --session <id>
 ```
 
-`harness.pi.network` controls the configured Docker network mode for the MVP runtime. Vegasroom passes it to Compose through `VR_PI_NETWORK_MODE` and `VR_PI_BUILD_NETWORK`. The default remains `host` because that is the proven rootless Docker model.
+`harness.pi.network` controls the configured Docker network mode for the room runtime. Vegasroom passes it to Compose through `VR_PI_NETWORK_MODE`. The default remains `host` because that is the proven rootless Docker model. Treat non-host values such as `bridge` as validation experiments until outbound HTTPS, Git-over-SSH, and Pi `/login` have all been proven on the target rootless Docker setup. M9 bridge validation did not pass Pi `/login` because the OAuth flow redirected the host browser to a container-local `localhost:<port>` callback.
+
+`harness.pi.build_network` controls the Docker build network mode. Vegasroom passes it to Compose through `VR_PI_BUILD_NETWORK`. The default remains `host` because that is the proven rootless Docker build model. Keep this as `host` while testing `harness.pi.network: bridge`; BuildKit may reject `build.network: bridge`.
+
+`harness.pi.read_only_workspace` controls whether the resolved host workspace is mounted read-only at `/workspace`. The default is `false` so Pi can edit project files. When set to `true`, it applies to the default workspace and to explicit workspace arguments such as `vr pi .`, `vr pi my-repo`, and `vr pi /path/to/repo`.
+
+`harness.pi.read_only_rootfs` controls an opt-in read-only container root filesystem experiment. The default is `false`. When set to `true`, Vegasroom adds a per-launch Compose override with `read_only: true` and writable tmpfs scratch paths for `/tmp`, `/run`, and `/var/tmp`. Explicit bind mounts such as `/workspace`, Pi state, SSH state, and cache keep their configured write behavior.
 
 ## SSH config
 

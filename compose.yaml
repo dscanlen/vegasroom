@@ -5,12 +5,19 @@ services:
       dockerfile: harness/pi/Dockerfile
       # Rootless fallback: avoid BuildKit trying to attach RUN containers
       # to the default bridge network on hosts where veth is unsupported.
-      # `vr` sets VR_PI_BUILD_NETWORK from harness.pi.network in config.
+      # `vr` sets VR_PI_BUILD_NETWORK from harness.pi.build_network in config.
       network: ${VR_PI_BUILD_NETWORK:-host}
     image: ${VR_PI_IMAGE:-vegasroom/pi:local}
     # M1 rootless-Docker bind-mount compatibility: run as container root.
     # With rootless Docker this is still unprivileged on the host.
     user: "0:0"
+    # Low-risk runtime hardening: keep the proven root/network/mount model,
+    # but prevent privilege escalation and drop ambient Linux capabilities.
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     # Rootless fallback for runtime container creation. `vr` sets
     # VR_PI_NETWORK_MODE from harness.pi.network in config.
     network_mode: ${VR_PI_NETWORK_MODE:-host}
@@ -31,6 +38,7 @@ services:
       - type: bind
         source: ${VR_WORKSPACE:-${HOME}/.vegasroom/workspace}
         target: /workspace
+        read_only: ${VR_WORKSPACE_READ_ONLY:-false}
       - type: bind
         source: ${HOME}/.vegasroom/harness/pi/config
         target: /home/agent/.pi/agent
@@ -46,12 +54,11 @@ services:
       # Mount the SSH state directory, not the known_hosts file directly.
       # Docker creates missing bind sources as directories, which causes
       # file-vs-directory errors when binding a missing file to known_hosts.
+      # /root/.ssh is an image-level symlink to /home/agent/.ssh so root-run
+      # ssh/git commands use the same managed state without a second bind mount.
       - type: bind
         source: ${HOME}/.vegasroom/ssh
         target: /home/agent/.ssh
-      - type: bind
-        source: ${HOME}/.vegasroom/ssh
-        target: /root/.ssh
       - type: bind
         source: ${HOME}/.vegasroom/cache
         target: /home/agent/.cache
