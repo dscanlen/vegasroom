@@ -6,7 +6,7 @@ use std::{
 use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
 
-use crate::{assets, config::DEFAULT_CONFIG_YAML};
+use crate::{assets, config::DEFAULT_CONFIG_YAML, harness};
 
 #[derive(Debug, Clone)]
 pub struct StatePaths {
@@ -46,17 +46,17 @@ impl StatePaths {
 
     pub fn from_root(root: PathBuf) -> Self {
         let harness_root = root.join("harness");
-        let pi_root = harness_root.join("pi");
-        let pi_config = pi_root.join("config");
-        let pi_extensions = pi_root.join("extensions");
-        let pi_skills = pi_root.join("skills");
-        let pi_sessions = pi_root.join("sessions");
-        let pi_auth_json = pi_config.join("auth.json");
+        let pi_root = harness_root.join(harness::PI.id);
+        let pi_config = pi_root.join(harness::PI_CONFIG_DIR);
+        let pi_extensions = pi_root.join(harness::PI_EXTENSIONS_DIR);
+        let pi_skills = pi_root.join(harness::PI_SKILLS_DIR);
+        let pi_sessions = pi_root.join(harness::PI_SESSIONS_DIR);
+        let pi_auth_json = pi_root.join(harness::PI.auth_state_relative_path);
         let workspace = root.join("workspace");
         let runtime_root = root.join("runtime");
         let runtime_harness_root = runtime_root.join("harness");
-        let runtime_pi_root = runtime_harness_root.join("pi");
-        let runtime_pi_dockerfile = runtime_pi_root.join("Dockerfile");
+        let runtime_pi_root = runtime_harness_root.join(harness::PI.id);
+        let runtime_pi_dockerfile = runtime_root.join(harness::PI.dockerfile_path);
         let runtime_compose_yaml = runtime_root.join("compose.yaml");
         let ssh_dir = root.join("ssh");
         let known_hosts = ssh_dir.join("known_hosts");
@@ -141,7 +141,10 @@ impl StatePaths {
         println!("Only configured mounts persist. Your workspace and harness config are mounted read-write.\n");
         println!("Your SSH private keys are not copied into the container, but the forwarded ssh-agent socket can authorize SSH operations while mounted.\n");
         println!("Provider login state may persist inside the Pi harness mount after you use Pi /login.\n");
-        println!("Default harness: Pi. Other harnesses can be added in future versions.\n");
+        println!(
+            "Default harness: {}. Other harnesses can be added in future versions.\n",
+            harness::PI.display_name
+        );
 
         fs::write(&self.disclaimer_ack, "acknowledged\n").with_context(|| {
             format!(

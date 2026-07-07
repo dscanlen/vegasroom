@@ -68,6 +68,29 @@ Legacy/future-facing fields from earlier configs are ignored if present:
 - `harness.pi.ssh_agent`
 - Claude harness config
 
+## Future multi-harness config direction
+
+The active config still only supports the Pi harness. Before adding Claude Code or Codex, the intended near-term shape is to keep each harness under `harness.<id>`:
+
+```yaml
+harness:
+  pi:
+    image: vegasroom/pi:local
+    command: pi
+    network: host
+    build_network: host
+    read_only_workspace: false
+    read_only_rootfs: false
+  claude:
+    image: vegasroom/claude:local
+    command: claude
+  codex:
+    image: vegasroom/codex:local
+    command: codex
+```
+
+This is documentation of direction, not active config. For now, Docker/runtime hardening fields remain on `harness.pi` until a second harness proves which settings should become shared. Avoid introducing a top-level `runtime:` config section until that need is validated.
+
 ## Managed runtime path
 
 The generated template points to the managed Compose file:

@@ -10,6 +10,7 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::{
     config::{Config, SelectedSshKey},
+    harness,
     paths::{display_path, StatePaths},
     ssh::{self, SshRuntime, SshRuntimeMode},
     workspace::{self, ResolvedWorkspace},
@@ -38,6 +39,32 @@ pub struct ContainerSshDoctorProbe {
 }
 
 pub fn build_pi_image(config: &Config) -> Result<()> {
+    build_harness_image(config, &harness::PI)
+}
+
+pub fn run_pi(config: &Config, workspace: &ResolvedWorkspace, pi_args: &[String]) -> Result<i32> {
+    run_harness_command(
+        config,
+        &harness::PI,
+        workspace,
+        harness_command(config, &harness::PI),
+        pi_args,
+    )
+}
+
+pub fn run_shell(config: &Config, workspace: &ResolvedWorkspace) -> Result<i32> {
+    run_harness_command(config, &harness::PI, workspace, "sh", &[])
+}
+
+pub fn ensure_pi_image_exists(config: &Config) -> Result<()> {
+    ensure_harness_image_exists(config, &harness::PI)
+}
+
+pub fn image_exists(config: &Config) -> Result<bool> {
+    harness_image_exists(config, &harness::PI)
+}
+
+fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
     let compose_file = config.resolved_compose_file()?;
     let project_dir = compose_project_dir(&compose_file)?;
 
@@ -49,7 +76,7 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
         .arg(&compose_file)
         .arg("--project-directory")
         .arg(&project_dir)
-        .args(["build", "pi"])
+        .args(["build", descriptor.service_name])
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -66,35 +93,38 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
     }
 }
 
-pub fn run_pi(config: &Config, workspace: &ResolvedWorkspace, pi_args: &[String]) -> Result<i32> {
-    run_compose(config, workspace, &pi_compose_args(config, pi_args), true)
-}
-
-pub fn run_shell(config: &Config, workspace: &ResolvedWorkspace) -> Result<i32> {
+fn run_harness_command(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+    workspace: &ResolvedWorkspace,
+    command: &str,
+    args: &[String],
+) -> Result<i32> {
     run_compose(
         config,
         workspace,
-        &[
-            "run".to_owned(),
-            "--rm".to_owned(),
-            "pi".to_owned(),
-            "sh".to_owned(),
-        ],
+        &harness_compose_args(descriptor, command, args),
         true,
     )
 }
 
-pub fn ensure_pi_image_exists(config: &Config) -> Result<()> {
-    if image_exists(config)? {
+fn ensure_harness_image_exists(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+) -> Result<()> {
+    if harness_image_exists(config, descriptor)? {
         Ok(())
     } else {
-        Err(anyhow!("image not found: {}", config.harness.pi.image))
+        Err(anyhow!(
+            "image not found: {}",
+            harness_image(config, descriptor)
+        ))
     }
 }
 
-pub fn image_exists(config: &Config) -> Result<bool> {
+fn harness_image_exists(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<bool> {
     let status = base_docker(config)
-        .args(["image", "inspect", config.harness.pi.image.as_str()])
+        .args(["image", "inspect", harness_image(config, descriptor)])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -162,19 +192,20 @@ pub fn can_run_trivial_container(config: &Config) -> bool {
 }
 
 pub fn container_doctor_probe(config: &Config) -> Result<ContainerDoctorProbe> {
-    let output = compose_shell_output_without_ssh(
-        config,
+    let pi_config_path = harness::PI.required_state_dir_container_path(harness::PI_CONFIG_DIR);
+    let pi_sessions_path = harness::PI.required_state_dir_container_path(harness::PI_SESSIONS_DIR);
+    let script = format!(
         r#"
 set +e
 
-tmp=/home/agent/.pi/agent/.vr-m4-write-test
+tmp="{pi_config_path}/.vr-m4-write-test"
 if echo m4 > "$tmp" 2>/dev/null && rm -f "$tmp"; then
   echo 'VR_CHECK pi_config_writable=pass'
 else
   echo 'VR_CHECK pi_config_writable=fail'
 fi
 
-tmp=/home/agent/.pi/sessions/.vr-m4-write-test
+tmp="{pi_sessions_path}/.vr-m4-write-test"
 if echo m4 > "$tmp" 2>/dev/null && rm -f "$tmp"; then
   echo 'VR_CHECK pi_sessions_writable=pass'
 else
@@ -187,10 +218,11 @@ else
   echo 'VR_CHECK internet=fail'
 fi
 
-printf 'VR_GIT_NAME=%s\n' "${GIT_AUTHOR_NAME:-}"
-printf 'VR_GIT_EMAIL=%s\n' "${GIT_AUTHOR_EMAIL:-}"
+printf 'VR_GIT_NAME=%s\n' "${{GIT_AUTHOR_NAME:-}}"
+printf 'VR_GIT_EMAIL=%s\n' "${{GIT_AUTHOR_EMAIL:-}}"
 "#,
-    )?;
+    );
+    let output = compose_shell_output_without_ssh(config, &script)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
@@ -325,7 +357,7 @@ fn compose_shell_output_with_ssh(
     )?;
     invocation
         .command
-        .args(["run", "--rm", "pi", "sh", "-lc", script])
+        .args(["run", "--rm", harness::PI.service_name, "sh", "-lc", script])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -518,14 +550,17 @@ fn prepare_read_only_rootfs_override(
     })?;
 
     let override_path = runtime_dir.join("read-only-rootfs.compose.yaml");
-    let contents = r#"services:
-  pi:
+    let contents = format!(
+        r#"services:
+  {service_name}:
     read_only: true
     tmpfs:
       - /tmp
       - /run
       - /var/tmp
-"#;
+"#,
+        service_name = harness::PI.service_name,
+    );
 
     fs::write(&override_path, contents).with_context(|| {
         format!(
@@ -569,7 +604,7 @@ fn prepare_git_identity_override(
     let override_path = runtime_dir.join("git-identity.compose.yaml");
     let contents = format!(
         r#"services:
-  pi:
+  {service_name}:
     environment:
       GIT_CONFIG_GLOBAL: /run/vegasroom-gitconfig
       GIT_AUTHOR_NAME: "{name}"
@@ -582,6 +617,7 @@ fn prepare_git_identity_override(
         target: /run/vegasroom-gitconfig
         read_only: true
 "#,
+        service_name = harness::PI.service_name,
         name = yaml_double_quoted_str(&identity.name),
         email = yaml_double_quoted_str(&identity.email),
         gitconfig_path = yaml_double_quoted_path(&gitconfig_path),
@@ -711,14 +747,34 @@ fn compose_project_dir(compose_file: &std::path::Path) -> Result<std::path::Path
         .context("Compose file has no parent directory")
 }
 
-fn pi_compose_args(config: &Config, pi_args: &[String]) -> Vec<String> {
+fn harness_image<'a>(config: &'a Config, descriptor: &harness::HarnessDescriptor) -> &'a str {
+    if descriptor.id == harness::PI.id {
+        config.harness.pi.image.as_str()
+    } else {
+        descriptor.default_image
+    }
+}
+
+fn harness_command<'a>(config: &'a Config, descriptor: &harness::HarnessDescriptor) -> &'a str {
+    if descriptor.id == harness::PI.id {
+        config.harness.pi.command.as_str()
+    } else {
+        descriptor.default_command
+    }
+}
+
+fn harness_compose_args(
+    descriptor: &harness::HarnessDescriptor,
+    command: &str,
+    args: &[String],
+) -> Vec<String> {
     let mut compose_args = vec![
         "run".to_owned(),
         "--rm".to_owned(),
-        "pi".to_owned(),
-        config.harness.pi.command.clone(),
+        descriptor.service_name.to_owned(),
+        command.to_owned(),
     ];
-    compose_args.extend(pi_args.iter().cloned());
+    compose_args.extend(args.iter().cloned());
     compose_args
 }
 
@@ -767,16 +823,21 @@ mod tests {
     }
 
     #[test]
-    fn pi_compose_args_always_uses_configured_command() {
+    fn harness_compose_args_uses_descriptor_service_and_configured_command() {
         let mut config = Config::default();
         config.harness.pi.command = "custom-pi".to_owned();
+        let command = harness_command(&config, &harness::PI);
 
         assert_eq!(
-            pi_compose_args(&config, &[]),
+            harness_compose_args(&harness::PI, command, &[]),
             strings(&["run", "--rm", "pi", "custom-pi"]),
         );
         assert_eq!(
-            pi_compose_args(&config, &["--session".to_owned(), "abc".to_owned()]),
+            harness_compose_args(
+                &harness::PI,
+                command,
+                &["--session".to_owned(), "abc".to_owned()]
+            ),
             strings(&["run", "--rm", "pi", "custom-pi", "--session", "abc"]),
         );
     }
@@ -865,6 +926,7 @@ VR_SSH_ADD_CODE=1
             .unwrap();
         let contents = fs::read_to_string(&override_path).unwrap();
 
+        assert!(contents.contains("  pi:"));
         assert!(contents.contains("read_only: true"));
         assert!(contents.contains("- /tmp"));
         assert!(contents.contains("- /run"));

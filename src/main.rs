@@ -3,6 +3,7 @@ mod cli;
 mod config;
 mod docker;
 mod doctor;
+mod harness;
 mod paths;
 mod ssh;
 mod workspace;

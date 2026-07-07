@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use super::{Check, Status};
-use crate::paths::display_path;
+use crate::{harness, paths::display_path};
 
 pub(super) fn check_path_dir(name: &'static str, path: &Path) -> Check {
     if path.is_dir() {
@@ -111,28 +111,36 @@ pub(super) fn check_dir_writable(name: &'static str, path: &Path) -> Check {
 }
 
 pub(super) fn check_pi_auth_state(path: &Path) -> Check {
+    check_harness_auth_state(path, &harness::PI)
+}
+
+fn check_harness_auth_state(path: &Path, descriptor: &harness::HarnessDescriptor) -> Check {
+    let check_name = "Pi auth state";
     if path.is_file() {
         Check {
             status: Status::Pass,
-            name: "Pi auth state",
+            name: check_name,
             detail: format!("{} exists", display_path(path)),
         }
     } else if path.exists() {
         Check {
             status: Status::Fail,
-            name: "Pi auth state",
+            name: check_name,
             detail: format!(
-                "expected Pi auth state to be a file, but path exists as a directory: {}",
+                "expected {} auth state to be a file, but path exists as a directory: {}",
+                descriptor.display_name,
                 display_path(path)
             ),
         }
     } else {
         Check {
             status: Status::Warn,
-            name: "Pi auth state",
+            name: check_name,
             detail: format!(
-                "{} not found. Run `cargo run -- pi`, then use Pi `/login`.",
-                display_path(path)
+                "{} not found. Run `cargo run -- {}`, then use {} `/login`.",
+                display_path(path),
+                descriptor.id,
+                descriptor.display_name
             ),
         }
     }

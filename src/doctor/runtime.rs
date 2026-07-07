@@ -1,17 +1,31 @@
 use std::{fs, path::Path};
 
+use crate::harness;
+
 use super::{check_bool, Check, Status};
+
+fn container_home_path(relative: &str) -> String {
+    format!(
+        "{}/{}",
+        harness::PI.container_home.trim_end_matches('/'),
+        relative.trim_start_matches('/')
+    )
+}
 
 pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> {
     let mut checks = Vec::new();
     let Ok(contents) = fs::read_to_string(compose_file) else {
         return checks;
     };
+    let harness_ssh_dir = container_home_path(".ssh");
+    let harness_ssh_target = format!("target: {harness_ssh_dir}");
+    let root_ssh_symlink = format!("ln -s {harness_ssh_dir} /root/.ssh");
 
     checks.push(check_bool(
         Status::Warn,
         "Compose image setting",
-        contents.contains("image: ${VR_PI_IMAGE:-vegasroom/pi:local}"),
+        contents
+            .contains(format!("image: ${{VR_PI_IMAGE:-{}}}", harness::PI.default_image).as_str()),
         "image is controlled by harness.pi.image through VR_PI_IMAGE",
         "Compose image is not controlled by VR_PI_IMAGE",
     ));
@@ -78,21 +92,27 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
         Status::Warn,
         "SSH directory mount model",
         contents.contains(".vegasroom/ssh")
-            && contents.contains("target: /home/agent/.ssh")
+            && contents.contains(&harness_ssh_target)
             && !contents.contains("target: /root/.ssh"),
-        "SSH state is mounted once at /home/agent/.ssh",
-        "SSH directory mount should target /home/agent/.ssh without a duplicate /root/.ssh bind mount",
+        format!("SSH state is mounted once at {harness_ssh_dir}"),
+        format!(
+            "SSH directory mount should target {harness_ssh_dir} without a duplicate /root/.ssh bind mount"
+        ),
     ));
 
     if let Some(project_dir) = compose_file.parent() {
-        let dockerfile = project_dir.join("harness/pi/Dockerfile");
+        let dockerfile = project_dir.join(harness::PI.dockerfile_path);
         if let Ok(dockerfile_contents) = fs::read_to_string(&dockerfile) {
             checks.push(check_bool(
                 Status::Warn,
                 "Root SSH symlink model",
-                dockerfile_contents.contains("ln -s /home/agent/.ssh /root/.ssh"),
-                "/root/.ssh is created as an image-level symlink to /home/agent/.ssh",
-                "/root/.ssh image-level symlink to /home/agent/.ssh was not found in the Pi Dockerfile",
+                dockerfile_contents.contains(&root_ssh_symlink),
+                format!(
+                    "/root/.ssh is created as an image-level symlink to {harness_ssh_dir}"
+                ),
+                format!(
+                    "/root/.ssh image-level symlink to {harness_ssh_dir} was not found in the Pi Dockerfile"
+                ),
             ));
         }
     }

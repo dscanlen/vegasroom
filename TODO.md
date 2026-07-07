@@ -128,11 +128,11 @@ future M9/M10 work becomes easier
 
 ### 4. Clean up CLI parsing without expanding the command surface
 
-**Status:** TODO
+**Status:** DONE
 
-The manual parsing supports Pi pass-through ergonomics, but it should stay well tested and minimal.
+The manual parsing supports Pi pass-through ergonomics while keeping the command surface stable.
 
-Preserve the current command surface:
+Preserved command surface:
 
 ```bash
 vr
@@ -145,13 +145,13 @@ vr pi [workspace] [pi-args...]
 vr shell [workspace]
 ```
 
-Tasks:
+Completed:
 
 ```text
-keep tests for ambiguous cases
-avoid adding new commands unless a milestone requires them
-make help text and parsing behavior match exactly
-consider a small parser helper type if it improves readability
+kept tests for ambiguous cases
+avoided adding new commands
+kept help text and parsing behavior aligned
+kept parsing isolated in small helper types/functions such as ManualLaunch, PiInvocation, parse_manual_launch, parse_pi_invocation, and parse_shell_workspace
 ```
 
 Acceptance criteria:
@@ -165,7 +165,7 @@ help output remains accurate
 
 ### 5. M9 - Runtime hardening
 
-**Status:** IN PROGRESS
+**Status:** DONE
 
 Improve security posture without breaking current Pi, SSH, Git, and login flows.
 
@@ -244,9 +244,21 @@ security docs are updated honestly
 
 ### 6. Improve workspace mount policy
 
-**Status:** TODO
+**Status:** DONE
 
 Current workspace safety checks are useful but should become stricter and more explicit.
+
+Completed during M9:
+
+```text
+reviewed symlinked workspace handling
+safe symlinked project paths now warn
+symlinks to blocked canonical targets are refused
+Vegasroom state outside the configured workspace root is refused
+workspace.risky_mount_policy supports warn/deny for warning-level risky mounts
+read-only workspace mode is available through harness.pi.read_only_workspace
+workspace docs and tests cover the stricter policy
+```
 
 Tasks:
 
@@ -269,17 +281,21 @@ broad host mounts are deliberate, not accidental
 
 ### 7. Prepare for M10 with a small harness descriptor
 
-**Status:** TODO
+**Status:** DONE
 
-Do this before adding a second harness. The goal is to make Pi use a small internal descriptor without creating a plugin system.
+Do this before adding a second harness. The goal was to make Pi use a small internal descriptor without creating a plugin system.
 
-Tasks:
+Completed:
 
 ```text
-identify minimal harness fields: service name, image, command, state dirs, Dockerfile path
-adapt Pi code to use that descriptor
-keep Compose/runtime model unchanged
-avoid marketplace/plugin abstractions
+added an internal Pi harness descriptor for service name, display name, default image, default command, Dockerfile path, container home, state dirs, and auth state path
+wired descriptor constants into config defaults, state paths, Docker Compose service invocations, and doctor Dockerfile checks
+wired descriptor-derived Pi container paths into Docker doctor probes and doctor output
+wired descriptor-derived Compose service names into generated SSH, Git identity, and read-only-rootfs overrides
+introduced descriptor-aware internal Docker helpers while preserving the existing Pi-specific public wrappers
+documented the minimal near-term multi-harness config direction before adding a second harness
+kept CLI behavior and Compose/runtime model unchanged
+retired the temporary harness descriptor handover document after folding its outcomes back into TODO/docs
 ```
 
 Acceptance criteria:
