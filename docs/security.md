@@ -30,7 +30,9 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 
 The container currently runs as root. This was retained because it works with rootless Docker bind mounts on the target system.
 
-Root inside a rootless Docker daemon is not the same as host root, but this is still a tradeoff. Current hardening keeps the proven rootless-Docker bind-mount model while adding `no-new-privileges:true` and `cap_drop: ALL` to reduce the power of container root. Non-root runtime remains deferred until Pi login, sessions, Git, SSH, and workspace writes can be validated with the final mount model.
+Root inside a rootless Docker daemon is not the same as host root, but this is still a tradeoff. Current hardening keeps the proven rootless-Docker bind-mount model while adding `no-new-privileges:true` and `cap_drop: ALL` to reduce the power of container root.
+
+A non-root runtime experiment using the image's `node` user was tested during M9 and failed the baseline workspace-write requirement: `touch /workspace/vr-node-write-test` returned `Permission denied` on the rootless Docker bind mount. Because editing the mounted workspace is core agent functionality, container root remains the default and non-root runtime is deferred unless a future UID/GID mapping approach preserves workspace, Pi state, SSH, Git, and login behavior.
 
 ### Host networking
 
@@ -86,7 +88,7 @@ Treat the Pi harness state directory as sensitive.
 
 Post-MVP work should revisit:
 
-- non-root container user
+- non-root container user through a UID/GID mapping approach that preserves bind-mount writes
 - network restrictions
 - stricter mount policy and optional confirmation prompts
 - broader read-only profiles beyond `/workspace`

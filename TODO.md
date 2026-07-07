@@ -180,6 +180,7 @@ added opt-in harness.pi.read_only_workspace for read-only /workspace mounts
 wired read-only workspace mode through VR_WORKSPACE_READ_ONLY for all workspace selections
 refused Vegasroom state mounts outside the managed workspace
 added warnings for safe symlinked workspace paths while still blocking symlinks to refused targets
+tested non-root node runtime and documented that it breaks workspace bind-mount writes under the current rootless Docker model
 updated security/design/README/workspace/config docs to describe the current hardening baseline
 ```
 
@@ -213,7 +214,7 @@ Candidate staged implementation:
 ```text
 add opt-in capability drop / no-new-privileges settings
 test non-root container runtime with the final mount model
-add UID/GID mapping options if needed
+add UID/GID mapping options if needed; plain node/1000 runtime failed workspace write validation
 add optional read-only workspace mode
 consider tmpfs for /tmp and other scratch paths
 review read-only root filesystem feasibility
