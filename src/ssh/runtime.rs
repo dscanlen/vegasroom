@@ -9,6 +9,7 @@ use anyhow::{anyhow, bail, Context, Result};
 
 use crate::{
     config::{Config, SelectedSshKey, SshMode},
+    harness,
     paths::{display_path, expand_tilde},
 };
 
@@ -199,7 +200,7 @@ fn write_agent_compose_override_for_socket(
     let override_path = runtime_dir.join("ssh-agent.compose.yaml");
     let contents = format!(
         r#"services:
-  pi:
+  {service_name}:
     environment:
       SSH_AUTH_SOCK: {container_sock}
     volumes:
@@ -207,6 +208,7 @@ fn write_agent_compose_override_for_socket(
         source: "{host_sock}"
         target: {container_sock}
 "#,
+        service_name = harness::PI.service_name,
         container_sock = CONTAINER_SSH_AUTH_SOCK,
         host_sock = yaml_double_quoted(host_sock),
     );

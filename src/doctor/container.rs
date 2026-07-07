@@ -1,7 +1,7 @@
 use anyhow::Result;
 
 use super::{Check, Status};
-use crate::{config::Config, docker, ssh};
+use crate::{config::Config, docker, harness, ssh};
 
 pub(super) fn check_container_git_identity(probe: &Result<docker::ContainerDoctorProbe>) -> Check {
     match probe {
@@ -136,17 +136,19 @@ pub(super) fn check_container_login_readiness(
     probe: &Result<docker::ContainerDoctorProbe>,
 ) -> Vec<Check> {
     let mut checks = Vec::new();
+    let pi_config_path = harness::PI.required_state_dir_container_path(harness::PI_CONFIG_DIR);
+    let pi_sessions_path = harness::PI.required_state_dir_container_path(harness::PI_SESSIONS_DIR);
 
     checks.push(match probe {
         Ok(probe) if probe.pi_config_writable => Check {
             status: Status::Pass,
             name: "Container Pi config writable",
-            detail: "/home/agent/.pi/agent is writable inside the room".to_owned(),
+            detail: format!("{pi_config_path} is writable inside the room"),
         },
         Ok(_) => Check {
             status: Status::Fail,
             name: "Container Pi config writable",
-            detail: "/home/agent/.pi/agent is not writable inside the room".to_owned(),
+            detail: format!("{pi_config_path} is not writable inside the room"),
         },
         Err(err) => Check {
             status: Status::Warn,
@@ -159,12 +161,12 @@ pub(super) fn check_container_login_readiness(
         Ok(probe) if probe.pi_sessions_writable => Check {
             status: Status::Pass,
             name: "Container Pi sessions writable",
-            detail: "/home/agent/.pi/sessions is writable inside the room".to_owned(),
+            detail: format!("{pi_sessions_path} is writable inside the room"),
         },
         Ok(_) => Check {
             status: Status::Fail,
             name: "Container Pi sessions writable",
-            detail: "/home/agent/.pi/sessions is not writable inside the room".to_owned(),
+            detail: format!("{pi_sessions_path} is not writable inside the room"),
         },
         Err(err) => Check {
             status: Status::Warn,

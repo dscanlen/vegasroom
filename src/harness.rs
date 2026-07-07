@@ -18,9 +18,17 @@ pub struct HarnessStateDir {
 }
 
 impl HarnessDescriptor {
-    #[cfg(test)]
     pub fn state_dir(&self, name: &str) -> Option<&HarnessStateDir> {
         self.state_dirs.iter().find(|dir| dir.name == name)
+    }
+
+    pub fn state_dir_container_path(&self, name: &str) -> Option<&'static str> {
+        self.state_dir(name).map(|dir| dir.container_path)
+    }
+
+    pub fn required_state_dir_container_path(&self, name: &str) -> &'static str {
+        self.state_dir_container_path(name)
+            .expect("harness descriptor should define required state dir")
     }
 }
 
@@ -77,6 +85,10 @@ mod tests {
         assert_eq!(
             PI.state_dir(PI_SESSIONS_DIR).map(|dir| dir.container_path),
             Some("/home/agent/.pi/sessions")
+        );
+        assert_eq!(
+            PI.required_state_dir_container_path(PI_CONFIG_DIR),
+            "/home/agent/.pi/agent"
         );
         assert_eq!(PI.auth_state_relative_path, "config/auth.json");
     }

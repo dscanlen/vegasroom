@@ -163,19 +163,20 @@ pub fn can_run_trivial_container(config: &Config) -> bool {
 }
 
 pub fn container_doctor_probe(config: &Config) -> Result<ContainerDoctorProbe> {
-    let output = compose_shell_output_without_ssh(
-        config,
+    let pi_config_path = harness::PI.required_state_dir_container_path(harness::PI_CONFIG_DIR);
+    let pi_sessions_path = harness::PI.required_state_dir_container_path(harness::PI_SESSIONS_DIR);
+    let script = format!(
         r#"
 set +e
 
-tmp=/home/agent/.pi/agent/.vr-m4-write-test
+tmp="{pi_config_path}/.vr-m4-write-test"
 if echo m4 > "$tmp" 2>/dev/null && rm -f "$tmp"; then
   echo 'VR_CHECK pi_config_writable=pass'
 else
   echo 'VR_CHECK pi_config_writable=fail'
 fi
 
-tmp=/home/agent/.pi/sessions/.vr-m4-write-test
+tmp="{pi_sessions_path}/.vr-m4-write-test"
 if echo m4 > "$tmp" 2>/dev/null && rm -f "$tmp"; then
   echo 'VR_CHECK pi_sessions_writable=pass'
 else
@@ -188,10 +189,11 @@ else
   echo 'VR_CHECK internet=fail'
 fi
 
-printf 'VR_GIT_NAME=%s\n' "${GIT_AUTHOR_NAME:-}"
-printf 'VR_GIT_EMAIL=%s\n' "${GIT_AUTHOR_EMAIL:-}"
+printf 'VR_GIT_NAME=%s\n' "${{GIT_AUTHOR_NAME:-}}"
+printf 'VR_GIT_EMAIL=%s\n' "${{GIT_AUTHOR_EMAIL:-}}"
 "#,
-    )?;
+    );
+    let output = compose_shell_output_without_ssh(config, &script)?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
@@ -519,14 +521,17 @@ fn prepare_read_only_rootfs_override(
     })?;
 
     let override_path = runtime_dir.join("read-only-rootfs.compose.yaml");
-    let contents = r#"services:
-  pi:
+    let contents = format!(
+        r#"services:
+  {service_name}:
     read_only: true
     tmpfs:
       - /tmp
       - /run
       - /var/tmp
-"#;
+"#,
+        service_name = harness::PI.service_name,
+    );
 
     fs::write(&override_path, contents).with_context(|| {
         format!(
@@ -570,7 +575,7 @@ fn prepare_git_identity_override(
     let override_path = runtime_dir.join("git-identity.compose.yaml");
     let contents = format!(
         r#"services:
-  pi:
+  {service_name}:
     environment:
       GIT_CONFIG_GLOBAL: /run/vegasroom-gitconfig
       GIT_AUTHOR_NAME: "{name}"
@@ -583,6 +588,7 @@ fn prepare_git_identity_override(
         target: /run/vegasroom-gitconfig
         read_only: true
 "#,
+        service_name = harness::PI.service_name,
         name = yaml_double_quoted_str(&identity.name),
         email = yaml_double_quoted_str(&identity.email),
         gitconfig_path = yaml_double_quoted_path(&gitconfig_path),
@@ -866,6 +872,7 @@ VR_SSH_ADD_CODE=1
             .unwrap();
         let contents = fs::read_to_string(&override_path).unwrap();
 
+        assert!(contents.contains("  pi:"));
         assert!(contents.contains("read_only: true"));
         assert!(contents.contains("- /tmp"));
         assert!(contents.contains("- /run"));

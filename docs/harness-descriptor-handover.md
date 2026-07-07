@@ -121,16 +121,17 @@ Optional:
 cargo run -- pi -- --help
 ```
 
-## Recommended next phase: finish descriptor adoption for Pi constants
+## Completed continuation: finish descriptor adoption for Pi constants
 
-Continue replacing hardcoded Pi container paths in doctor/runtime checks with descriptor-derived values where it improves clarity without creating awkward code.
+The follow-up slice replaced remaining obvious hardcoded Pi container paths and generated override service names with descriptor-derived values where it improved clarity without changing behavior.
 
-Candidate areas:
+Completed areas:
 
 ```text
 src/docker.rs
+src/ssh/runtime.rs
 src/doctor/container.rs
-src/doctor/mod.rs
+src/doctor/runtime.rs
 src/doctor/path_checks.rs
 ```
 

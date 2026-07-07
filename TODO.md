@@ -285,11 +285,20 @@ broad host mounts are deliberate, not accidental
 
 Do this before adding a second harness. The goal is to make Pi use a small internal descriptor without creating a plugin system.
 
+Completed current slice:
+
+```text
+finished descriptor adoption for remaining obvious Pi container path and service-name constants in Docker, SSH runtime, and doctor checks
+kept this as a refactor only with no CLI, config, or runtime behavior changes
+```
+
 Completed so far:
 
 ```text
 added an internal Pi harness descriptor for service name, display name, default image, default command, Dockerfile path, container home, state dirs, and auth state path
 wired descriptor constants into config defaults, state paths, Docker Compose service invocations, and doctor Dockerfile checks
+wired descriptor-derived Pi container paths into Docker doctor probes and doctor output
+wired descriptor-derived Compose service names into generated SSH, Git identity, and read-only-rootfs overrides
 kept CLI behavior and Compose/runtime model unchanged
 ```
 
