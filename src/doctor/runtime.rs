@@ -79,10 +79,23 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
         "SSH directory mount model",
         contents.contains(".vegasroom/ssh")
             && contents.contains("target: /home/agent/.ssh")
-            && contents.contains("target: /root/.ssh"),
-        "SSH directory mount is preserved for Pi HOME and root SSH",
-        "SSH directory mount was not found for both /home/agent/.ssh and /root/.ssh in compose.yaml",
+            && !contents.contains("target: /root/.ssh"),
+        "SSH state is mounted once at /home/agent/.ssh",
+        "SSH directory mount should target /home/agent/.ssh without a duplicate /root/.ssh bind mount",
     ));
+
+    if let Some(project_dir) = compose_file.parent() {
+        let dockerfile = project_dir.join("harness/pi/Dockerfile");
+        if let Ok(dockerfile_contents) = fs::read_to_string(&dockerfile) {
+            checks.push(check_bool(
+                Status::Warn,
+                "Root SSH symlink model",
+                dockerfile_contents.contains("ln -s /home/agent/.ssh /root/.ssh"),
+                "/root/.ssh is created as an image-level symlink to /home/agent/.ssh",
+                "/root/.ssh image-level symlink to /home/agent/.ssh was not found in the Pi Dockerfile",
+            ));
+        }
+    }
 
     checks.push(Check {
         status: Status::Pass,

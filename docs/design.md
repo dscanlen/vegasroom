@@ -57,7 +57,8 @@ MVP-preserved runtime decisions:
 - workspace mounted read-write by default, with opt-in `harness.pi.read_only_workspace`
 - container root filesystem writable by default, with opt-in `harness.pi.read_only_rootfs`
 - Pi state mounted read-write
-- Vegas-managed SSH directory mounted, not host `~/.ssh`
+- Vegas-managed SSH directory mounted once at `/home/agent/.ssh`, not host `~/.ssh`
+- `/root/.ssh` provided as an image-level symlink to `/home/agent/.ssh` for root-run SSH/Git compatibility without a second bind mount
 - ssh-agent socket forwarded when available
 
 ## Why container root remains for MVP

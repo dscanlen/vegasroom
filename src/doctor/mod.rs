@@ -15,7 +15,7 @@ use self::{
     host::{
         check_config_git_section, check_git_identity, check_host_ssh_agent, check_network_mode,
         check_read_only_rootfs_mode, check_ssh_auth_sock_env, check_ssh_configuration,
-        check_workspace_mount_mode,
+        check_workspace_mount_mode, check_workspace_risky_mount_policy,
     },
     output::print_checks,
     path_checks::{
@@ -114,6 +114,7 @@ pub fn run() -> Result<i32> {
     checks.push(check_path_file("Config", &state.config_yaml));
     checks.push(check_config_git_section(&state.config_yaml));
     checks.push(check_network_mode(&config));
+    checks.push(check_workspace_risky_mount_policy(&config));
     checks.push(check_workspace_mount_mode(&config));
     checks.push(check_read_only_rootfs_mode(&config));
     checks.push(check_known_hosts(&state.known_hosts));

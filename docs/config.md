@@ -14,6 +14,9 @@ Vegasroom config lives at:
 paths:
   workspace: ~/.vegasroom/workspace
 
+workspace:
+  risky_mount_policy: warn
+
 docker:
   context: rootless
   compose_file: ~/.vegasroom/runtime/compose.yaml
@@ -42,6 +45,7 @@ harness:
 Currently active:
 
 - `paths.workspace`
+- `workspace.risky_mount_policy`
 - `docker.context`
 - `docker.compose_file`
 - `harness.pi.image`
@@ -106,6 +110,17 @@ resolves to:
 ```
 
 The managed Compose file receives the resolved host workspace through `VR_WORKSPACE` and mounts it at `/workspace`.
+
+## Workspace policy fields
+
+`workspace.risky_mount_policy` controls what Vegasroom does with broad or risky workspace mounts that are not already hard-blocked. Supported values are:
+
+```text
+warn  print a warning and continue, preserving the current default behavior
+deny  refuse the risky workspace before Docker starts
+```
+
+Credential directories, virtual system roots, `/`, and Vegasroom state outside the configured workspace root are always refused regardless of this policy. The policy applies to warning-level paths such as the host home directory and risky system paths under `/tmp`, `/etc`, `/usr`, `/var`, and similar roots.
 
 
 ## Pi harness runtime fields

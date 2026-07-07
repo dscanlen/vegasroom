@@ -54,12 +54,11 @@ services:
       # Mount the SSH state directory, not the known_hosts file directly.
       # Docker creates missing bind sources as directories, which causes
       # file-vs-directory errors when binding a missing file to known_hosts.
+      # /root/.ssh is an image-level symlink to /home/agent/.ssh so root-run
+      # ssh/git commands use the same managed state without a second bind mount.
       - type: bind
         source: ${HOME}/.vegasroom/ssh
         target: /home/agent/.ssh
-      - type: bind
-        source: ${HOME}/.vegasroom/ssh
-        target: /root/.ssh
       - type: bind
         source: ${HOME}/.vegasroom/cache
         target: /home/agent/.cache

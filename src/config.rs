@@ -11,6 +11,9 @@ use crate::paths::{display_path, expand_tilde, StatePaths};
 pub const DEFAULT_CONFIG_YAML: &str = r#"paths:
   workspace: ~/.vegasroom/workspace
 
+workspace:
+  risky_mount_policy: warn
+
 docker:
   context: rootless
   compose_file: ~/.vegasroom/runtime/compose.yaml
@@ -40,6 +43,9 @@ pub struct Config {
     pub paths: PathsConfig,
 
     #[serde(default)]
+    pub workspace: WorkspaceConfig,
+
+    #[serde(default)]
     pub docker: DockerConfig,
 
     #[serde(default)]
@@ -56,6 +62,20 @@ pub struct Config {
 pub struct PathsConfig {
     #[serde(default = "default_workspace")]
     pub workspace: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceConfig {
+    #[serde(default)]
+    pub risky_mount_policy: RiskyMountPolicy,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RiskyMountPolicy {
+    #[default]
+    Warn,
+    Deny,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -232,6 +252,14 @@ impl Default for PathsConfig {
     }
 }
 
+impl Default for WorkspaceConfig {
+    fn default() -> Self {
+        Self {
+            risky_mount_policy: RiskyMountPolicy::Warn,
+        }
+    }
+}
+
 impl Default for DockerConfig {
     fn default() -> Self {
         Self {
@@ -310,6 +338,7 @@ mod tests {
         let config: Config = serde_yaml::from_str(DEFAULT_CONFIG_YAML).unwrap();
 
         assert_eq!(config.paths.workspace, "~/.vegasroom/workspace");
+        assert_eq!(config.workspace.risky_mount_policy, RiskyMountPolicy::Warn);
         assert_eq!(config.docker.context, "rootless");
         assert_eq!(
             config.docker.compose_file,
@@ -360,11 +389,24 @@ harness:
 
         assert_eq!(config.docker.context, "test-context");
         assert_eq!(config.paths.workspace, "~/.vegasroom/workspace");
+        assert_eq!(config.workspace.risky_mount_policy, RiskyMountPolicy::Warn);
         assert_eq!(config.ssh.mode, SshMode::Auto);
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.build_network, "host");
         assert!(!config.harness.pi.read_only_workspace);
         assert!(!config.harness.pi.read_only_rootfs);
+    }
+
+    #[test]
+    fn workspace_risky_mount_policy_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"workspace:
+  risky_mount_policy: deny
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.workspace.risky_mount_policy, RiskyMountPolicy::Deny);
     }
 
     #[test]

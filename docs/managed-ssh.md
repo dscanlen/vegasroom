@@ -156,7 +156,7 @@ When managed SSH is used for `vr pi` or `vr shell`:
 
 Vegasroom does not copy SSH private keys into the container.
 
-Vegasroom does not mount host `~/.ssh` into the container.
+Vegasroom does not mount host `~/.ssh` into the container. The managed SSH state directory is mounted once at `/home/agent/.ssh`; `/root/.ssh` is an image-level symlink to `/home/agent/.ssh` for root-run SSH/Git compatibility.
 
 In managed mode, Vegasroom runs `ssh-add` against selected host key files. The keys remain on the host, but the room can ask the forwarded agent socket for SSH signatures while the room is running.
 

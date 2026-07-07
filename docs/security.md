@@ -79,9 +79,9 @@ The selected workspace is read-write by default, and Pi state mounts remain read
 
 Set `harness.pi.read_only_workspace: true` to mount only `/workspace` read-only. This applies to default and explicit workspace selections. Pi state, SSH known_hosts, and cache mounts remain writable so login/session behavior and Git-over-SSH can continue to work.
 
-Processes inside the room can modify writable mounted paths.
+Processes inside the room can modify writable mounted paths. The Vegasroom SSH state directory is mounted once at `/home/agent/.ssh`; `/root/.ssh` is an image-level symlink to `/home/agent/.ssh` so root-run SSH/Git commands use the same managed state without a second host bind mount.
 
-Workspace selection includes safety checks. Vegasroom refuses to mount `/`, virtual system roots, common credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube`, and Vegasroom state outside the configured managed workspace root. It validates canonical targets, so symlinks to blocked targets are refused. Safe symlinked project paths are allowed with a warning. Vegasroom still only warns before broad mounts such as the host home directory or system paths. These checks reduce accidental exposure, but they are not a complete sandboxing policy.
+Workspace selection includes safety checks. Vegasroom refuses to mount `/`, virtual system roots, common credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube`, and Vegasroom state outside the configured managed workspace root. It validates canonical targets, so symlinks to blocked targets are refused. Safe symlinked project paths are allowed with a warning. By default Vegasroom still only warns before broad mounts such as the host home directory or system paths; set `workspace.risky_mount_policy: deny` to refuse those warning-level risky mounts before Docker starts. These checks reduce accidental exposure, but they are not a complete sandboxing policy.
 
 ### SSH agent forwarding
 
@@ -113,5 +113,5 @@ Post-MVP work should revisit:
 - network restrictions
 - stricter mount policy and optional confirmation prompts
 - proving whether `harness.pi.read_only_rootfs` can become a safe default
-- warnings for dangerous mount paths
+- making stricter workspace mount policies easier to use interactively
 - clearer credential lifecycle controls

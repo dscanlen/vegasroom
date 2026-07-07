@@ -186,6 +186,8 @@ moved generated SSH/Git runtime mounts from /tmp/vegasroom to /run paths for rea
 split runtime network and build network config so bridge runtime validation can keep BuildKit on the proven host build network
 added doctor visibility and documentation for bridge-network validation including Pi /login auth flow
 documented M9 bridge runtime validation result: OAuth reaches the provider but fails the localhost callback requirement, so host networking remains the proven default
+replaced duplicate /root/.ssh bind mount with an image-level symlink to /home/agent/.ssh
+added workspace.risky_mount_policy warn/deny config for warning-level risky workspace mounts
 updated security/design/README/workspace/config/rootless Docker docs to describe the current hardening baseline
 ```
 

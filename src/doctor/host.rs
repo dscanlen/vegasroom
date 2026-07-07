@@ -105,6 +105,17 @@ pub(super) fn check_config_git_section(path: &Path) -> Check {
     }
 }
 
+pub(super) fn check_workspace_risky_mount_policy(config: &Config) -> Check {
+    Check {
+        status: Status::Pass,
+        name: "Workspace risky mount policy",
+        detail: format!(
+            "workspace.risky_mount_policy is {:?}",
+            config.workspace.risky_mount_policy
+        ),
+    }
+}
+
 pub(super) fn check_network_mode(config: &Config) -> Check {
     let detail = if config.harness.pi.network == "host" {
         format!(

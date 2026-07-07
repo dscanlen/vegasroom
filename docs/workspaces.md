@@ -155,12 +155,28 @@ These are refused:
 ~/.vegasroom/ssh
 ```
 
-Vegasroom warns, but does not necessarily fail, for broad or risky mounts such as:
+By default, Vegasroom warns for broad or risky mounts such as:
 
 ```text
 host home directory
 system paths under /etc, /usr, /var, /tmp, and similar roots
 ```
+
+To make these warning-level risky mounts fail before Docker starts, set:
+
+```yaml
+workspace:
+  risky_mount_policy: deny
+```
+
+The default is:
+
+```yaml
+workspace:
+  risky_mount_policy: warn
+```
+
+This policy does not weaken hard blocks. Credential directories, virtual system roots, `/`, and protected Vegasroom state are always refused.
 
 ## Symlinks
 

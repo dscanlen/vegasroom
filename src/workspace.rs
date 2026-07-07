@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
 
 use crate::{
-    config::Config,
+    config::{Config, RiskyMountPolicy},
     paths::{display_path, expand_tilde, StatePaths},
 };
 
@@ -70,7 +70,12 @@ pub fn resolve_workspace(input: Option<&str>, config: &Config) -> Result<Resolve
         }
     };
 
-    materialize_workspace(request, &state, &workspace_root)
+    materialize_workspace(
+        request,
+        &state,
+        &workspace_root,
+        config.workspace.risky_mount_policy,
+    )
 }
 
 pub fn default_workspace_for_compose(config: &Config) -> Result<ResolvedWorkspace> {
@@ -81,6 +86,7 @@ fn materialize_workspace(
     request: WorkspaceRequest,
     state: &StatePaths,
     workspace_root: &Path,
+    risky_mount_policy: RiskyMountPolicy,
 ) -> Result<ResolvedWorkspace> {
     let mut created = false;
 
@@ -112,7 +118,8 @@ fn materialize_workspace(
             display_path(&request.path)
         )
     })?;
-    let mut warnings = validate_workspace_path(&canonical, state, workspace_root)?;
+    let mut warnings =
+        validate_workspace_path(&canonical, state, workspace_root, risky_mount_policy)?;
     warnings.extend(symlink_workspace_warnings(&request.path, &canonical)?);
 
     Ok(ResolvedWorkspace {
@@ -126,6 +133,7 @@ fn validate_workspace_path(
     path: &Path,
     state: &StatePaths,
     allowed_workspace_root: &Path,
+    risky_mount_policy: RiskyMountPolicy,
 ) -> Result<Vec<String>> {
     if path == Path::new("/") {
         bail!("FAIL: Refusing to mount / as a workspace.");
@@ -149,10 +157,14 @@ fn validate_workspace_path(
             .unwrap_or_else(|_| base_dirs.home_dir().to_path_buf());
 
         if path == home {
-            warnings.push(format!(
-                "mounting the host home directory as /workspace exposes broad host files: {}",
-                display_path(path)
-            ));
+            handle_risky_mount(
+                risky_mount_policy,
+                format!(
+                    "mounting the host home directory as /workspace exposes broad host files: {}",
+                    display_path(path)
+                ),
+                &mut warnings,
+            )?;
         }
 
         for blocked in blocked_credential_roots(&home, state) {
@@ -167,10 +179,14 @@ fn validate_workspace_path(
 
     for risky in risky_system_roots() {
         if is_under_or_same(path, Path::new(risky)) {
-            warnings.push(format!(
-                "mounting system path as /workspace may expose sensitive host files: {}",
-                path.display()
-            ));
+            handle_risky_mount(
+                risky_mount_policy,
+                format!(
+                    "mounting system path as /workspace may expose sensitive host files: {}",
+                    path.display()
+                ),
+                &mut warnings,
+            )?;
             break;
         }
     }
@@ -190,6 +206,20 @@ fn validate_workspace_path(
     }
 
     Ok(warnings)
+}
+
+fn handle_risky_mount(
+    policy: RiskyMountPolicy,
+    message: String,
+    warnings: &mut Vec<String>,
+) -> Result<()> {
+    match policy {
+        RiskyMountPolicy::Warn => {
+            warnings.push(message);
+            Ok(())
+        }
+        RiskyMountPolicy::Deny => bail!("FAIL: Risky workspace mount denied by policy: {message}"),
+    }
 }
 
 fn symlink_workspace_warnings(requested: &Path, canonical: &Path) -> Result<Vec<String>> {
@@ -390,9 +420,47 @@ mod tests {
     #[test]
     fn root_workspace_is_refused() {
         let state = StatePaths::default().unwrap();
-        let err = validate_workspace_path(Path::new("/"), &state, &state.workspace).unwrap_err();
+        let err = validate_workspace_path(
+            Path::new("/"),
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap_err();
 
         assert!(err.to_string().contains("Refusing to mount /"));
+    }
+
+    #[test]
+    fn risky_system_workspace_warns_when_policy_is_warn() {
+        let state = StatePaths::default().unwrap();
+        let warnings = validate_workspace_path(
+            Path::new("/tmp"),
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap();
+
+        assert!(warnings
+            .iter()
+            .any(|warning| warning.contains("mounting system path as /workspace")));
+    }
+
+    #[test]
+    fn risky_system_workspace_is_refused_when_policy_is_deny() {
+        let state = StatePaths::default().unwrap();
+        let err = validate_workspace_path(
+            Path::new("/tmp"),
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Deny,
+        )
+        .unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("Risky workspace mount denied by policy"));
     }
 
     #[test]
@@ -406,6 +474,7 @@ mod tests {
             &state.cache.canonicalize().unwrap(),
             &state,
             &state.workspace,
+            RiskyMountPolicy::Warn,
         )
         .unwrap_err();
 
@@ -421,9 +490,13 @@ mod tests {
         let repo = state.workspace.join("repo");
         fs::create_dir_all(&repo).unwrap();
 
-        let warnings =
-            validate_workspace_path(&repo.canonicalize().unwrap(), &state, &state.workspace)
-                .unwrap();
+        let warnings = validate_workspace_path(
+            &repo.canonicalize().unwrap(),
+            &state,
+            &state.workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap();
 
         assert!(!warnings
             .iter()
@@ -438,9 +511,13 @@ mod tests {
         let repo = configured_workspace.join("repo");
         fs::create_dir_all(&repo).unwrap();
 
-        let warnings =
-            validate_workspace_path(&repo.canonicalize().unwrap(), &state, &configured_workspace)
-                .unwrap();
+        let warnings = validate_workspace_path(
+            &repo.canonicalize().unwrap(),
+            &state,
+            &configured_workspace,
+            RiskyMountPolicy::Warn,
+        )
+        .unwrap();
 
         assert!(!warnings
             .iter()
@@ -464,6 +541,7 @@ mod tests {
             },
             &state,
             &state.workspace,
+            RiskyMountPolicy::Warn,
         )
         .unwrap();
 
@@ -489,6 +567,7 @@ mod tests {
             },
             &state,
             &state.workspace,
+            RiskyMountPolicy::Warn,
         )
         .unwrap_err();
 

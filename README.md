@@ -142,7 +142,7 @@ The runtime is intentionally the proven M1-M4 model:
 - ephemeral container removed after exit
 - `/workspace` mounted from the resolved host workspace, defaulting to `~/.vegasroom/workspace`
 - Pi state mounted from `~/.vegasroom/harness/pi/...`
-- `~/.vegasroom/ssh` mounted as the container SSH directory
+- `~/.vegasroom/ssh` mounted once at `/home/agent/.ssh`; `/root/.ssh` is an image-level symlink to that path for root-run SSH/Git compatibility
 - workspace mount can be made read-only with `harness.pi.read_only_workspace: true`
 - container root filesystem can be made read-only with opt-in `harness.pi.read_only_rootfs: true`
 - ssh-agent socket forwarded only when `$SSH_AUTH_SOCK` is usable, or through Vegasroom-managed SSH keys
@@ -180,7 +180,7 @@ relative/path    relative to current host directory
 /absolute/path   used directly if it exists
 ```
 
-For `vr pi my-git-repo`, Vegasroom may create `~/.vegasroom/workspace/my-git-repo` if missing. External absolute paths must already exist. Credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube` are refused as workspaces. Vegasroom state outside the configured managed workspace root is also refused. Safe symlinked project directories are allowed with a warning; symlinks to blocked targets are refused.
+For `vr pi my-git-repo`, Vegasroom may create `~/.vegasroom/workspace/my-git-repo` if missing. External absolute paths must already exist. Credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube` are refused as workspaces. Vegasroom state outside the configured managed workspace root is also refused. Safe symlinked project directories are allowed with a warning; symlinks to blocked targets are refused. Set `workspace.risky_mount_policy: deny` to refuse broad warning-level mounts such as the host home directory or `/tmp`.
 
 Set `harness.pi.read_only_workspace: true` in `~/.vegasroom/config.yaml` to mount `/workspace` read-only. This applies to the default workspace and to explicit command-line workspace arguments such as `vr pi .`, `vr pi my-git-repo`, and `vr pi /path/to/project`.
 
