@@ -32,6 +32,7 @@ harness:
     image: vegasroom/pi:local
     command: pi
     network: host
+    read_only_workspace: false
 ```
 
 ## Active fields
@@ -44,6 +45,7 @@ Currently active:
 - `harness.pi.image`
 - `harness.pi.command`
 - `harness.pi.network`
+- `harness.pi.read_only_workspace`
 - `ssh.mode`
 - `ssh.selected_keys`
 - `git.inherit_host`
@@ -121,6 +123,8 @@ vr pi --session <id>
 ```
 
 `harness.pi.network` controls the configured Docker network mode for the MVP runtime. Vegasroom passes it to Compose through `VR_PI_NETWORK_MODE` and `VR_PI_BUILD_NETWORK`. The default remains `host` because that is the proven rootless Docker model.
+
+`harness.pi.read_only_workspace` controls whether the resolved host workspace is mounted read-only at `/workspace`. The default is `false` so Pi can edit project files. When set to `true`, it applies to the default workspace and to explicit workspace arguments such as `vr pi .`, `vr pi my-repo`, and `vr pi /path/to/repo`.
 
 ## SSH config
 

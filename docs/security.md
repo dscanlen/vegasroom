@@ -14,6 +14,7 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 - Enables `no-new-privileges:true` for the room container.
 - Drops the default Linux capability set with `cap_drop: ALL`.
 - Enables Docker's minimal init process for child-process reaping.
+- Supports an opt-in read-only `/workspace` mount with `harness.pi.read_only_workspace: true`.
 
 ## What the MVP does not provide
 
@@ -44,16 +45,18 @@ These values come from `harness.pi.network`, which defaults to `host`. This pres
 
 ### Read-write mounts
 
-The selected workspace and Pi state mounts are read-write:
+The selected workspace is read-write by default, and Pi state mounts remain read-write:
 
 ```text
-/workspace -> resolved host workspace
+/workspace -> resolved host workspace, read-write by default
 ~/.vegasroom/harness/pi
 ~/.vegasroom/ssh
 ~/.vegasroom/cache
 ```
 
-Processes inside the room can modify these paths.
+Set `harness.pi.read_only_workspace: true` to mount only `/workspace` read-only. This applies to default and explicit workspace selections. Pi state, SSH known_hosts, and cache mounts remain writable so login/session behavior and Git-over-SSH can continue to work.
+
+Processes inside the room can modify writable mounted paths.
 
 Workspace selection includes safety checks. Vegasroom refuses to mount `/`, virtual system roots, and common credential directories such as `~/.ssh`, `~/.config`, `~/.aws`, `~/.gcloud`, and `~/.kube`. It warns before broad mounts such as the host home directory or system paths. These checks reduce accidental exposure, but they are not a complete sandboxing policy.
 
@@ -86,6 +89,6 @@ Post-MVP work should revisit:
 - non-root container user
 - network restrictions
 - stricter mount policy and optional confirmation prompts
-- optional read-only workspace mode
+- broader read-only profiles beyond `/workspace`
 - warnings for dangerous mount paths
 - clearer credential lifecycle controls

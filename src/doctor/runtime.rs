@@ -68,6 +68,14 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
 
     checks.push(check_bool(
         Status::Warn,
+        "Workspace read-only option",
+        contents.contains("read_only: ${VR_WORKSPACE_READ_ONLY:-false}"),
+        "workspace mount read-only mode is controlled by harness.pi.read_only_workspace",
+        "workspace mount is not controlled by VR_WORKSPACE_READ_ONLY",
+    ));
+
+    checks.push(check_bool(
+        Status::Warn,
         "SSH directory mount model",
         contents.contains(".vegasroom/ssh")
             && contents.contains("target: /home/agent/.ssh")

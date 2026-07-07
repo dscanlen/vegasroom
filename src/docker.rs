@@ -685,7 +685,11 @@ fn apply_compose_config_env(command: &mut Command, config: &Config) {
     command
         .env("VR_PI_IMAGE", &config.harness.pi.image)
         .env("VR_PI_NETWORK_MODE", &config.harness.pi.network)
-        .env("VR_PI_BUILD_NETWORK", &config.harness.pi.network);
+        .env("VR_PI_BUILD_NETWORK", &config.harness.pi.network)
+        .env(
+            "VR_WORKSPACE_READ_ONLY",
+            config.harness.pi.read_only_workspace.to_string(),
+        );
 }
 
 fn base_docker(config: &Config) -> Command {
@@ -737,10 +741,11 @@ mod tests {
     }
 
     #[test]
-    fn compose_config_env_uses_configured_image_and_network() {
+    fn compose_config_env_uses_configured_image_network_and_workspace_mode() {
         let mut config = Config::default();
         config.harness.pi.image = "example/pi:test".to_owned();
         config.harness.pi.network = "bridge".to_owned();
+        config.harness.pi.read_only_workspace = true;
         let mut command = Command::new("docker");
 
         apply_compose_config_env(&mut command, &config);
@@ -757,6 +762,7 @@ mod tests {
         assert!(envs.contains(&("VR_PI_IMAGE".to_owned(), Some("example/pi:test".to_owned()),)));
         assert!(envs.contains(&("VR_PI_NETWORK_MODE".to_owned(), Some("bridge".to_owned()),)));
         assert!(envs.contains(&("VR_PI_BUILD_NETWORK".to_owned(), Some("bridge".to_owned()),)));
+        assert!(envs.contains(&("VR_WORKSPACE_READ_ONLY".to_owned(), Some("true".to_owned()),)));
     }
 
     #[test]

@@ -105,6 +105,22 @@ pub(super) fn check_config_git_section(path: &Path) -> Check {
     }
 }
 
+pub(super) fn check_workspace_mount_mode(config: &Config) -> Check {
+    if config.harness.pi.read_only_workspace {
+        Check {
+            status: Status::Pass,
+            name: "Workspace mount mode",
+            detail: "harness.pi.read_only_workspace is true; /workspace should be mounted read-only".to_owned(),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Workspace mount mode",
+            detail: "harness.pi.read_only_workspace is false; /workspace will be mounted read-write".to_owned(),
+        }
+    }
+}
+
 pub(super) fn check_git_identity(config: &Config) -> Check {
     match docker::effective_git_identity(config) {
         Some(identity) => Check {

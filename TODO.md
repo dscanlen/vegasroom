@@ -176,7 +176,9 @@ enabled no-new-privileges:true for the Pi room container
 dropped default Linux capabilities with cap_drop: ALL
 enabled Docker init process for child-process reaping
 added doctor checks for the low-risk Compose hardening settings
-updated security/design/README docs to describe the current hardening baseline
+added opt-in harness.pi.read_only_workspace for read-only /workspace mounts
+wired read-only workspace mode through VR_WORKSPACE_READ_ONLY for all workspace selections
+updated security/design/README/workspace/config docs to describe the current hardening baseline
 ```
 
 Scope:

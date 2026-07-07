@@ -54,7 +54,7 @@ MVP-preserved runtime decisions:
 - `no-new-privileges:true`, `cap_drop: ALL`, and `init: true` runtime hardening
 - default `build.network=host` from `harness.pi.network`
 - default `network_mode=host` from `harness.pi.network`
-- workspace mounted read-write
+- workspace mounted read-write by default, with opt-in `harness.pi.read_only_workspace`
 - Pi state mounted read-write
 - Vegas-managed SSH directory mounted, not host `~/.ssh`
 - ssh-agent socket forwarded when available

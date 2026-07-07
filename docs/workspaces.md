@@ -15,7 +15,10 @@ volumes:
   - type: bind
     source: ${VR_WORKSPACE:-${HOME}/.vegasroom/workspace}
     target: /workspace
+    read_only: ${VR_WORKSPACE_READ_ONLY:-false}
 ```
+
+`harness.pi.read_only_workspace` controls `VR_WORKSPACE_READ_ONLY`. The default is `false`, so the agent can edit project files. When set to `true`, the resolved workspace is mounted read-only no matter how it was selected: default workspace, `.`, managed workspace name, relative path, tilde path, or absolute path.
 
 ## Commands
 
@@ -85,6 +88,28 @@ If the path is missing, Vegasroom fails clearly:
 FAIL: Workspace path does not exist: /some/external/path
 Create it first or choose an existing directory.
 ```
+
+## Read-only workspace mode
+
+To inspect a project without allowing the room to write to `/workspace`, set:
+
+```yaml
+harness:
+  pi:
+    read_only_workspace: true
+```
+
+This is intentionally global for the Pi harness. It applies equally to:
+
+```bash
+vr pi
+vr pi .
+vr pi my-git-repo
+vr pi /absolute/project/path
+vr shell .
+```
+
+Pi state, sessions, SSH known_hosts, and cache mounts remain writable so login/session behavior and Git-over-SSH can continue to work. Only `/workspace` is read-only.
 
 ## Safety rules
 

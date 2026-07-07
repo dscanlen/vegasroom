@@ -38,6 +38,7 @@ services:
       - type: bind
         source: ${VR_WORKSPACE:-${HOME}/.vegasroom/workspace}
         target: /workspace
+        read_only: ${VR_WORKSPACE_READ_ONLY:-false}
       - type: bind
         source: ${HOME}/.vegasroom/harness/pi/config
         target: /home/agent/.pi/agent

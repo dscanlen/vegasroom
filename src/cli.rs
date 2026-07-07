@@ -231,7 +231,7 @@ fn launch_pi(workspace_arg: Option<&str>, pi_args: Vec<String>) -> Result<i32> {
 
     let config = Config::load_or_default()?;
     let workspace = workspace::resolve_workspace(workspace_arg, &config)?;
-    print_workspace_messages(&workspace);
+    print_workspace_messages(&workspace, &config);
 
     docker::ensure_pi_image_exists(&config)
         .with_context(|| "Pi image was not found. Run: vr init --build")?;
@@ -245,16 +245,23 @@ fn launch_shell(workspace_arg: Option<&str>) -> Result<i32> {
 
     let config = Config::load_or_default()?;
     let workspace = workspace::resolve_workspace(workspace_arg, &config)?;
-    print_workspace_messages(&workspace);
+    print_workspace_messages(&workspace, &config);
 
     docker::ensure_pi_image_exists(&config)
         .with_context(|| "Pi image was not found. Run: vr init --build")?;
     docker::run_shell(&config, &workspace)
 }
 
-fn print_workspace_messages(workspace: &workspace::ResolvedWorkspace) {
+fn print_workspace_messages(workspace: &workspace::ResolvedWorkspace, config: &Config) {
     if workspace.created {
         println!("Created workspace: {}", workspace.path.display());
+    }
+
+    if config.harness.pi.read_only_workspace {
+        println!(
+            "Workspace will be mounted read-only: {}",
+            workspace.path.display()
+        );
     }
 
     for warning in &workspace.warnings {
