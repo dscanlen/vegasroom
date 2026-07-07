@@ -16,6 +16,19 @@ use crate::{
 
 use super::{detect_host_agent, discovery::fingerprint_key, HostSshAgent, CONTAINER_SSH_AUTH_SOCK};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectedKeyCheckStatus {
+    Pass,
+    Warn,
+    Fail,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectedKeyCheck {
+    pub status: SelectedKeyCheckStatus,
+    pub detail: String,
+}
+
 #[derive(Debug)]
 pub struct SshRuntime {
     override_path: Option<PathBuf>,
@@ -112,40 +125,53 @@ pub fn managed_keys_configured(config: &Config) -> bool {
     !config.ssh.selected_keys.is_empty()
 }
 
-pub fn selected_key_checks(config: &Config) -> Vec<String> {
-    let mut details = Vec::new();
+pub fn selected_key_checks(config: &Config) -> Vec<SelectedKeyCheck> {
+    let mut checks = Vec::new();
 
     for selected in &config.ssh.selected_keys {
         let path = expand_tilde(&selected.path);
         let display = display_path(&path);
         if !path.exists() {
-            details.push(format!("FAIL: selected SSH key missing: {display}"));
+            checks.push(selected_key_check(
+                SelectedKeyCheckStatus::Fail,
+                format!("selected SSH key missing: {display}"),
+            ));
             continue;
         }
 
         match fingerprint_key(&path) {
             Ok(metadata) => match (&selected.fingerprint, &metadata.fingerprint) {
                 (Some(expected), Some(actual)) if expected == actual => {
-                    details.push(format!(
-                        "PASS: selected SSH key fingerprint matches: {display}"
+                    checks.push(selected_key_check(
+                        SelectedKeyCheckStatus::Pass,
+                        format!("selected SSH key fingerprint matches: {display}"),
                     ));
                 }
                 (Some(expected), Some(actual)) => {
-                    details.push(format!(
-                        "FAIL: selected SSH key fingerprint changed: {display}; expected {expected}, got {actual}"
+                    checks.push(selected_key_check(
+                        SelectedKeyCheckStatus::Fail,
+                        format!(
+                            "selected SSH key fingerprint changed: {display}; expected {expected}, got {actual}"
+                        ),
                     ));
                 }
-                _ => details.push(format!(
-                    "WARN: selected SSH key fingerprint could not be fully verified: {display}"
+                _ => checks.push(selected_key_check(
+                    SelectedKeyCheckStatus::Warn,
+                    format!("selected SSH key fingerprint could not be fully verified: {display}"),
                 )),
             },
-            Err(err) => details.push(format!(
-                "WARN: selected SSH key could not be inspected: {display}: {err:#}"
+            Err(err) => checks.push(selected_key_check(
+                SelectedKeyCheckStatus::Warn,
+                format!("selected SSH key could not be inspected: {display}: {err:#}"),
             )),
         }
     }
 
-    details
+    checks
+}
+
+fn selected_key_check(status: SelectedKeyCheckStatus, detail: String) -> SelectedKeyCheck {
+    SelectedKeyCheck { status, detail }
 }
 
 fn prepare_host_runtime(runtime_dir: &Path, warn: bool) -> Result<SshRuntime> {
