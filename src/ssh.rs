@@ -9,7 +9,7 @@ use crate::config::SelectedSshKey;
 
 pub use runtime::{
     managed_keys_configured, planned_ssh_available, prepare_agent_override, selected_key_checks,
-    SshRuntime, SshRuntimeMode,
+    SelectedKeyCheckStatus, SshRuntime, SshRuntimeMode,
 };
 pub use status::status;
 pub use ui::configure;

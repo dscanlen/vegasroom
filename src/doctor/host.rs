@@ -28,23 +28,11 @@ pub(super) fn check_ssh_configuration(
             detail: format!("{} key(s) configured", config.ssh.selected_keys.len()),
         });
 
-        for detail in ssh::selected_key_checks(config) {
-            let status = if detail.starts_with("PASS:") {
-                Status::Pass
-            } else if detail.starts_with("FAIL:") {
-                Status::Fail
-            } else {
-                Status::Warn
-            };
+        for key_check in ssh::selected_key_checks(config) {
             checks.push(Check {
-                status,
+                status: selected_key_check_status(key_check.status),
                 name: "Selected SSH key",
-                detail: detail
-                    .strip_prefix("PASS: ")
-                    .or_else(|| detail.strip_prefix("WARN: "))
-                    .or_else(|| detail.strip_prefix("FAIL: "))
-                    .unwrap_or(&detail)
-                    .to_owned(),
+                detail: key_check.detail,
             });
         }
     }
@@ -83,6 +71,14 @@ pub(super) fn check_ssh_configuration(
     ));
 
     checks
+}
+
+fn selected_key_check_status(status: ssh::SelectedKeyCheckStatus) -> Status {
+    match status {
+        ssh::SelectedKeyCheckStatus::Pass => Status::Pass,
+        ssh::SelectedKeyCheckStatus::Warn => Status::Warn,
+        ssh::SelectedKeyCheckStatus::Fail => Status::Fail,
+    }
 }
 
 pub(super) fn check_config_git_section(path: &Path) -> Check {
