@@ -117,15 +117,32 @@ removed fragile prefix parsing from doctor host checks
 removed unused SelectedKeyCheck re-export from src/ssh.rs after compiler warning
 ```
 
-### Subsection 4: continue splitting `src/docker.rs`
+### Subsection 4: split Docker Git identity helper
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+fbac811 Split Docker Git identity helper
+```
+
+Completed:
 
 ```text
 moved GitIdentity and Git identity resolution/injection helpers from src/docker.rs to src/docker/git_identity.rs
 kept public docker::effective_git_identity and docker::GitIdentity API stable through re-export
 changed Compose launch assembly to call git_identity::prepare_override internally
 moved Git identity unit tests into src/docker/git_identity.rs
+```
+
+### Subsection 5: split Docker doctor probes
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+moved SshAddCheck, ContainerDoctorProbe, and ContainerSshDoctorProbe from src/docker.rs to src/docker/doctor_probe.rs
+moved container_doctor_probe and container_ssh_doctor_probe to src/docker/doctor_probe.rs
+moved structured doctor probe output parsing helpers and tests to src/docker/doctor_probe.rs
+kept public docker::container_doctor_probe, docker::container_ssh_doctor_probe, and currently referenced probe type APIs stable through re-export
 ```
 
 Validation needed before commit:
@@ -137,13 +154,12 @@ Validation needed before commit:
 Suggested commit message after validation:
 
 ```text
-Split Docker Git identity helper
+Split Docker doctor probes
 ```
 
 Remaining recommended Docker slices, one at a time:
 
 ```text
-move doctor container probes to src/docker/doctor_probe.rs
 move generated Compose override writers to src/docker/overrides.rs
 keep public Docker API stable while moving internals
 ```
