@@ -100,9 +100,13 @@ kept behavior unchanged
 
 ### Subsection 3: replace stringly typed selected SSH key checks
 
-Currently implemented locally and awaiting test/commit.
+Committed and pushed on this branch:
 
-Completed locally:
+```text
+8ed69a7 Type selected SSH key check statuses
+```
+
+Completed:
 
 ```text
 added SelectedKeyCheckStatus::{Pass, Warn, Fail}
@@ -110,12 +114,18 @@ added SelectedKeyCheck { status, detail }
 changed ssh::selected_key_checks(config) to return typed checks instead of PASS:/WARN:/FAIL: strings
 changed doctor host checks to map typed selected-key statuses directly
 removed fragile prefix parsing from doctor host checks
+removed unused SelectedKeyCheck re-export from src/ssh.rs after compiler warning
 ```
 
-Known current fix already applied:
+### Subsection 4: continue splitting `src/docker.rs`
+
+Currently implemented locally and awaiting validation/commit:
 
 ```text
-removed unused SelectedKeyCheck re-export from src/ssh.rs after compiler warning
+moved GitIdentity and Git identity resolution/injection helpers from src/docker.rs to src/docker/git_identity.rs
+kept public docker::effective_git_identity and docker::GitIdentity API stable through re-export
+changed Compose launch assembly to call git_identity::prepare_override internally
+moved Git identity unit tests into src/docker/git_identity.rs
 ```
 
 Validation needed before commit:
@@ -127,23 +137,20 @@ Validation needed before commit:
 Suggested commit message after validation:
 
 ```text
-Type selected SSH key check statuses
+Split Docker Git identity helper
 ```
 
-## Remaining recommended code-review subsections
-
-### 4. Continue splitting `src/docker.rs`
-
-Recommended next slices, one at a time:
+Remaining recommended Docker slices, one at a time:
 
 ```text
-move Git identity resolution/injection to src/docker/git_identity.rs
 move doctor container probes to src/docker/doctor_probe.rs
 move generated Compose override writers to src/docker/overrides.rs
 keep public Docker API stable while moving internals
 ```
 
 Do not combine all of these in one large commit.
+
+## Remaining recommended code-review subsections
 
 ### 5. Split CLI module later
 
