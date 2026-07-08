@@ -119,10 +119,10 @@ removed unused SelectedKeyCheck re-export from src/ssh.rs after compiler warning
 
 ### Subsection 4: split Docker Git identity helper
 
-Committed locally on this branch:
+Committed and pushed on this branch:
 
 ```text
-fbac811 Split Docker Git identity helper
+daea139 Split Docker Git identity helper
 ```
 
 Completed:
@@ -136,10 +136,10 @@ moved Git identity unit tests into src/docker/git_identity.rs
 
 ### Subsection 5: split Docker doctor probes
 
-Committed locally on this branch:
+Committed and pushed on this branch:
 
 ```text
-d14785a Split Docker doctor probes
+1d341cc Split Docker doctor probes
 ```
 
 Completed:
@@ -153,12 +153,32 @@ kept public docker::container_doctor_probe, docker::container_ssh_doctor_probe, 
 
 ### Subsection 6: split Docker Compose override helpers
 
-Currently implemented locally and awaiting validation/commit:
+Committed and pushed on this branch:
+
+```text
+f77733e Split Docker Compose override helpers
+```
+
+Completed:
 
 ```text
 moved read-only-rootfs Compose override writer from src/docker.rs to src/docker/overrides.rs
 changed Compose launch assembly to call overrides::prepare_read_only_rootfs internally
 moved read-only-rootfs override unit test into src/docker/overrides.rs
+```
+
+Docker cleanup is complete for the originally recommended slices. Keep public Docker API stable while moving any future internals.
+
+### Subsection 7: split CLI help text
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+added src/cli/help.rs
+moved top-level/subcommand after_help constants into cli::help
+moved manual Pi and shell help text/print helpers into cli::help
+moved Pi and shell help text unit tests into cli::help
+kept CLI behavior unchanged
 ```
 
 Validation needed before commit:
@@ -170,25 +190,21 @@ Validation needed before commit:
 Suggested commit message after validation:
 
 ```text
-Split Docker Compose override helpers
+Split CLI help text
 ```
-
-Docker cleanup is otherwise complete for the originally recommended slices. Keep public Docker API stable while moving any future internals.
 
 ## Remaining recommended code-review subsections
 
-### 7. Split CLI module later
+### 8. Continue splitting CLI module
 
-`src/cli.rs` is readable but large. Consider later:
+Recommended next slices, one at a time:
 
 ```text
-src/cli.rs
-src/cli/help.rs
-src/cli/parser.rs
-src/cli/commands.rs
+move manual launch parser types/functions/tests to src/cli/parser.rs
+consider moving command execution helpers to src/cli/commands.rs after parser split
 ```
 
-Only do this after Docker cleanup, and preserve all parsing tests.
+Preserve all parsing and help tests.
 
 ### 8. Color behavior polish, optional later
 
