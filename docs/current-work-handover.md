@@ -136,13 +136,29 @@ moved Git identity unit tests into src/docker/git_identity.rs
 
 ### Subsection 5: split Docker doctor probes
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+d14785a Split Docker doctor probes
+```
+
+Completed:
 
 ```text
 moved SshAddCheck, ContainerDoctorProbe, and ContainerSshDoctorProbe from src/docker.rs to src/docker/doctor_probe.rs
 moved container_doctor_probe and container_ssh_doctor_probe to src/docker/doctor_probe.rs
 moved structured doctor probe output parsing helpers and tests to src/docker/doctor_probe.rs
 kept public docker::container_doctor_probe, docker::container_ssh_doctor_probe, and currently referenced probe type APIs stable through re-export
+```
+
+### Subsection 6: split Docker Compose override helpers
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+moved read-only-rootfs Compose override writer from src/docker.rs to src/docker/overrides.rs
+changed Compose launch assembly to call overrides::prepare_read_only_rootfs internally
+moved read-only-rootfs override unit test into src/docker/overrides.rs
 ```
 
 Validation needed before commit:
@@ -154,21 +170,14 @@ Validation needed before commit:
 Suggested commit message after validation:
 
 ```text
-Split Docker doctor probes
+Split Docker Compose override helpers
 ```
 
-Remaining recommended Docker slices, one at a time:
-
-```text
-move generated Compose override writers to src/docker/overrides.rs
-keep public Docker API stable while moving internals
-```
-
-Do not combine all of these in one large commit.
+Docker cleanup is otherwise complete for the originally recommended slices. Keep public Docker API stable while moving any future internals.
 
 ## Remaining recommended code-review subsections
 
-### 5. Split CLI module later
+### 7. Split CLI module later
 
 `src/cli.rs` is readable but large. Consider later:
 
@@ -181,7 +190,7 @@ src/cli/commands.rs
 
 Only do this after Docker cleanup, and preserve all parsing tests.
 
-### 6. Color behavior polish, optional later
+### 8. Color behavior polish, optional later
 
 Current colors always emit ANSI. Future optional polish:
 
