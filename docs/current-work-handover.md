@@ -432,7 +432,13 @@ added SSH mode, row exposure, dirty-blocking, and handoff action tests
 
 ### Subsection 9: add Git identity editor and effective preview
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+Add config TUI Git identity editor
+```
+
+Completed and validated by user with `./scripts/check.sh`.
 
 ```text
 made Git identity inherit_host row editable and toggle true/false
@@ -440,6 +446,19 @@ added effective Git identity preview using existing Git identity precedence
 kept git.user_name and git.user_email as placeholders for a later text-input slice
 updated config TUI design docs for active Git identity behavior
 added Git inherit_host toggle, effective preview, and row exposure tests
+```
+
+### Subsection 10: polish validation, reset actions, and advanced screen
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+added Advanced validate-current-config action
+updated Advanced backup wording to reflect existing timestamped backup behavior
+added reset-all-to-defaults preview screen with exact changed-field diff
+Enter on reset preview applies defaults in memory and marks config dirty only when values changed
+updated config TUI design docs for active Advanced behavior
+added Advanced row exposure, validation, reset preview, and reset application tests
 ```
 
 Validation needed before commit:
@@ -451,14 +470,10 @@ Validation needed before commit:
 Suggested commit message after validation:
 
 ```text
-Add config TUI Git identity editor
+Polish config TUI advanced actions
 ```
 
-Next implementation slices:
-
-```text
-polish validation, reset actions, and advanced screen
-```
+After this validates, the planned Config TUI slices are complete and ready for end-to-end user testing.
 
 ### Harness-independent package/library selection
 

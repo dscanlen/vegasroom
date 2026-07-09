@@ -114,6 +114,7 @@ fn render(state: &ConfigUiState) -> Result<()> {
         ConfigScreen::Sections => render_sections_screen(&mut stdout, state)?,
         ConfigScreen::Section(section) => render_section_screen(&mut stdout, state, section)?,
         ConfigScreen::PresetPreview(preset) => render_preset_preview(&mut stdout, state, preset)?,
+        ConfigScreen::ResetDefaultsPreview => render_reset_defaults_preview(&mut stdout, state)?,
     }
 
     if let Some(message) = &state.last_message {
@@ -268,6 +269,33 @@ fn render_preset_preview(
     Ok(())
 }
 
+fn render_reset_defaults_preview(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
+    writeln!(stdout, "Reset all config to defaults")?;
+    writeln!(stdout)?;
+    writeln!(stdout, "Changes to apply:")?;
+
+    let changes = reset_defaults_changes(&state.config);
+    if changes.is_empty() {
+        writeln!(stdout, "  No changes; config already matches defaults.")?;
+    } else {
+        for change in changes {
+            writeln!(
+                stdout,
+                "  {}: {} -> {}",
+                change.field, change.before, change.after
+            )?;
+        }
+    }
+
+    writeln!(stdout)?;
+    writeln!(stdout, "  This resets all config fields in memory.")?;
+    writeln!(
+        stdout,
+        "  Press s after applying to save the reset to disk."
+    )?;
+    Ok(())
+}
+
 fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
     match state.screen {
         ConfigScreen::Sections => writeln!(
@@ -284,6 +312,10 @@ fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
         ConfigScreen::PresetPreview(_) => writeln!(
             stdout,
             "Keys: Enter apply preset · Esc/Backspace back · s save · q quit"
+        )?,
+        ConfigScreen::ResetDefaultsPreview => writeln!(
+            stdout,
+            "Keys: Enter reset to defaults · Esc/Backspace back · s save · q quit"
         )?,
     }
 
@@ -359,7 +391,7 @@ impl ConfigUiState {
                     self.highlighted_row -= 1;
                 }
             }
-            ConfigScreen::PresetPreview(_) => {}
+            ConfigScreen::PresetPreview(_) | ConfigScreen::ResetDefaultsPreview => {}
         }
         self.last_message = None;
     }
@@ -376,7 +408,7 @@ impl ConfigUiState {
                 }
                 self.highlighted_row = (self.highlighted_row + 1) % len;
             }
-            ConfigScreen::PresetPreview(_) => {}
+            ConfigScreen::PresetPreview(_) | ConfigScreen::ResetDefaultsPreview => {}
         }
         self.last_message = None;
     }
@@ -402,6 +434,16 @@ impl ConfigUiState {
                         RowAction::CycleColorMode => self.cycle_color_mode(),
                         RowAction::CycleSshMode => self.cycle_ssh_mode(),
                         RowAction::ToggleGitInheritHost => self.toggle_git_inherit_host(),
+                        RowAction::ValidateConfig => {
+                            if let Err(error) = self.validate_config() {
+                                self.last_message =
+                                    Some(format!("Config validation failed: {error:#}"));
+                            }
+                        }
+                        RowAction::PreviewResetDefaults => {
+                            self.screen = ConfigScreen::ResetDefaultsPreview;
+                            self.last_message = None;
+                        }
                         RowAction::OpenSshConfigure => {
                             if self.dirty {
                                 self.last_message = Some(
@@ -422,6 +464,7 @@ impl ConfigUiState {
                 }
             }
             ConfigScreen::PresetPreview(preset) => self.apply_preset(preset),
+            ConfigScreen::ResetDefaultsPreview => self.apply_reset_defaults(),
         }
 
         ConfigUiAction::Continue
@@ -437,6 +480,10 @@ impl ConfigUiState {
             }
             ConfigScreen::PresetPreview(_) => {
                 self.screen = ConfigScreen::Section(ConfigSection::SecurityPreset);
+                self.last_message = None;
+            }
+            ConfigScreen::ResetDefaultsPreview => {
+                self.screen = ConfigScreen::Section(ConfigSection::Advanced);
                 self.last_message = None;
             }
         }
@@ -456,6 +503,32 @@ impl ConfigUiState {
                 changes.len()
             )
         });
+    }
+
+    fn apply_reset_defaults(&mut self) {
+        let changes = reset_defaults_changes(&self.config);
+        if !changes.is_empty() {
+            self.config = Config::default();
+            self.dirty = true;
+        }
+        self.screen = ConfigScreen::Section(ConfigSection::Advanced);
+        self.last_message = Some(if changes.is_empty() {
+            "Config already matched defaults.".to_owned()
+        } else {
+            format!(
+                "Reset {} config field(s) to defaults. Press s to save.",
+                changes.len()
+            )
+        });
+    }
+
+    fn validate_config(&mut self) -> Result<()> {
+        let serialized =
+            serde_yaml::to_string(&self.config).context("failed to serialize config")?;
+        let _: Config =
+            serde_yaml::from_str(&serialized).context("failed to reload serialized config")?;
+        self.last_message = Some("Current in-memory config validates successfully.".to_owned());
+        Ok(())
     }
 
     fn toggle_risky_mount_policy(&mut self) {
@@ -624,6 +697,7 @@ enum ConfigScreen {
     Sections,
     Section(ConfigSection),
     PresetPreview(SecurityPreset),
+    ResetDefaultsPreview,
 }
 
 #[derive(Clone, Copy)]
@@ -916,15 +990,25 @@ assumptions."
                     "Manual YAML editing",
                     vec!["Manual edits to ~/.vegasroom/config.yaml remain supported.".to_owned()],
                 ),
+                SectionRow::action(
+                    "Validate current config",
+                    vec!["Press Enter to validate the in-memory config model.".to_owned()],
+                    RowAction::ValidateConfig,
+                ),
                 SectionRow::new(
                     "Backups before save",
                     vec![
-                        "Future saves should create timestamped backups before writing.".to_owned(),
+                        "Saving over an existing config creates a timestamped backup first."
+                            .to_owned(),
                     ],
                 ),
-                SectionRow::new(
-                    "Reset actions",
-                    vec!["Future reset actions should preview changed fields first.".to_owned()],
+                SectionRow::action(
+                    "Reset all to defaults",
+                    vec![
+                        "Press Enter to preview all fields that would change.".to_owned(),
+                        "The reset is applied in memory first; press s to save it.".to_owned(),
+                    ],
+                    RowAction::PreviewResetDefaults,
                 ),
             ],
         }
@@ -973,6 +1057,8 @@ enum RowAction {
     CycleColorMode,
     CycleSshMode,
     ToggleGitInheritHost,
+    ValidateConfig,
+    PreviewResetDefaults,
     OpenSshConfigure,
 }
 
@@ -1100,6 +1186,73 @@ fn diff_preset_configs(before: &Config, after: &Config) -> Vec<ConfigChange> {
         after.git.inherit_host,
     );
     changes
+}
+
+fn reset_defaults_changes(config: &Config) -> Vec<ConfigChange> {
+    diff_configs(config, &Config::default())
+}
+
+fn diff_configs(before: &Config, after: &Config) -> Vec<ConfigChange> {
+    let mut changes = diff_preset_configs(before, after);
+    push_change(
+        &mut changes,
+        "paths.workspace",
+        before.paths.workspace.as_str(),
+        after.paths.workspace.as_str(),
+    );
+    push_change(
+        &mut changes,
+        "docker.context",
+        before.docker.context.as_str(),
+        after.docker.context.as_str(),
+    );
+    push_change(
+        &mut changes,
+        "docker.compose_file",
+        before.docker.compose_file.as_str(),
+        after.docker.compose_file.as_str(),
+    );
+    push_change(
+        &mut changes,
+        "harness.pi.image",
+        before.harness.pi.image.as_str(),
+        after.harness.pi.image.as_str(),
+    );
+    push_change(
+        &mut changes,
+        "harness.pi.command",
+        before.harness.pi.command.as_str(),
+        after.harness.pi.command.as_str(),
+    );
+    push_change(
+        &mut changes,
+        "ssh.selected_keys",
+        before.ssh.selected_keys.len(),
+        after.ssh.selected_keys.len(),
+    );
+    push_change(
+        &mut changes,
+        "git.user_name",
+        option_value(before.git.user_name.as_deref()),
+        option_value(after.git.user_name.as_deref()),
+    );
+    push_change(
+        &mut changes,
+        "git.user_email",
+        option_value(before.git.user_email.as_deref()),
+        option_value(after.git.user_email.as_deref()),
+    );
+    push_change(
+        &mut changes,
+        "ui.color",
+        color_mode_name(before.ui.color),
+        color_mode_name(after.ui.color),
+    );
+    changes
+}
+
+fn option_value(value: Option<&str>) -> &str {
+    value.unwrap_or("not set")
 }
 
 fn push_change(
@@ -1468,6 +1621,66 @@ mod tests {
         assert!(rows
             .iter()
             .any(|row| row.title == "Effective identity preview"));
+    }
+
+    #[test]
+    fn advanced_section_exposes_validation_backup_and_reset_rows() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let rows = ConfigSection::Advanced.rows(&config, &paths);
+
+        assert!(rows
+            .iter()
+            .any(|row| row.title == "Validate current config"));
+        assert!(rows.iter().any(|row| row.title == "Backups before save"));
+        assert!(rows.iter().any(|row| row.title == "Reset all to defaults"));
+    }
+
+    #[test]
+    fn reset_defaults_preview_lists_expected_changes() {
+        let mut config = Config::default();
+        config.ssh.mode = SshMode::Managed;
+        config.ui.color = ColorMode::Never;
+
+        let changes = reset_defaults_changes(&config);
+
+        assert!(changes
+            .iter()
+            .any(|change| change.field == "ssh.mode" && change.before == "managed"));
+        assert!(changes
+            .iter()
+            .any(|change| change.field == "ui.color" && change.before == "never"));
+    }
+
+    #[test]
+    fn applying_reset_defaults_marks_dirty_and_restores_defaults() {
+        let mut config = Config::default();
+        config.ssh.mode = SshMode::Managed;
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.apply_reset_defaults();
+
+        assert!(state.dirty);
+        assert_eq!(state.config.ssh.mode, SshMode::Auto);
+        assert!(matches!(
+            state.screen,
+            ConfigScreen::Section(ConfigSection::Advanced)
+        ));
+    }
+
+    #[test]
+    fn validate_config_reports_success() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.validate_config().unwrap();
+
+        assert!(state
+            .last_message
+            .as_deref()
+            .is_some_and(|message| message.contains("validates successfully")));
     }
 
     #[test]

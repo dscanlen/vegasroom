@@ -218,9 +218,9 @@ Expose non-everyday actions inside the TUI:
 ```text
 config path
 manual YAML editing instructions
-reset section to defaults
-reset all to defaults
-backup/restore details
+validate current config
+backup details
+reset all to defaults with preview
 ```
 
 ## Save behavior
