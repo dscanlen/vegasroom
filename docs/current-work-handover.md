@@ -213,7 +213,13 @@ Validated by user with:
 
 ### Subsection 9: split CLI command execution helpers
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+cf09f68 Split CLI command execution helpers
+```
+
+Completed:
 
 ```text
 added src/cli/commands.rs
@@ -222,31 +228,34 @@ kept CLI argument parsing and manual launch dispatch in src/cli.rs
 kept CLI behavior unchanged
 ```
 
-Validation needed before commit:
+### Subsection 10: color behavior polish
+
+Committed locally on this branch in this commit:
+
+```text
+Support NO_COLOR for status labels
+```
+
+Completed:
+
+```text
+added non-empty NO_COLOR support for PASS/WARN/FAIL status labels
+kept colored status labels as the default when NO_COLOR is unset
+added color-enabled and color-disabled status label tests without mutating process environment
+```
+
+Validated by user with:
 
 ```bash
 ./scripts/check.sh
 ```
 
-Suggested commit message after validation:
+Remaining optional color polish not started:
 
 ```text
-Split CLI command execution helpers
-```
-
-## Remaining recommended code-review subsections
-
-### 10. Color behavior polish, optional later
-
-Current colors always emit ANSI. Future optional polish:
-
-```text
-NO_COLOR support
 non-TTY auto-disable
 possible --color auto|always|never config/flag
 ```
-
-Do not do this unless prioritized.
 
 ## Larger features still pending
 
