@@ -153,7 +153,7 @@ ssh.mode
 ssh.selected_keys
 ```
 
-The first implementation should reuse or launch the existing SSH configure flow rather than duplicating key-selection logic. Deeper integration can follow later.
+The SSH mode row cycles `auto`, `host`, `managed`, and `off`. The selected-keys row exits the config TUI temporarily and launches the existing SSH configure flow rather than duplicating key-selection logic. Pending config changes must be saved or discarded before launching SSH key configuration.
 
 ### Git identity
 

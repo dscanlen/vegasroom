@@ -411,10 +411,34 @@ updated config docs and config TUI design docs for active ui.color behavior
 added config parsing, alert policy, and config TUI color editor tests
 ```
 
+### Subsection 8: add SSH mode editor and key configure handoff
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+made SSH mode row editable and cycle auto -> host -> managed -> off -> auto
+made selected managed SSH keys row hand off to the existing vr ssh configure flow instead of duplicating key selection
+blocks SSH key configure handoff while config TUI has unsaved changes so direct writes from the SSH flow do not clobber pending config edits
+reloads config after returning from the SSH configure flow
+updated config TUI design docs for active SSH behavior
+added SSH mode, row exposure, dirty-blocking, and handoff action tests
+```
+
+Validation needed before commit:
+
+```bash
+./scripts/check.sh
+```
+
+Suggested commit message after validation:
+
+```text
+Add config TUI SSH editor
+```
+
 Next implementation slices:
 
 ```text
-integrate SSH mode editing and link/reuse existing SSH key configure flow
 add Git identity editor and effective identity preview
 polish validation, reset actions, and advanced screen
 ```

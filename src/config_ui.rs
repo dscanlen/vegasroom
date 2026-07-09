@@ -16,6 +16,7 @@ use crossterm::{
 use crate::{
     config::{ColorMode, Config, RiskyMountPolicy, SshMode},
     paths::{display_path, StatePaths},
+    ssh,
 };
 
 const SECTIONS: &[ConfigSection] = &[
@@ -30,7 +31,7 @@ const SECTIONS: &[ConfigSection] = &[
 ];
 
 pub fn run() -> Result<i32> {
-    let config = Config::load_or_default()?;
+    let mut config = Config::load_or_default()?;
     let state_paths = StatePaths::default()?;
 
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
@@ -42,10 +43,21 @@ pub fn run() -> Result<i32> {
         return Ok(0);
     }
 
-    run_tui(config, state_paths)
+    loop {
+        match run_tui(config, state_paths.clone())? {
+            ConfigUiExit::Quit(code) => return Ok(code),
+            ConfigUiExit::OpenSshConfigure => {
+                let code = ssh::configure(&[], false)?;
+                if code != 0 {
+                    return Ok(code);
+                }
+                config = Config::load_or_default()?;
+            }
+        }
+    }
 }
 
-fn run_tui(config: Config, state_paths: StatePaths) -> Result<i32> {
+fn run_tui(config: Config, state_paths: StatePaths) -> Result<ConfigUiExit> {
     let _terminal = TerminalSession::start()?;
     let mut state = ConfigUiState::new(config, state_paths);
 
@@ -59,20 +71,23 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<i32> {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => state.move_up(),
             KeyCode::Down | KeyCode::Char('j') => state.move_down(),
-            KeyCode::Enter => state.open_highlighted(),
+            KeyCode::Enter => match state.open_highlighted() {
+                ConfigUiAction::Continue => {}
+                ConfigUiAction::OpenSshConfigure => return Ok(ConfigUiExit::OpenSshConfigure),
+            },
             KeyCode::Esc | KeyCode::Backspace => state.go_back(),
             KeyCode::Char('s') => state.save()?,
             KeyCode::Char('q') => {
                 if !state.dirty {
-                    return Ok(0);
+                    return Ok(ConfigUiExit::Quit(0));
                 }
 
                 match confirm_quit()? {
                     QuitDecision::Save => {
                         state.save()?;
-                        return Ok(0);
+                        return Ok(ConfigUiExit::Quit(0));
                     }
-                    QuitDecision::Discard => return Ok(0),
+                    QuitDecision::Discard => return Ok(ConfigUiExit::Quit(0)),
                     QuitDecision::Cancel => {
                         state.last_message = Some("Quit canceled.".to_owned());
                     }
@@ -365,7 +380,7 @@ impl ConfigUiState {
         self.last_message = None;
     }
 
-    fn open_highlighted(&mut self) {
+    fn open_highlighted(&mut self) -> ConfigUiAction {
         match self.screen {
             ConfigScreen::Sections => {
                 self.screen = ConfigScreen::Section(self.highlighted_section());
@@ -384,6 +399,17 @@ impl ConfigUiState {
                         RowAction::ToggleReadOnlyWorkspace => self.toggle_read_only_workspace(),
                         RowAction::ToggleReadOnlyRootfs => self.toggle_read_only_rootfs(),
                         RowAction::CycleColorMode => self.cycle_color_mode(),
+                        RowAction::CycleSshMode => self.cycle_ssh_mode(),
+                        RowAction::OpenSshConfigure => {
+                            if self.dirty {
+                                self.last_message = Some(
+                                    "Save or discard pending config changes before opening SSH key configuration."
+                                        .to_owned(),
+                                );
+                            } else {
+                                return ConfigUiAction::OpenSshConfigure;
+                            }
+                        }
                         RowAction::Placeholder => {
                             self.last_message = Some(format!(
                                 "{} editing will be added in an upcoming slice.",
@@ -395,6 +421,8 @@ impl ConfigUiState {
             }
             ConfigScreen::PresetPreview(preset) => self.apply_preset(preset),
         }
+
+        ConfigUiAction::Continue
     }
 
     fn go_back(&mut self) {
@@ -468,6 +496,20 @@ impl ConfigUiState {
         self.last_message = Some(format!(
             "Set color mode to {}. Press s to save.",
             color_mode_name(self.config.ui.color)
+        ));
+    }
+
+    fn cycle_ssh_mode(&mut self) {
+        self.config.ssh.mode = match self.config.ssh.mode {
+            SshMode::Auto => SshMode::Host,
+            SshMode::Host => SshMode::Managed,
+            SshMode::Managed => SshMode::Off,
+            SshMode::Off => SshMode::Auto,
+        };
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set SSH mode to {}. Press s to save.",
+            ssh_mode_name(self.config.ssh.mode)
         ));
     }
 
@@ -554,6 +596,16 @@ enum QuitDecision {
     Save,
     Discard,
     Cancel,
+}
+
+enum ConfigUiExit {
+    Quit(i32),
+    OpenSshConfigure,
+}
+
+enum ConfigUiAction {
+    Continue,
+    OpenSshConfigure,
 }
 
 #[derive(Clone, Copy)]
@@ -739,20 +791,24 @@ and no host Git inheritance."
                 ),
             ],
             Self::Ssh => vec![
-                SectionRow::new(
+                SectionRow::action(
                     "SSH mode",
                     vec![
                         format!("Current: {}", ssh_mode_name(config.ssh.mode)),
-                        "auto, host, managed, or off.".to_owned(),
+                        "Press Enter to cycle auto/host/managed/off.".to_owned(),
+                        "auto uses managed keys when selected, otherwise host SSH_AUTH_SOCK."
+                            .to_owned(),
                     ],
+                    RowAction::CycleSshMode,
                 ),
-                SectionRow::new(
+                SectionRow::action(
                     "Selected managed SSH keys",
                     vec![
                         format!("Current selected keys: {}", config.ssh.selected_keys.len()),
-                        "The first editable version should reuse the existing SSH configure flow."
-                            .to_owned(),
+                        "Press Enter to open the existing SSH key configuration flow.".to_owned(),
+                        "Save or discard other pending config changes first.".to_owned(),
                     ],
+                    RowAction::OpenSshConfigure,
                 ),
             ],
             Self::GitIdentity => vec![
@@ -898,6 +954,8 @@ enum RowAction {
     ToggleReadOnlyWorkspace,
     ToggleReadOnlyRootfs,
     CycleColorMode,
+    CycleSshMode,
+    OpenSshConfigure,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1274,6 +1332,65 @@ mod tests {
         let rows = ConfigSection::OutputColor.rows(&config, &paths);
 
         assert!(rows.iter().any(|row| row.title == "Color mode"));
+    }
+
+    #[test]
+    fn ssh_editor_cycles_ssh_mode() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.cycle_ssh_mode();
+
+        assert!(state.dirty);
+        assert_eq!(state.config.ssh.mode, SshMode::Host);
+        assert!(state
+            .last_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Press s to save")));
+    }
+
+    #[test]
+    fn ssh_section_exposes_mode_and_key_configuration_rows() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let rows = ConfigSection::Ssh.rows(&config, &paths);
+
+        assert!(rows.iter().any(|row| row.title == "SSH mode"));
+        assert!(rows
+            .iter()
+            .any(|row| row.title == "Selected managed SSH keys"));
+    }
+
+    #[test]
+    fn ssh_key_configuration_is_blocked_when_dirty() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+        state.screen = ConfigScreen::Section(ConfigSection::Ssh);
+        state.highlighted_row = 1;
+        state.dirty = true;
+
+        let action = state.open_highlighted();
+
+        assert!(matches!(action, ConfigUiAction::Continue));
+        assert!(state
+            .last_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Save or discard")));
+    }
+
+    #[test]
+    fn ssh_key_configuration_launches_existing_flow_when_clean() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+        state.screen = ConfigScreen::Section(ConfigSection::Ssh);
+        state.highlighted_row = 1;
+
+        let action = state.open_highlighted();
+
+        assert!(matches!(action, ConfigUiAction::OpenSshConfigure));
     }
 
     #[test]
