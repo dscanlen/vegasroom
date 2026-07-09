@@ -358,10 +358,28 @@ added preset diff helpers for previewing exact field changes
 added tests for Safer preview diff, Strict preset application, and matching-preset no-op dirty behavior
 ```
 
+### Subsection 5: add workspace config editor
+
+Committed locally on this branch:
+
+```text
+Add config TUI workspace editor
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+made Workspace section rows for risky_mount_policy and read_only_workspace editable toggles
+Enter on risky_mount_policy toggles warn/deny and marks config dirty
+Enter on read_only_workspace toggles true/false and marks config dirty
+kept paths.workspace as a placeholder for a later text-input slice
+added workspace editor toggle tests
+```
+
 Next implementation slices:
 
 ```text
-add workspace and runtime hardening editors
+add runtime hardening editor
 add ui.color config and output/color editor
 integrate SSH mode editing and link/reuse existing SSH key configure flow
 add Git identity editor and effective identity preview

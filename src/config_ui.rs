@@ -380,6 +380,8 @@ impl ConfigUiState {
                             self.screen = ConfigScreen::PresetPreview(preset);
                             self.last_message = None;
                         }
+                        RowAction::ToggleRiskyMountPolicy => self.toggle_risky_mount_policy(),
+                        RowAction::ToggleReadOnlyWorkspace => self.toggle_read_only_workspace(),
                         RowAction::Placeholder => {
                             self.last_message = Some(format!(
                                 "{} editing will be added in an upcoming slice.",
@@ -422,6 +424,27 @@ impl ConfigUiState {
                 changes.len()
             )
         });
+    }
+
+    fn toggle_risky_mount_policy(&mut self) {
+        self.config.workspace.risky_mount_policy = match self.config.workspace.risky_mount_policy {
+            RiskyMountPolicy::Warn => RiskyMountPolicy::Deny,
+            RiskyMountPolicy::Deny => RiskyMountPolicy::Warn,
+        };
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set risky mount policy to {}. Press s to save.",
+            risky_mount_policy_name(self.config.workspace.risky_mount_policy)
+        ));
+    }
+
+    fn toggle_read_only_workspace(&mut self) {
+        self.config.harness.pi.read_only_workspace = !self.config.harness.pi.read_only_workspace;
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set read-only workspace to {}. Press s to save.",
+            self.config.harness.pi.read_only_workspace
+        ));
     }
 
     fn save(&mut self) -> Result<()> {
@@ -664,23 +687,27 @@ and no host Git inheritance."
                     "Default workspace root",
                     vec![format!("Current: {}", config.paths.workspace)],
                 ),
-                SectionRow::new(
+                SectionRow::action(
                     "Risky mount policy",
                     vec![
                         format!(
                             "Current: {}",
                             risky_mount_policy_name(config.workspace.risky_mount_policy)
                         ),
+                        "Press Enter to toggle warn/deny.".to_owned(),
                         "warn prints a warning and continues; deny refuses broad risky mounts."
                             .to_owned(),
                     ],
+                    RowAction::ToggleRiskyMountPolicy,
                 ),
-                SectionRow::new(
+                SectionRow::action(
                     "Read-only workspace",
                     vec![
                         format!("Current: {}", config.harness.pi.read_only_workspace),
+                        "Press Enter to toggle true/false.".to_owned(),
                         "When enabled, Pi may not be able to edit project files.".to_owned(),
                     ],
+                    RowAction::ToggleReadOnlyWorkspace,
                 ),
             ],
             Self::Ssh => vec![
@@ -829,12 +856,22 @@ impl SectionRow {
             action: RowAction::PreviewPreset(preset),
         }
     }
+
+    fn action(title: impl Into<String>, details: Vec<String>, action: RowAction) -> Self {
+        Self {
+            title: title.into(),
+            details,
+            action,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
 enum RowAction {
     Placeholder,
     PreviewPreset(SecurityPreset),
+    ToggleRiskyMountPolicy,
+    ToggleReadOnlyWorkspace,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1108,6 +1145,37 @@ mod tests {
         state.apply_preset(SecurityPreset::DefaultCompatible);
 
         assert!(!state.dirty);
+    }
+
+    #[test]
+    fn workspace_editor_toggles_risky_mount_policy() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.toggle_risky_mount_policy();
+
+        assert!(state.dirty);
+        assert_eq!(
+            state.config.workspace.risky_mount_policy,
+            RiskyMountPolicy::Deny
+        );
+        assert!(state
+            .last_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Press s to save")));
+    }
+
+    #[test]
+    fn workspace_editor_toggles_read_only_workspace() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.toggle_read_only_workspace();
+
+        assert!(state.dirty);
+        assert!(state.config.harness.pi.read_only_workspace);
     }
 
     #[test]

@@ -142,6 +142,8 @@ workspace.risky_mount_policy
 harness.pi.read_only_workspace
 ```
 
+Initial editable controls toggle `workspace.risky_mount_policy` and `harness.pi.read_only_workspace`. Editing `paths.workspace` should use a later text-input flow.
+
 ### SSH
 
 Configure:
