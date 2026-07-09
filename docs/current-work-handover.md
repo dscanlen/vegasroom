@@ -250,11 +250,14 @@ Validated by user with:
 ./scripts/check.sh
 ```
 
-Remaining optional color polish not started:
+Code-review cleanup subsections are complete. Remaining color policy polish is deferred to the future config update instead of continuing on this cleanup branch.
+
+Deferred color/config items:
 
 ```text
-non-TTY auto-disable
+non-TTY color auto-disable
 possible --color auto|always|never config/flag
+persisted color policy in future config flow, if needed
 ```
 
 ## Larger features still pending
@@ -271,6 +274,7 @@ move SSH configure flow into vr config eventually
 keep manual YAML editing supported
 add security presets: lowsec default, sec, highsec
 add default_harness for bare `vr` launches once multiple harnesses exist
+bundle remaining color policy controls here if config-backed color behavior is desired
 ```
 
 This should be split into design and several implementation branches.
