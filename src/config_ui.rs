@@ -14,7 +14,7 @@ use crossterm::{
 };
 
 use crate::{
-    config::{Config, RiskyMountPolicy, SshMode},
+    config::{ColorMode, Config, RiskyMountPolicy, SshMode},
     paths::{display_path, StatePaths},
 };
 
@@ -383,6 +383,7 @@ impl ConfigUiState {
                         RowAction::ToggleRiskyMountPolicy => self.toggle_risky_mount_policy(),
                         RowAction::ToggleReadOnlyWorkspace => self.toggle_read_only_workspace(),
                         RowAction::ToggleReadOnlyRootfs => self.toggle_read_only_rootfs(),
+                        RowAction::CycleColorMode => self.cycle_color_mode(),
                         RowAction::Placeholder => {
                             self.last_message = Some(format!(
                                 "{} editing will be added in an upcoming slice.",
@@ -454,6 +455,19 @@ impl ConfigUiState {
         self.last_message = Some(format!(
             "Set read-only root filesystem to {}. Press s to save.",
             self.config.harness.pi.read_only_rootfs
+        ));
+    }
+
+    fn cycle_color_mode(&mut self) {
+        self.config.ui.color = match self.config.ui.color {
+            ColorMode::Auto => ColorMode::Always,
+            ColorMode::Always => ColorMode::Never,
+            ColorMode::Never => ColorMode::Auto,
+        };
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set color mode to {}. Press s to save.",
+            color_mode_name(self.config.ui.color)
         ));
     }
 
@@ -620,8 +634,8 @@ impl ConfigSection {
             ],
             Self::OutputColor => vec![
                 "Configure output color behavior alongside remaining color polish.".to_owned(),
-                "Current behavior: color by default; non-empty NO_COLOR disables labels."
-                    .to_owned(),
+                format!("Current color mode: {}", color_mode_name(config.ui.color)),
+                "Non-empty NO_COLOR still disables labels as an override.".to_owned(),
             ],
             Self::Advanced => vec![
                 "Inspect config path and future reset/backup actions.".to_owned(),
@@ -660,6 +674,10 @@ impl ConfigSection {
                             config.harness.pi.read_only_rootfs
                         ),
                     ],
+                ),
+                SectionRow::new(
+                    "Color behavior",
+                    vec![format!("Current: {}", color_mode_name(config.ui.color))],
                 ),
             ],
             Self::SecurityPreset => vec![
@@ -808,23 +826,17 @@ assumptions."
                     RowAction::ToggleReadOnlyRootfs,
                 ),
             ],
-            Self::OutputColor => vec![
-                SectionRow::new(
-                    "Current color behavior",
-                    vec![
-                        "Color is enabled by default.".to_owned(),
-                        "A non-empty NO_COLOR environment variable disables ANSI labels."
-                            .to_owned(),
-                    ],
-                ),
-                SectionRow::new(
-                    "Future ui.color",
-                    vec![
-                        "Planned values: auto, always, never.".to_owned(),
-                        "NO_COLOR should remain an override.".to_owned(),
-                    ],
-                ),
-            ],
+            Self::OutputColor => vec![SectionRow::action(
+                "Color mode",
+                vec![
+                    format!("Current: {}", color_mode_name(config.ui.color)),
+                    "Press Enter to cycle auto/always/never.".to_owned(),
+                    "auto colors terminal output; always forces ANSI; never disables ANSI."
+                        .to_owned(),
+                    "A non-empty NO_COLOR environment variable disables ANSI labels.".to_owned(),
+                ],
+                RowAction::CycleColorMode,
+            )],
             Self::Advanced => vec![
                 SectionRow::new("Config path", vec![display_path(&state_paths.config_yaml)]),
                 SectionRow::new(
@@ -885,6 +897,7 @@ enum RowAction {
     ToggleRiskyMountPolicy,
     ToggleReadOnlyWorkspace,
     ToggleReadOnlyRootfs,
+    CycleColorMode,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1088,6 +1101,14 @@ fn ssh_mode_name(mode: SshMode) -> &'static str {
     }
 }
 
+fn color_mode_name(mode: ColorMode) -> &'static str {
+    match mode {
+        ColorMode::Auto => "auto",
+        ColorMode::Always => "always",
+        ColorMode::Never => "never",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1228,6 +1249,31 @@ mod tests {
         assert!(rows
             .iter()
             .any(|row| row.title == "Read-only root filesystem"));
+    }
+
+    #[test]
+    fn output_color_editor_cycles_color_mode() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.cycle_color_mode();
+
+        assert!(state.dirty);
+        assert_eq!(state.config.ui.color, ColorMode::Always);
+        assert!(state
+            .last_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Press s to save")));
+    }
+
+    #[test]
+    fn output_color_section_exposes_color_mode_row() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let rows = ConfigSection::OutputColor.rows(&config, &paths);
+
+        assert!(rows.iter().any(|row| row.title == "Color mode"));
     }
 
     #[test]

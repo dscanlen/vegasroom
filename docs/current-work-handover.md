@@ -393,10 +393,27 @@ kept runtime/build network fields as read-only placeholders because bridge remai
 added runtime editor toggle tests
 ```
 
+### Subsection 7: add ui.color config and output/color editor
+
+Committed locally on this branch:
+
+```text
+Add config TUI color editor
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+added ui.color config with auto/always/never values and default auto
+changed colored status labels to honor ui.color while preserving non-empty NO_COLOR as an override
+added Output / color editor row that cycles auto -> always -> never -> auto
+updated config docs and config TUI design docs for active ui.color behavior
+added config parsing, alert policy, and config TUI color editor tests
+```
+
 Next implementation slices:
 
 ```text
-add ui.color config and output/color editor
 integrate SSH mode editing and link/reuse existing SSH key configure flow
 add Git identity editor and effective identity preview
 polish validation, reset actions, and advanced screen

@@ -193,24 +193,21 @@ Initial editable controls toggle `harness.pi.read_only_rootfs`. Runtime/build ne
 
 ### Output / color
 
-Bundle remaining color policy polish here.
+Configure:
 
-Recommended future config shape:
-
-```yaml
-ui:
-  color: auto
+```text
+ui.color
 ```
 
 Supported values:
 
 ```text
-auto
-always
-never
+auto    color terminal output only
+always  force ANSI color
+never   disable ANSI color
 ```
 
-Current behavior already supports non-empty `NO_COLOR` to disable colored PASS/WARN/FAIL labels. Future config-backed color behavior should preserve `NO_COLOR` as an override.
+The Output / color section cycles `ui.color` through `auto`, `always`, and `never`. A non-empty `NO_COLOR` environment variable remains an override that disables colored PASS/WARN/FAIL labels.
 
 ### Advanced
 
