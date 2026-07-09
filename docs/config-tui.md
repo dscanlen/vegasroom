@@ -50,6 +50,8 @@ Each section should show current values, plain-language descriptions, and any co
 
 ## Security presets
 
+Security preset rows open a change preview first. Press Enter on the preview to apply the preset to the in-memory config, then press `s` to save it to disk.
+
 User-facing preset names should prioritize clarity:
 
 ```text

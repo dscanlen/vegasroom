@@ -322,7 +322,13 @@ added a test that the Workspace section exposes expected config rows
 
 ### Subsection 3: add config save model and backups
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+a6d26bb Add config TUI save model
+```
+
+Completed and validated by user with `./scripts/check.sh`.
 
 ```text
 changed the global s keybinding to call real save plumbing
@@ -333,22 +339,28 @@ reloads and validates config after save
 added tests for backup writing and dirty-state save clearing
 ```
 
-Validation needed before commit:
+### Subsection 4: add security preset editing
 
-```bash
-./scripts/check.sh
-```
-
-Suggested commit message after validation:
+Committed locally on this branch in this commit:
 
 ```text
-Add config TUI save model
+Add config TUI security presets
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+added SecurityPreset::{DefaultCompatible, Safer, Strict}
+changed Security preset submenu rows to open a change preview screen
+Enter on the preview applies the selected preset to in-memory config and marks the TUI dirty only when values changed
+preset application preserves host networking for all presets because bridge remains experimental for Pi login
+added preset diff helpers for previewing exact field changes
+added tests for Safer preview diff, Strict preset application, and matching-preset no-op dirty behavior
 ```
 
 Next implementation slices:
 
 ```text
-add security preset editing with change preview
 add workspace and runtime hardening editors
 add ui.color config and output/color editor
 integrate SSH mode editing and link/reuse existing SSH key configure flow

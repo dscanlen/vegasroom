@@ -97,6 +97,7 @@ fn render(state: &ConfigUiState) -> Result<()> {
     match state.screen {
         ConfigScreen::Sections => render_sections_screen(&mut stdout, state)?,
         ConfigScreen::Section(section) => render_section_screen(&mut stdout, state, section)?,
+        ConfigScreen::PresetPreview(preset) => render_preset_preview(&mut stdout, state, preset)?,
     }
 
     if let Some(message) = &state.last_message {
@@ -218,6 +219,39 @@ fn render_quit_prompt() -> Result<()> {
     Ok(())
 }
 
+fn render_preset_preview(
+    stdout: &mut impl Write,
+    state: &ConfigUiState,
+    preset: SecurityPreset,
+) -> Result<()> {
+    writeln!(stdout, "Security preset: {}", preset.title())?;
+    writeln!(stdout)?;
+    writeln!(stdout, "Changes to apply:")?;
+
+    let changes = preset_changes(&state.config, preset);
+    if changes.is_empty() {
+        writeln!(
+            stdout,
+            "  No changes; this preset already matches current config."
+        )?;
+    } else {
+        for change in changes {
+            writeln!(
+                stdout,
+                "  {}: {} -> {}",
+                change.field, change.before, change.after
+            )?;
+        }
+    }
+
+    writeln!(stdout)?;
+    for line in preset.notes() {
+        writeln!(stdout, "  {line}")?;
+    }
+
+    Ok(())
+}
+
 fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
     match state.screen {
         ConfigScreen::Sections => writeln!(
@@ -230,6 +264,10 @@ fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
                 "Keys: ↑/↓ or k/j move · Enter edit/toggle later · ",
                 "Esc/Backspace back · s save · q quit"
             )
+        )?,
+        ConfigScreen::PresetPreview(_) => writeln!(
+            stdout,
+            "Keys: Enter apply preset · Esc/Backspace back · s save · q quit"
         )?,
     }
 
@@ -305,6 +343,7 @@ impl ConfigUiState {
                     self.highlighted_row -= 1;
                 }
             }
+            ConfigScreen::PresetPreview(_) => {}
         }
         self.last_message = None;
     }
@@ -321,6 +360,7 @@ impl ConfigUiState {
                 }
                 self.highlighted_row = (self.highlighted_row + 1) % len;
             }
+            ConfigScreen::PresetPreview(_) => {}
         }
         self.last_message = None;
     }
@@ -335,21 +375,53 @@ impl ConfigUiState {
             ConfigScreen::Section(section) => {
                 let rows = section.rows(&self.config, &self.state_paths);
                 if let Some(row) = rows.get(self.highlighted_row) {
-                    self.last_message = Some(format!(
-                        "{} editing will be added in an upcoming slice.",
-                        row.title
-                    ));
+                    match row.action {
+                        RowAction::PreviewPreset(preset) => {
+                            self.screen = ConfigScreen::PresetPreview(preset);
+                            self.last_message = None;
+                        }
+                        RowAction::Placeholder => {
+                            self.last_message = Some(format!(
+                                "{} editing will be added in an upcoming slice.",
+                                row.title
+                            ));
+                        }
+                    }
                 }
             }
+            ConfigScreen::PresetPreview(preset) => self.apply_preset(preset),
         }
     }
 
     fn go_back(&mut self) {
-        if matches!(self.screen, ConfigScreen::Section(_)) {
-            self.screen = ConfigScreen::Sections;
-            self.highlighted_row = 0;
-            self.last_message = None;
+        match self.screen {
+            ConfigScreen::Sections => {}
+            ConfigScreen::Section(_) => {
+                self.screen = ConfigScreen::Sections;
+                self.highlighted_row = 0;
+                self.last_message = None;
+            }
+            ConfigScreen::PresetPreview(_) => {
+                self.screen = ConfigScreen::Section(ConfigSection::SecurityPreset);
+                self.last_message = None;
+            }
         }
+    }
+
+    fn apply_preset(&mut self, preset: SecurityPreset) {
+        let changes = preset_changes(&self.config, preset);
+        preset.apply(&mut self.config);
+        self.dirty |= !changes.is_empty();
+        self.screen = ConfigScreen::Section(ConfigSection::SecurityPreset);
+        self.last_message = Some(if changes.is_empty() {
+            format!("{} preset already matched current config.", preset.title())
+        } else {
+            format!(
+                "Applied {} preset with {} pending change(s). Press s to save.",
+                preset.title(),
+                changes.len()
+            )
+        });
     }
 
     fn save(&mut self) -> Result<()> {
@@ -441,6 +513,7 @@ enum QuitDecision {
 enum ConfigScreen {
     Sections,
     Section(ConfigSection),
+    PresetPreview(SecurityPreset),
 }
 
 #[derive(Clone, Copy)]
@@ -561,23 +634,23 @@ impl ConfigSection {
                     "Current preset",
                     vec![format!("Detected: {}", security_preset_name(config))],
                 ),
-                SectionRow::new(
-                    "Default / Compatible",
+                SectionRow::preset(
+                    SecurityPreset::DefaultCompatible,
                     vec![
                         "Preserves current proven behavior and maximum compatibility.".to_owned(),
                         "Alias: lowsec/default.".to_owned(),
                     ],
                 ),
-                SectionRow::new(
-                    "Safer",
+                SectionRow::preset(
+                    SecurityPreset::Safer,
                     vec![
                         "Sets risky workspace mount policy to deny.".to_owned(),
                         "Keeps workspace writes, host networking, and automatic SSH behavior."
                             .to_owned(),
                     ],
                 ),
-                SectionRow::new(
-                    "Strict",
+                SectionRow::preset(
+                    SecurityPreset::Strict,
                     vec![
                         "Enables deny policy, read-only workspace, read-only rootfs, managed SSH, \
 and no host Git inheritance."
@@ -737,6 +810,7 @@ assumptions."
 struct SectionRow {
     title: String,
     details: Vec<String>,
+    action: RowAction,
 }
 
 impl SectionRow {
@@ -744,7 +818,165 @@ impl SectionRow {
         Self {
             title: title.into(),
             details,
+            action: RowAction::Placeholder,
         }
+    }
+
+    fn preset(preset: SecurityPreset, details: Vec<String>) -> Self {
+        Self {
+            title: preset.title().to_owned(),
+            details,
+            action: RowAction::PreviewPreset(preset),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum RowAction {
+    Placeholder,
+    PreviewPreset(SecurityPreset),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SecurityPreset {
+    DefaultCompatible,
+    Safer,
+    Strict,
+}
+
+impl SecurityPreset {
+    fn title(self) -> &'static str {
+        match self {
+            Self::DefaultCompatible => "Default / Compatible",
+            Self::Safer => "Safer",
+            Self::Strict => "Strict",
+        }
+    }
+
+    fn notes(self) -> Vec<&'static str> {
+        match self {
+            Self::DefaultCompatible => vec![
+                "Maximum compatibility with the currently proven runtime.",
+                "Alias: lowsec/default.",
+            ],
+            Self::Safer => vec![
+                "Improves accidental exposure protection by denying risky workspace mounts.",
+                "Keeps workspace writes, host networking, automatic SSH, and host Git inheritance.",
+            ],
+            Self::Strict => vec![
+                "Security-forward settings with compatibility tradeoffs.",
+                "Does not change host networking because bridge remains experimental for Pi login.",
+            ],
+        }
+    }
+
+    fn apply(self, config: &mut Config) {
+        match self {
+            Self::DefaultCompatible => {
+                config.workspace.risky_mount_policy = RiskyMountPolicy::Warn;
+                config.harness.pi.read_only_workspace = false;
+                config.harness.pi.read_only_rootfs = false;
+                config.harness.pi.network = "host".to_owned();
+                config.harness.pi.build_network = "host".to_owned();
+                config.ssh.mode = SshMode::Auto;
+                config.git.inherit_host = true;
+            }
+            Self::Safer => {
+                config.workspace.risky_mount_policy = RiskyMountPolicy::Deny;
+                config.harness.pi.read_only_workspace = false;
+                config.harness.pi.read_only_rootfs = false;
+                config.harness.pi.network = "host".to_owned();
+                config.harness.pi.build_network = "host".to_owned();
+                config.ssh.mode = SshMode::Auto;
+                config.git.inherit_host = true;
+            }
+            Self::Strict => {
+                config.workspace.risky_mount_policy = RiskyMountPolicy::Deny;
+                config.harness.pi.read_only_workspace = true;
+                config.harness.pi.read_only_rootfs = true;
+                config.harness.pi.network = "host".to_owned();
+                config.harness.pi.build_network = "host".to_owned();
+                config.ssh.mode = SshMode::Managed;
+                config.git.inherit_host = false;
+            }
+        }
+    }
+}
+
+struct ConfigChange {
+    field: &'static str,
+    before: String,
+    after: String,
+}
+
+fn preset_changes(config: &Config, preset: SecurityPreset) -> Vec<ConfigChange> {
+    let mut target = config.clone();
+    preset.apply(&mut target);
+
+    diff_preset_configs(config, &target)
+}
+
+fn diff_preset_configs(before: &Config, after: &Config) -> Vec<ConfigChange> {
+    let mut changes = Vec::new();
+    push_change(
+        &mut changes,
+        "workspace.risky_mount_policy",
+        risky_mount_policy_name(before.workspace.risky_mount_policy),
+        risky_mount_policy_name(after.workspace.risky_mount_policy),
+    );
+    push_change(
+        &mut changes,
+        "harness.pi.read_only_workspace",
+        before.harness.pi.read_only_workspace,
+        after.harness.pi.read_only_workspace,
+    );
+    push_change(
+        &mut changes,
+        "harness.pi.read_only_rootfs",
+        before.harness.pi.read_only_rootfs,
+        after.harness.pi.read_only_rootfs,
+    );
+    push_change(
+        &mut changes,
+        "harness.pi.network",
+        before.harness.pi.network.as_str(),
+        after.harness.pi.network.as_str(),
+    );
+    push_change(
+        &mut changes,
+        "harness.pi.build_network",
+        before.harness.pi.build_network.as_str(),
+        after.harness.pi.build_network.as_str(),
+    );
+    push_change(
+        &mut changes,
+        "ssh.mode",
+        ssh_mode_name(before.ssh.mode),
+        ssh_mode_name(after.ssh.mode),
+    );
+    push_change(
+        &mut changes,
+        "git.inherit_host",
+        before.git.inherit_host,
+        after.git.inherit_host,
+    );
+    changes
+}
+
+fn push_change(
+    changes: &mut Vec<ConfigChange>,
+    field: &'static str,
+    before: impl ToString,
+    after: impl ToString,
+) {
+    let before = before.to_string();
+    let after = after.to_string();
+    if before != after {
+        changes.push(ConfigChange {
+            field,
+            before,
+            after,
+        });
     }
 }
 
@@ -835,6 +1067,47 @@ mod tests {
         config.git.inherit_host = false;
 
         assert_eq!(security_preset_name(&config), "Strict");
+    }
+
+    #[test]
+    fn safer_preset_preview_lists_expected_change() {
+        let config = Config::default();
+        let changes = preset_changes(&config, SecurityPreset::Safer);
+
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].field, "workspace.risky_mount_policy");
+        assert_eq!(changes[0].before, "warn");
+        assert_eq!(changes[0].after, "deny");
+    }
+
+    #[test]
+    fn applying_strict_preset_updates_config_and_marks_dirty() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.apply_preset(SecurityPreset::Strict);
+
+        assert!(state.dirty);
+        assert_eq!(
+            state.config.workspace.risky_mount_policy,
+            RiskyMountPolicy::Deny
+        );
+        assert!(state.config.harness.pi.read_only_workspace);
+        assert!(state.config.harness.pi.read_only_rootfs);
+        assert_eq!(state.config.ssh.mode, SshMode::Managed);
+        assert!(!state.config.git.inherit_host);
+    }
+
+    #[test]
+    fn applying_matching_preset_does_not_mark_dirty() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.apply_preset(SecurityPreset::DefaultCompatible);
+
+        assert!(!state.dirty);
     }
 
     #[test]
