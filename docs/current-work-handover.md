@@ -189,13 +189,36 @@ kept CLI behavior unchanged
 
 ### Subsection 8: split CLI manual launch parser
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+4f70887 Split CLI manual launch parser
+```
+
+Completed:
 
 ```text
 added src/cli/parser.rs
 moved ManualLaunch and PiInvocation types into cli::parser
 moved manual launch parsing helpers into cli::parser
 moved manual parser unit tests into cli::parser
+kept CLI behavior unchanged
+```
+
+Validated by user with:
+
+```bash
+./scripts/check.sh
+```
+
+### Subsection 9: split CLI command execution helpers
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+added src/cli/commands.rs
+moved init, doctor, SSH status/configure, Pi launch, and shell launch execution helpers into cli::commands
+kept CLI argument parsing and manual launch dispatch in src/cli.rs
 kept CLI behavior unchanged
 ```
 
@@ -208,20 +231,10 @@ Validation needed before commit:
 Suggested commit message after validation:
 
 ```text
-Split CLI manual launch parser
+Split CLI command execution helpers
 ```
 
 ## Remaining recommended code-review subsections
-
-### 9. Continue splitting CLI module
-
-Recommended next slice:
-
-```text
-consider moving command execution helpers to src/cli/commands.rs after parser split
-```
-
-Preserve all parsing and help tests.
 
 ### 10. Color behavior polish, optional later
 
