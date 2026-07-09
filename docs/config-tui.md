@@ -29,7 +29,7 @@ Save, discard, and exit should not be top-level menu entries. They are actions/k
 Save changes before quitting? y/n
 ```
 
-Future nested submenus may add `Esc` or Backspace for returning to the previous screen, but `s` and `q` remain global actions.
+Nested submenus use `Esc` or Backspace to return to the previous screen, while `s` and `q` remain global actions.
 
 ## Top-level sections
 

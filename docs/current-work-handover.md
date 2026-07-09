@@ -286,7 +286,13 @@ added docs/config-tui.md with command surface, navigation model, sections, prese
 
 ### Subsection 1: add config TUI shell
 
-Completed locally and validated by user with `./scripts/check.sh`.
+Committed locally on this branch:
+
+```text
+98bc60e Add config TUI shell
+```
+
+Completed and validated by user with `./scripts/check.sh`.
 
 ```text
 added `vr config` command
@@ -302,10 +308,33 @@ Suggested commit message:
 Add config TUI shell
 ```
 
+### Subsection 2: add config section submenus
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+added real top-level-to-section navigation in the config TUI
+added per-section submenu rows for planned editable fields/actions
+added Esc/Backspace navigation back from section screens while keeping s/q as global save/quit keybindings
+kept submenus read-only placeholders for this slice
+added a test that the Workspace section exposes expected config rows
+```
+
+Validation needed before commit:
+
+```bash
+./scripts/check.sh
+```
+
+Suggested commit message after validation:
+
+```text
+Add config TUI section navigation
+```
+
 Next implementation slices:
 
 ```text
-add real section/submenu navigation
 add save model, dirty-state prompt, and timestamped config backup writer
 add security preset editing with change preview
 add workspace and runtime hardening editors
