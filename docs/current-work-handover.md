@@ -171,13 +171,31 @@ Docker cleanup is complete for the originally recommended slices. Keep public Do
 
 ### Subsection 7: split CLI help text
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+452eb83 Split CLI help text
+```
+
+Completed:
 
 ```text
 added src/cli/help.rs
 moved top-level/subcommand after_help constants into cli::help
 moved manual Pi and shell help text/print helpers into cli::help
 moved Pi and shell help text unit tests into cli::help
+kept CLI behavior unchanged
+```
+
+### Subsection 8: split CLI manual launch parser
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+added src/cli/parser.rs
+moved ManualLaunch and PiInvocation types into cli::parser
+moved manual launch parsing helpers into cli::parser
+moved manual parser unit tests into cli::parser
 kept CLI behavior unchanged
 ```
 
@@ -190,23 +208,22 @@ Validation needed before commit:
 Suggested commit message after validation:
 
 ```text
-Split CLI help text
+Split CLI manual launch parser
 ```
 
 ## Remaining recommended code-review subsections
 
-### 8. Continue splitting CLI module
+### 9. Continue splitting CLI module
 
-Recommended next slices, one at a time:
+Recommended next slice:
 
 ```text
-move manual launch parser types/functions/tests to src/cli/parser.rs
 consider moving command execution helpers to src/cli/commands.rs after parser split
 ```
 
 Preserve all parsing and help tests.
 
-### 8. Color behavior polish, optional later
+### 10. Color behavior polish, optional later
 
 Current colors always emit ANSI. Future optional polish:
 
