@@ -450,30 +450,25 @@ added Git inherit_host toggle, effective preview, and row exposure tests
 
 ### Subsection 10: polish validation, reset actions, and advanced screen
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+Polish config TUI advanced actions
+```
+
+Completed and validated by user with `./scripts/check.sh`.
 
 ```text
 added Advanced validate-current-config action
 updated Advanced backup wording to reflect existing timestamped backup behavior
 added reset-all-to-defaults preview screen with exact changed-field diff
 Enter on reset preview applies defaults in memory and marks config dirty only when values changed
+fixed raw-mode config TUI rendering so newlines return to column 0
 updated config TUI design docs for active Advanced behavior
-added Advanced row exposure, validation, reset preview, and reset application tests
+added Advanced row exposure, validation, reset preview, reset application, and CRLF rendering tests
 ```
 
-Validation needed before commit:
-
-```bash
-./scripts/check.sh
-```
-
-Suggested commit message after validation:
-
-```text
-Polish config TUI advanced actions
-```
-
-After this validates, the planned Config TUI slices are complete and ready for end-to-end user testing.
+The planned Config TUI slices are complete and ready for end-to-end user testing.
 
 ### Harness-independent package/library selection
 

@@ -100,7 +100,8 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<ConfigUiExit> {
 }
 
 fn render(state: &ConfigUiState) -> Result<()> {
-    let mut stdout = io::stdout();
+    let stdout = io::stdout();
+    let mut stdout = CrLfWriter::new(stdout);
     execute!(
         stdout,
         terminal::Clear(ClearType::All),
@@ -217,7 +218,8 @@ fn confirm_quit() -> Result<QuitDecision> {
 }
 
 fn render_quit_prompt() -> Result<()> {
-    let mut stdout = io::stdout();
+    let stdout = io::stdout();
+    let mut stdout = CrLfWriter::new(stdout);
     execute!(
         stdout,
         terminal::Clear(ClearType::All),
@@ -324,6 +326,33 @@ fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
         "Saving and dirty-state prompts will follow the existing vr ssh configure pattern."
     )?;
     Ok(())
+}
+
+struct CrLfWriter<W> {
+    inner: W,
+}
+
+impl<W> CrLfWriter<W> {
+    fn new(inner: W) -> Self {
+        Self { inner }
+    }
+}
+
+impl<W: Write> Write for CrLfWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        for byte in buf {
+            if *byte == b'\n' {
+                self.inner.write_all(b"\r\n")?;
+            } else {
+                self.inner.write_all(&[*byte])?;
+            }
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 struct TerminalSession;
@@ -1361,6 +1390,17 @@ mod tests {
         let config = Config::default();
 
         assert_eq!(security_preset_name(&config), "Default / Compatible");
+    }
+
+    #[test]
+    fn crlf_writer_expands_newlines_for_raw_mode_rendering() {
+        let mut output = Vec::new();
+        {
+            let mut writer = CrLfWriter::new(&mut output);
+            write!(writer, "first\nsecond").unwrap();
+        }
+
+        assert_eq!(output, b"first\r\nsecond");
     }
 
     #[test]
