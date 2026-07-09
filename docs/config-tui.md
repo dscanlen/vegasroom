@@ -189,6 +189,8 @@ harness.pi.read_only_rootfs
 
 Clearly label advanced/experimental choices, especially custom Compose files, bridge networking, and read-only rootfs.
 
+Initial editable controls toggle `harness.pi.read_only_rootfs`. Runtime/build network fields stay read-only placeholders for now because bridge networking is still an experimental validation path.
+
 ### Output / color
 
 Bundle remaining color policy polish here.
@@ -240,8 +242,9 @@ Manual YAML editing remains supported and should be mentioned in the Advanced se
 2. Add overview/section rendering and preset detection.
 3. Add save model, dirty-state prompt, and backup writer.
 4. Add security preset editing with change preview.
-5. Add workspace and runtime hardening editors.
-6. Add `ui.color` config and output/color editor.
-7. Add SSH mode editor and link to existing SSH key configure flow.
-8. Add Git identity editor and effective identity preview.
-9. Polish validation, reset actions, and advanced screen.
+5. Add workspace editor.
+6. Add runtime hardening editor.
+7. Add `ui.color` config and output/color editor.
+8. Add SSH mode editor and link to existing SSH key configure flow.
+9. Add Git identity editor and effective identity preview.
+10. Polish validation, reset actions, and advanced screen.

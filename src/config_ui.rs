@@ -261,7 +261,7 @@ fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
         ConfigScreen::Section(_) => writeln!(
             stdout,
             concat!(
-                "Keys: ↑/↓ or k/j move · Enter edit/toggle later · ",
+                "Keys: ↑/↓ or k/j move · Enter edit/toggle · ",
                 "Esc/Backspace back · s save · q quit"
             )
         )?,
@@ -382,6 +382,7 @@ impl ConfigUiState {
                         }
                         RowAction::ToggleRiskyMountPolicy => self.toggle_risky_mount_policy(),
                         RowAction::ToggleReadOnlyWorkspace => self.toggle_read_only_workspace(),
+                        RowAction::ToggleReadOnlyRootfs => self.toggle_read_only_rootfs(),
                         RowAction::Placeholder => {
                             self.last_message = Some(format!(
                                 "{} editing will be added in an upcoming slice.",
@@ -444,6 +445,15 @@ impl ConfigUiState {
         self.last_message = Some(format!(
             "Set read-only workspace to {}. Press s to save.",
             self.config.harness.pi.read_only_workspace
+        ));
+    }
+
+    fn toggle_read_only_rootfs(&mut self) {
+        self.config.harness.pi.read_only_rootfs = !self.config.harness.pi.read_only_rootfs;
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set read-only root filesystem to {}. Press s to save.",
+            self.config.harness.pi.read_only_rootfs
         ));
     }
 
@@ -788,12 +798,14 @@ assumptions."
                     "Build network",
                     vec![format!("Current: {}", config.harness.pi.build_network)],
                 ),
-                SectionRow::new(
+                SectionRow::action(
                     "Read-only root filesystem",
                     vec![
                         format!("Current: {}", config.harness.pi.read_only_rootfs),
+                        "Press Enter to toggle true/false.".to_owned(),
                         "Experimental hardening option with compatibility tradeoffs.".to_owned(),
                     ],
+                    RowAction::ToggleReadOnlyRootfs,
                 ),
             ],
             Self::OutputColor => vec![
@@ -872,6 +884,7 @@ enum RowAction {
     PreviewPreset(SecurityPreset),
     ToggleRiskyMountPolicy,
     ToggleReadOnlyWorkspace,
+    ToggleReadOnlyRootfs,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1187,6 +1200,34 @@ mod tests {
         assert!(rows.iter().any(|row| row.title == "Default workspace root"));
         assert!(rows.iter().any(|row| row.title == "Risky mount policy"));
         assert!(rows.iter().any(|row| row.title == "Read-only workspace"));
+    }
+
+    #[test]
+    fn runtime_editor_toggles_read_only_rootfs() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.toggle_read_only_rootfs();
+
+        assert!(state.dirty);
+        assert!(state.config.harness.pi.read_only_rootfs);
+        assert!(state
+            .last_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Press s to save")));
+    }
+
+    #[test]
+    fn runtime_section_exposes_current_config_rows() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let rows = ConfigSection::RuntimeDocker.rows(&config, &paths);
+
+        assert!(rows.iter().any(|row| row.title == "Runtime network"));
+        assert!(rows
+            .iter()
+            .any(|row| row.title == "Read-only root filesystem"));
     }
 
     #[test]

@@ -376,10 +376,26 @@ kept paths.workspace as a placeholder for a later text-input slice
 added workspace editor toggle tests
 ```
 
+### Subsection 6: add runtime hardening editor
+
+Committed locally on this branch:
+
+```text
+Add config TUI runtime hardening editor
+```
+
+Completed; validation was not run in this agent environment because cargo/rustfmt are unavailable.
+
+```text
+made Runtime / Docker read-only root filesystem row an editable toggle
+Enter on read_only_rootfs toggles true/false and marks config dirty
+kept runtime/build network fields as read-only placeholders because bridge remains experimental for Pi login
+added runtime editor toggle tests
+```
+
 Next implementation slices:
 
 ```text
-add runtime hardening editor
 add ui.color config and output/color editor
 integrate SSH mode editing and link/reuse existing SSH key configure flow
 add Git identity editor and effective identity preview
