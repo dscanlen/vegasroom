@@ -119,10 +119,10 @@ removed unused SelectedKeyCheck re-export from src/ssh.rs after compiler warning
 
 ### Subsection 4: split Docker Git identity helper
 
-Committed locally on this branch:
+Committed and pushed on this branch:
 
 ```text
-fbac811 Split Docker Git identity helper
+daea139 Split Docker Git identity helper
 ```
 
 Completed:
@@ -136,10 +136,10 @@ moved Git identity unit tests into src/docker/git_identity.rs
 
 ### Subsection 5: split Docker doctor probes
 
-Committed locally on this branch:
+Committed and pushed on this branch:
 
 ```text
-d14785a Split Docker doctor probes
+1d341cc Split Docker doctor probes
 ```
 
 Completed:
@@ -153,7 +153,13 @@ kept public docker::container_doctor_probe, docker::container_ssh_doctor_probe, 
 
 ### Subsection 6: split Docker Compose override helpers
 
-Currently implemented locally and awaiting validation/commit:
+Committed and pushed on this branch:
+
+```text
+f77733e Split Docker Compose override helpers
+```
+
+Completed:
 
 ```text
 moved read-only-rootfs Compose override writer from src/docker.rs to src/docker/overrides.rs
@@ -161,46 +167,98 @@ changed Compose launch assembly to call overrides::prepare_read_only_rootfs inte
 moved read-only-rootfs override unit test into src/docker/overrides.rs
 ```
 
-Validation needed before commit:
+Docker cleanup is complete for the originally recommended slices. Keep public Docker API stable while moving any future internals.
+
+### Subsection 7: split CLI help text
+
+Committed locally on this branch:
+
+```text
+452eb83 Split CLI help text
+```
+
+Completed:
+
+```text
+added src/cli/help.rs
+moved top-level/subcommand after_help constants into cli::help
+moved manual Pi and shell help text/print helpers into cli::help
+moved Pi and shell help text unit tests into cli::help
+kept CLI behavior unchanged
+```
+
+### Subsection 8: split CLI manual launch parser
+
+Committed locally on this branch:
+
+```text
+4f70887 Split CLI manual launch parser
+```
+
+Completed:
+
+```text
+added src/cli/parser.rs
+moved ManualLaunch and PiInvocation types into cli::parser
+moved manual launch parsing helpers into cli::parser
+moved manual parser unit tests into cli::parser
+kept CLI behavior unchanged
+```
+
+Validated by user with:
 
 ```bash
 ./scripts/check.sh
 ```
 
-Suggested commit message after validation:
+### Subsection 9: split CLI command execution helpers
+
+Committed locally on this branch:
 
 ```text
-Split Docker Compose override helpers
+cf09f68 Split CLI command execution helpers
 ```
 
-Docker cleanup is otherwise complete for the originally recommended slices. Keep public Docker API stable while moving any future internals.
-
-## Remaining recommended code-review subsections
-
-### 7. Split CLI module later
-
-`src/cli.rs` is readable but large. Consider later:
+Completed:
 
 ```text
-src/cli.rs
-src/cli/help.rs
-src/cli/parser.rs
-src/cli/commands.rs
+added src/cli/commands.rs
+moved init, doctor, SSH status/configure, Pi launch, and shell launch execution helpers into cli::commands
+kept CLI argument parsing and manual launch dispatch in src/cli.rs
+kept CLI behavior unchanged
 ```
 
-Only do this after Docker cleanup, and preserve all parsing tests.
+### Subsection 10: color behavior polish
 
-### 8. Color behavior polish, optional later
-
-Current colors always emit ANSI. Future optional polish:
+Committed locally on this branch in this commit:
 
 ```text
-NO_COLOR support
-non-TTY auto-disable
+Support NO_COLOR for status labels
+```
+
+Completed:
+
+```text
+added non-empty NO_COLOR support for PASS/WARN/FAIL status labels
+kept colored status labels as the default when NO_COLOR is unset
+added color-enabled and color-disabled status label tests without mutating process environment
+```
+
+Validated by user with:
+
+```bash
+./scripts/check.sh
+```
+
+Code-review cleanup subsections are complete. Remaining color policy polish is deferred to the future config update instead of continuing on this cleanup branch.
+
+Deferred color/config items:
+
+```text
+non-TTY color auto-disable
 possible --color auto|always|never config/flag
+persisted color policy in future config flow, if needed
 ```
-
-Do not do this unless prioritized.
 
 ## Larger features still pending
 
@@ -216,6 +274,7 @@ move SSH configure flow into vr config eventually
 keep manual YAML editing supported
 add security presets: lowsec default, sec, highsec
 add default_harness for bare `vr` launches once multiple harnesses exist
+bundle remaining color policy controls here if config-backed color behavior is desired
 ```
 
 This should be split into design and several implementation branches.
