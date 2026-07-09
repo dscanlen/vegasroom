@@ -15,6 +15,7 @@ use crossterm::{
 
 use crate::{
     config::{ColorMode, Config, RiskyMountPolicy, SshMode},
+    docker,
     paths::{display_path, StatePaths},
     ssh,
 };
@@ -400,6 +401,7 @@ impl ConfigUiState {
                         RowAction::ToggleReadOnlyRootfs => self.toggle_read_only_rootfs(),
                         RowAction::CycleColorMode => self.cycle_color_mode(),
                         RowAction::CycleSshMode => self.cycle_ssh_mode(),
+                        RowAction::ToggleGitInheritHost => self.toggle_git_inherit_host(),
                         RowAction::OpenSshConfigure => {
                             if self.dirty {
                                 self.last_message = Some(
@@ -510,6 +512,15 @@ impl ConfigUiState {
         self.last_message = Some(format!(
             "Set SSH mode to {}. Press s to save.",
             ssh_mode_name(self.config.ssh.mode)
+        ));
+    }
+
+    fn toggle_git_inherit_host(&mut self) {
+        self.config.git.inherit_host = !self.config.git.inherit_host;
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set host Git identity inheritance to {}. Press s to save.",
+            self.config.git.inherit_host
         ));
     }
 
@@ -812,31 +823,37 @@ and no host Git inheritance."
                 ),
             ],
             Self::GitIdentity => vec![
-                SectionRow::new(
+                SectionRow::action(
                     "Inherit host Git identity",
-                    vec![format!("Current: {}", config.git.inherit_host)],
+                    vec![
+                        format!("Current: {}", config.git.inherit_host),
+                        "Press Enter to toggle true/false.".to_owned(),
+                        "Used only when no top-level or selected-key Git identity is available."
+                            .to_owned(),
+                    ],
+                    RowAction::ToggleGitInheritHost,
                 ),
                 SectionRow::new(
                     "Configured user.name",
-                    vec![format!(
-                        "Current: {}",
-                        config.git.user_name.as_deref().unwrap_or("not set")
-                    )],
+                    vec![
+                        format!(
+                            "Current: {}",
+                            config.git.user_name.as_deref().unwrap_or("not set")
+                        ),
+                        "Text editing will be added in a later input slice.".to_owned(),
+                    ],
                 ),
                 SectionRow::new(
                     "Configured user.email",
-                    vec![format!(
-                        "Current: {}",
-                        config.git.user_email.as_deref().unwrap_or("not set")
-                    )],
-                ),
-                SectionRow::new(
-                    "Effective identity preview",
                     vec![
-                        "Future UI should show top-level, selected-key, host-inherited, or none."
-                            .to_owned(),
+                        format!(
+                            "Current: {}",
+                            config.git.user_email.as_deref().unwrap_or("not set")
+                        ),
+                        "Text editing will be added in a later input slice.".to_owned(),
                     ],
                 ),
+                SectionRow::new("Effective identity preview", git_identity_preview(config)),
             ],
             Self::RuntimeDocker => vec![
                 SectionRow::new(
@@ -955,6 +972,7 @@ enum RowAction {
     ToggleReadOnlyRootfs,
     CycleColorMode,
     CycleSshMode,
+    ToggleGitInheritHost,
     OpenSshConfigure,
 }
 
@@ -1164,6 +1182,20 @@ fn color_mode_name(mode: ColorMode) -> &'static str {
         ColorMode::Auto => "auto",
         ColorMode::Always => "always",
         ColorMode::Never => "never",
+    }
+}
+
+fn git_identity_preview(config: &Config) -> Vec<String> {
+    match docker::effective_git_identity(config) {
+        Some(identity) => vec![
+            format!("Effective: {} <{}>", identity.name, identity.email),
+            format!("Source: {}", identity.source),
+        ],
+        None => vec![
+            "Effective: not configured".to_owned(),
+            "Set git.user_name/git.user_email, selected-key Git metadata, or enable host inheritance."
+                .to_owned(),
+        ],
     }
 }
 
@@ -1391,6 +1423,51 @@ mod tests {
         let action = state.open_highlighted();
 
         assert!(matches!(action, ConfigUiAction::OpenSshConfigure));
+    }
+
+    #[test]
+    fn git_identity_editor_toggles_host_inheritance() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.toggle_git_inherit_host();
+
+        assert!(state.dirty);
+        assert!(!state.config.git.inherit_host);
+        assert!(state
+            .last_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Press s to save")));
+    }
+
+    #[test]
+    fn git_identity_preview_prefers_configured_identity() {
+        let mut config = Config::default();
+        config.git.user_name = Some("Configured User".to_owned());
+        config.git.user_email = Some("configured@example.com".to_owned());
+        config.git.inherit_host = false;
+
+        let preview = git_identity_preview(&config);
+
+        assert!(preview
+            .iter()
+            .any(|line| line.contains("Configured User <configured@example.com>")));
+        assert!(preview.iter().any(|line| line.contains("git.user_name")));
+    }
+
+    #[test]
+    fn git_identity_section_exposes_editor_and_preview_rows() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let rows = ConfigSection::GitIdentity.rows(&config, &paths);
+
+        assert!(rows
+            .iter()
+            .any(|row| row.title == "Inherit host Git identity"));
+        assert!(rows
+            .iter()
+            .any(|row| row.title == "Effective identity preview"));
     }
 
     #[test]

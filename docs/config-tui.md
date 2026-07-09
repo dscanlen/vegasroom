@@ -165,13 +165,15 @@ git.user_name
 git.user_email
 ```
 
-The UI should show the effective identity preview based on current precedence:
+The UI shows the effective identity preview based on current precedence:
 
 ```text
 1. top-level git.user_name and git.user_email
 2. exactly one selected SSH key with git identity metadata
 3. host global Git config when git.inherit_host is true
 ```
+
+Initial editable controls toggle `git.inherit_host`. Editing `git.user_name` and `git.user_email` should use a later text-input flow.
 
 ### Runtime / Docker
 

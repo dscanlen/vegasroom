@@ -413,7 +413,13 @@ added config parsing, alert policy, and config TUI color editor tests
 
 ### Subsection 8: add SSH mode editor and key configure handoff
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+Add config TUI SSH editor
+```
+
+Completed and validated by user with `./scripts/check.sh`.
 
 ```text
 made SSH mode row editable and cycle auto -> host -> managed -> off -> auto
@@ -422,6 +428,18 @@ blocks SSH key configure handoff while config TUI has unsaved changes so direct 
 reloads config after returning from the SSH configure flow
 updated config TUI design docs for active SSH behavior
 added SSH mode, row exposure, dirty-blocking, and handoff action tests
+```
+
+### Subsection 9: add Git identity editor and effective preview
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+made Git identity inherit_host row editable and toggle true/false
+added effective Git identity preview using existing Git identity precedence
+kept git.user_name and git.user_email as placeholders for a later text-input slice
+updated config TUI design docs for active Git identity behavior
+added Git inherit_host toggle, effective preview, and row exposure tests
 ```
 
 Validation needed before commit:
@@ -433,13 +451,12 @@ Validation needed before commit:
 Suggested commit message after validation:
 
 ```text
-Add config TUI SSH editor
+Add config TUI Git identity editor
 ```
 
 Next implementation slices:
 
 ```text
-add Git identity editor and effective identity preview
 polish validation, reset actions, and advanced screen
 ```
 
