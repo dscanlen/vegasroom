@@ -1,4 +1,9 @@
-use std::io::{self, IsTerminal, Write};
+use std::{
+    fs,
+    io::{self, IsTerminal, Write},
+    path::{Path, PathBuf},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -56,15 +61,22 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<i32> {
             KeyCode::Down | KeyCode::Char('j') => state.move_down(),
             KeyCode::Enter => state.open_highlighted(),
             KeyCode::Esc | KeyCode::Backspace => state.go_back(),
-            KeyCode::Char('s') => state.save(),
+            KeyCode::Char('s') => state.save()?,
             KeyCode::Char('q') => {
                 if !state.dirty {
                     return Ok(0);
                 }
-                state.last_message = Some(
-                    "Unsaved config changes are not editable yet in this first TUI slice."
-                        .to_owned(),
-                );
+
+                match confirm_quit()? {
+                    QuitDecision::Save => {
+                        state.save()?;
+                        return Ok(0);
+                    }
+                    QuitDecision::Discard => return Ok(0),
+                    QuitDecision::Cancel => {
+                        state.last_message = Some("Quit canceled.".to_owned());
+                    }
+                }
             }
             _ => {}
         }
@@ -167,6 +179,45 @@ fn render_section_screen(
     Ok(())
 }
 
+fn confirm_quit() -> Result<QuitDecision> {
+    render_quit_prompt()?;
+
+    loop {
+        let Event::Key(key) = event::read().context("failed to read terminal key event")? else {
+            continue;
+        };
+
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => return Ok(QuitDecision::Save),
+            KeyCode::Char('n') | KeyCode::Char('N') => return Ok(QuitDecision::Discard),
+            KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
+                return Ok(QuitDecision::Cancel);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn render_quit_prompt() -> Result<()> {
+    let mut stdout = io::stdout();
+    execute!(
+        stdout,
+        terminal::Clear(ClearType::All),
+        cursor::MoveTo(0, 0)
+    )
+    .context("failed to render config quit prompt")?;
+
+    writeln!(stdout, "Unsaved config changes")?;
+    writeln!(stdout)?;
+    writeln!(stdout, "Save changes before quitting?")?;
+    writeln!(stdout)?;
+    writeln!(stdout, "  y  save and quit")?;
+    writeln!(stdout, "  n  quit without saving")?;
+    writeln!(stdout, "  c  cancel")?;
+    stdout.flush()?;
+    Ok(())
+}
+
 fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
     match state.screen {
         ConfigScreen::Sections => writeln!(
@@ -175,7 +226,10 @@ fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
         )?,
         ConfigScreen::Section(_) => writeln!(
             stdout,
-            "Keys: ↑/↓ or k/j move · Enter edit/toggle later · Esc/Backspace back · s save · q quit"
+            concat!(
+                "Keys: ↑/↓ or k/j move · Enter edit/toggle later · ",
+                "Esc/Backspace back · s save · q quit"
+            )
         )?,
     }
 
@@ -298,13 +352,89 @@ impl ConfigUiState {
         }
     }
 
-    fn save(&mut self) {
-        self.last_message = Some(if self.dirty {
-            "Save support will be enabled with the first editable config submenu.".to_owned()
-        } else {
-            "No config changes to save.".to_owned()
+    fn save(&mut self) -> Result<()> {
+        if !self.dirty {
+            self.last_message = Some("No config changes to save.".to_owned());
+            return Ok(());
+        }
+
+        let outcome = save_config_with_backup(&self.config, &self.state_paths.config_yaml)?;
+        self.config = Config::load_from_path(self.state_paths.config_yaml.clone())?;
+        self.dirty = false;
+        self.last_message = Some(match outcome.backup_path {
+            Some(path) => format!(
+                "Saved config to {}. Backup: {}",
+                display_path(&self.state_paths.config_yaml),
+                display_path(&path)
+            ),
+            None => format!(
+                "Saved config to {}.",
+                display_path(&self.state_paths.config_yaml)
+            ),
         });
+        Ok(())
     }
+}
+
+struct SaveOutcome {
+    backup_path: Option<PathBuf>,
+}
+
+fn save_config_with_backup(config: &Config, config_path: &Path) -> Result<SaveOutcome> {
+    let backup_path = if config_path.exists() {
+        let backup_path = next_backup_path(config_path)?;
+        fs::copy(config_path, &backup_path).with_context(|| {
+            format!(
+                "failed to back up config from {} to {}",
+                display_path(config_path),
+                display_path(&backup_path)
+            )
+        })?;
+        Some(backup_path)
+    } else {
+        None
+    };
+
+    config.save_to_path(config_path)?;
+    Config::load_from_path(config_path.to_path_buf())?;
+
+    Ok(SaveOutcome { backup_path })
+}
+
+fn next_backup_path(config_path: &Path) -> Result<PathBuf> {
+    let parent = config_path.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = config_path
+        .file_name()
+        .context("config path does not have a file name")?
+        .to_string_lossy();
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system time is before Unix epoch")?
+        .as_secs();
+
+    for suffix in 0..1000 {
+        let candidate = if suffix == 0 {
+            parent.join(format!("{file_name}.backup-{timestamp}"))
+        } else {
+            parent.join(format!("{file_name}.backup-{timestamp}-{suffix}"))
+        };
+
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    anyhow::bail!(
+        "could not allocate a backup path for config: {}",
+        display_path(config_path)
+    )
+}
+
+#[derive(Clone, Copy)]
+enum QuitDecision {
+    Save,
+    Discard,
+    Cancel,
 }
 
 #[derive(Clone, Copy)]
@@ -449,7 +579,9 @@ impl ConfigSection {
                 SectionRow::new(
                     "Strict",
                     vec![
-                        "Enables deny policy, read-only workspace, read-only rootfs, managed SSH, and no host Git inheritance.".to_owned(),
+                        "Enables deny policy, read-only workspace, read-only rootfs, managed SSH, \
+and no host Git inheritance."
+                            .to_owned(),
                         "May reduce editing, Git, login, or shell compatibility.".to_owned(),
                     ],
                 ),
@@ -531,11 +663,15 @@ impl ConfigSection {
                     "Compose file",
                     vec![
                         format!("Current: {}", config.docker.compose_file),
-                        "Custom Compose files are advanced and may bypass managed runtime assumptions."
+                        "Custom Compose files are advanced and may bypass managed runtime \
+assumptions."
                             .to_owned(),
                     ],
                 ),
-                SectionRow::new("Pi image", vec![format!("Current: {}", config.harness.pi.image)]),
+                SectionRow::new(
+                    "Pi image",
+                    vec![format!("Current: {}", config.harness.pi.image)],
+                ),
                 SectionRow::new(
                     "Pi command",
                     vec![format!("Current: {}", config.harness.pi.command)],
@@ -578,18 +714,16 @@ impl ConfigSection {
                 ),
             ],
             Self::Advanced => vec![
-                SectionRow::new(
-                    "Config path",
-                    vec![display_path(&state_paths.config_yaml)],
-                ),
+                SectionRow::new("Config path", vec![display_path(&state_paths.config_yaml)]),
                 SectionRow::new(
                     "Manual YAML editing",
                     vec!["Manual edits to ~/.vegasroom/config.yaml remain supported.".to_owned()],
                 ),
                 SectionRow::new(
                     "Backups before save",
-                    vec!["Future saves should create timestamped backups before writing."
-                        .to_owned()],
+                    vec![
+                        "Future saves should create timestamped backups before writing.".to_owned(),
+                    ],
                 ),
                 SectionRow::new(
                     "Reset actions",
@@ -712,5 +846,70 @@ mod tests {
         assert!(rows.iter().any(|row| row.title == "Default workspace root"));
         assert!(rows.iter().any(|row| row.title == "Risky mount policy"));
         assert!(rows.iter().any(|row| row.title == "Read-only workspace"));
+    }
+
+    #[test]
+    fn save_config_writes_backup_and_validates_saved_config() {
+        let dir = unique_temp_dir("save-config-backup");
+        fs::create_dir_all(&dir).unwrap();
+        let config_path = dir.join("config.yaml");
+
+        Config::default().save_to_path(&config_path).unwrap();
+        let original = fs::read_to_string(&config_path).unwrap();
+
+        let mut changed = Config::default();
+        changed.paths.workspace = "/tmp/changed-workspace".to_owned();
+
+        let outcome = save_config_with_backup(&changed, &config_path).unwrap();
+        let backup_path = outcome.backup_path.unwrap();
+
+        assert_eq!(fs::read_to_string(&backup_path).unwrap(), original);
+        assert_eq!(
+            Config::load_from_path(config_path).unwrap().paths.workspace,
+            "/tmp/changed-workspace"
+        );
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn state_save_clears_dirty_after_writing_config() {
+        let dir = unique_temp_dir("state-save");
+        fs::create_dir_all(&dir).unwrap();
+        let paths = StatePaths::from_root(dir.clone());
+        Config::default().save_to_path(&paths.config_yaml).unwrap();
+
+        let mut config = Config::default();
+        config.paths.workspace = "/tmp/state-save-workspace".to_owned();
+        let mut state = ConfigUiState::new(config, paths.clone());
+        state.dirty = true;
+
+        state.save().unwrap();
+
+        assert!(!state.dirty);
+        assert_eq!(
+            Config::load_from_path(paths.config_yaml)
+                .unwrap()
+                .paths
+                .workspace,
+            "/tmp/state-save-workspace"
+        );
+        assert!(state
+            .last_message
+            .as_deref()
+            .is_some_and(|message| message.contains("Backup:")));
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "vegasroom-config-ui-{name}-{}-{timestamp}",
+            std::process::id()
+        ))
     }
 }

@@ -302,15 +302,15 @@ added security preset detection helpers and tests
 kept save/discard/exit out of the menu; save/quit are keybindings
 ```
 
-Suggested commit message:
-
-```text
-Add config TUI shell
-```
-
 ### Subsection 2: add config section submenus
 
-Currently implemented locally and awaiting validation/commit:
+Committed locally on this branch:
+
+```text
+f2e0e52 Add config TUI section navigation
+```
+
+Completed and validated by user with `./scripts/check.sh`.
 
 ```text
 added real top-level-to-section navigation in the config TUI
@@ -318,6 +318,19 @@ added per-section submenu rows for planned editable fields/actions
 added Esc/Backspace navigation back from section screens while keeping s/q as global save/quit keybindings
 kept submenus read-only placeholders for this slice
 added a test that the Workspace section exposes expected config rows
+```
+
+### Subsection 3: add config save model and backups
+
+Currently implemented locally and awaiting validation/commit:
+
+```text
+changed the global s keybinding to call real save plumbing
+added dirty-state quit prompt with save, discard, and cancel choices
+updated config TUI design doc to include the cancel prompt option
+added timestamped config backup writer before saving over an existing config
+reloads and validates config after save
+added tests for backup writing and dirty-state save clearing
 ```
 
 Validation needed before commit:
@@ -329,13 +342,12 @@ Validation needed before commit:
 Suggested commit message after validation:
 
 ```text
-Add config TUI section navigation
+Add config TUI save model
 ```
 
 Next implementation slices:
 
 ```text
-add save model, dirty-state prompt, and timestamped config backup writer
 add security preset editing with change preview
 add workspace and runtime hardening editors
 add ui.color config and output/color editor

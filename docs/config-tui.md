@@ -26,7 +26,7 @@ q           quit
 Save, discard, and exit should not be top-level menu entries. They are actions/keybindings. If there are unsaved changes and the user quits, show a dirty-state prompt similar to `vr ssh configure`:
 
 ```text
-Save changes before quitting? y/n
+Save changes before quitting? y/n/c
 ```
 
 Nested submenus use `Esc` or Backspace to return to the previous screen, while `s` and `q` remain global actions.
