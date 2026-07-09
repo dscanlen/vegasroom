@@ -1,6 +1,7 @@
 pub(super) const TOP_LEVEL_AFTER_HELP: &str = r#"Examples:
   vr init --build
   vr doctor
+  vr config
   vr
   vr pi .
   vr shell .
@@ -15,6 +16,13 @@ pub(super) const INIT_AFTER_HELP: &str = r#"Examples:
 
 pub(super) const DOCTOR_AFTER_HELP: &str = r#"Examples:
   vr doctor"#;
+
+pub(super) const CONFIG_AFTER_HELP: &str = r#"Examples:
+  vr config
+
+Notes:
+  Opens the interactive Vegasroom configuration TUI.
+  Manual YAML editing remains supported at ~/.vegasroom/config.yaml."#;
 
 pub(super) const SSH_AFTER_HELP: &str = r#"Examples:
   vr ssh configure

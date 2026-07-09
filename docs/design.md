@@ -22,6 +22,7 @@ Persistent host state is limited to explicit bind mounts under `~/.vegasroom`.
 ```bash
 vr init
 vr doctor
+vr config
 vr pi
 vr shell
 vr

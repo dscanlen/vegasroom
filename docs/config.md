@@ -199,6 +199,10 @@ off      do not forward SSH
 
 Use `vr ssh configure` to edit this interactively, or edit the YAML manually.
 
+## Interactive config TUI direction
+
+`vr config` is planned as the single interactive configuration TUI entry point. See [Config TUI design](config-tui.md) for the intended UX, sections, presets, save behavior, and implementation slices.
+
 ## Git identity
 
 SSH authentication and Git commit identity are separate. Vegasroom injects Git identity into the room with per-launch generated runtime files so commits do not fall back to the container user when an identity is configured.

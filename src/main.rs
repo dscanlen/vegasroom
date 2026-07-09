@@ -2,6 +2,7 @@ mod alert;
 mod assets;
 mod cli;
 mod config;
+mod config_ui;
 mod docker;
 mod doctor;
 mod harness;

@@ -8,8 +8,8 @@ mod help;
 mod parser;
 
 use help::{
-    DOCTOR_AFTER_HELP, INIT_AFTER_HELP, SSH_AFTER_HELP, SSH_CONFIGURE_AFTER_HELP,
-    SSH_STATUS_AFTER_HELP, TOP_LEVEL_AFTER_HELP,
+    CONFIG_AFTER_HELP, DOCTOR_AFTER_HELP, INIT_AFTER_HELP, SSH_AFTER_HELP,
+    SSH_CONFIGURE_AFTER_HELP, SSH_STATUS_AFTER_HELP, TOP_LEVEL_AFTER_HELP,
 };
 use parser::{parse_manual_launch, ManualLaunch, PiInvocation};
 
@@ -38,6 +38,10 @@ pub enum Commands {
     /// Check whether the local system is ready to run Vegasroom.
     #[command(after_help = DOCTOR_AFTER_HELP)]
     Doctor,
+
+    /// Open the interactive Vegasroom configuration TUI.
+    #[command(after_help = CONFIG_AFTER_HELP)]
+    Config,
 
     /// Configure or inspect Vegasroom SSH key behavior.
     #[command(after_help = SSH_AFTER_HELP)]
@@ -87,6 +91,7 @@ pub fn run() -> Result<i32> {
     match cli.command.unwrap_or(Commands::Pi) {
         Commands::Init { build } => commands::init(build),
         Commands::Doctor => commands::doctor(),
+        Commands::Config => commands::config(),
         Commands::Ssh { command } => match command {
             SshCommands::Configure {
                 paths,
@@ -137,6 +142,7 @@ mod tests {
         assert!(help.contains("Run Pi inside a Vegasroom container."));
         assert!(help.contains("Examples:"));
         assert!(help.contains("vr init --build"));
+        assert!(help.contains("vr config"));
         assert!(help.contains("vr pi ."));
         assert!(help.contains("Use `vr pi --help`"));
     }

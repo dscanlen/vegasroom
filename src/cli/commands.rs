@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 
 use crate::{
-    alert, config::Config, docker, doctor as doctor_runner, paths::StatePaths, ssh, workspace,
+    alert, config::Config, config_ui, docker, doctor as doctor_runner, paths::StatePaths, ssh,
+    workspace,
 };
 
 pub(super) fn init(build: bool) -> Result<i32> {
@@ -21,6 +22,12 @@ pub(super) fn init(build: bool) -> Result<i32> {
 
 pub(super) fn doctor() -> Result<i32> {
     doctor_runner::run()
+}
+
+pub(super) fn config() -> Result<i32> {
+    let state = StatePaths::default()?;
+    let _ = state.ensure()?;
+    config_ui::run()
 }
 
 pub(super) fn configure_ssh(paths: &[String], follow_symlinks: bool) -> Result<i32> {

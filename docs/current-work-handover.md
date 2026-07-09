@@ -5,10 +5,10 @@ This document captures the active feature/refactor sequence so work can resume c
 ## Branch
 
 ```text
-feature/code-review-recommendations
+feature/config-tui
 ```
 
-This branch is for repo review and cleanup work. Keep changes incremental and behavior-preserving unless explicitly agreed otherwise.
+This branch is for the interactive `vr config` TUI and preset work. Keep changes incremental and prefer design/skeleton slices before broad editing behavior.
 
 ## Completed and merged before this branch
 
@@ -260,24 +260,60 @@ possible --color auto|always|never config/flag
 persisted color policy in future config flow, if needed
 ```
 
-## Larger features still pending
+## Active work: Config TUI and presets
 
-### Config TUI and presets
-
-Large feature, not started.
+Large feature, started on this branch.
 
 Desired direction:
 
 ```text
-add vr config as a general configuration TUI
-move SSH configure flow into vr config eventually
+add bare `vr config` as the single interactive configuration TUI entry point
+avoid a broad `vr config <subcommand>` command tree
+use TUI keybindings like existing `vr ssh configure`: s saves, q quits, dirty-state prompt on quit
+configure all settings through top-level sections and nested submenus
 keep manual YAML editing supported
-add security presets: lowsec default, sec, highsec
+add user-facing security presets: Default / Compatible, Safer, Strict
+map presets to lowsec/sec/highsec-style behavior internally or in docs if useful
 add default_harness for bare `vr` launches once multiple harnesses exist
 bundle remaining color policy controls here if config-backed color behavior is desired
 ```
 
-This should be split into design and several implementation branches.
+Design started:
+
+```text
+added docs/config-tui.md with command surface, navigation model, sections, presets, save behavior, and implementation slices
+```
+
+### Subsection 1: add config TUI shell
+
+Completed locally and validated by user with `./scripts/check.sh`.
+
+```text
+added `vr config` command
+added read-only config TUI shell with Overview, Security preset, Workspace, SSH, Git identity, Runtime / Docker, Output / color, and Advanced sections
+added non-TTY fallback that points users to manual YAML config editing
+added security preset detection helpers and tests
+kept save/discard/exit out of the menu; save/quit are keybindings
+```
+
+Suggested commit message:
+
+```text
+Add config TUI shell
+```
+
+Next implementation slices:
+
+```text
+add real section/submenu navigation
+add save model, dirty-state prompt, and timestamped config backup writer
+add security preset editing with change preview
+add workspace and runtime hardening editors
+add ui.color config and output/color editor
+integrate SSH mode editing and link/reuse existing SSH key configure flow
+add Git identity editor and effective identity preview
+polish validation, reset actions, and advanced screen
+```
 
 ### Harness-independent package/library selection
 
