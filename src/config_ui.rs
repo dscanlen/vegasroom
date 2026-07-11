@@ -12,6 +12,7 @@ use crossterm::{
     execute,
     terminal::{self, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
     config::{ColorMode, Config, RiskyMountPolicy, SshMode},
@@ -20,14 +21,14 @@ use crate::{
     ssh,
 };
 
+const RESET: &str = "\x1b[0m";
+const BOLD: &str = "\x1b[1m";
+const GREEN: &str = "\x1b[32m";
+const DIM: &str = "\x1b[2m";
+
 const SECTIONS: &[ConfigSection] = &[
-    ConfigSection::Overview,
     ConfigSection::SecurityPreset,
-    ConfigSection::Workspace,
     ConfigSection::Ssh,
-    ConfigSection::GitIdentity,
-    ConfigSection::RuntimeDocker,
-    ConfigSection::OutputColor,
     ConfigSection::Advanced,
 ];
 
@@ -100,72 +101,62 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<ConfigUiExit> {
 }
 
 fn render(state: &ConfigUiState) -> Result<()> {
-    let stdout = io::stdout();
-    let mut stdout = CrLfWriter::new(stdout);
-    execute!(
-        stdout,
-        terminal::Clear(ClearType::All),
-        cursor::MoveTo(0, 0)
-    )
-    .context("failed to render config UI")?;
+    let mut buffer = Vec::new();
 
-    render_header(&mut stdout, state)?;
+    render_header(&mut buffer, state)?;
 
     match state.screen {
-        ConfigScreen::Sections => render_sections_screen(&mut stdout, state)?,
-        ConfigScreen::Section(section) => render_section_screen(&mut stdout, state, section)?,
-        ConfigScreen::PresetPreview(preset) => render_preset_preview(&mut stdout, state, preset)?,
-        ConfigScreen::ResetDefaultsPreview => render_reset_defaults_preview(&mut stdout, state)?,
+        ConfigScreen::Sections => render_sections_screen(&mut buffer, state)?,
+        ConfigScreen::Section(section) => render_section_screen(&mut buffer, state, section)?,
+        ConfigScreen::PresetPreview(preset) => render_preset_preview(&mut buffer, state, preset)?,
+        ConfigScreen::ResetDefaultsPreview => render_reset_defaults_preview(&mut buffer, state)?,
     }
 
     if let Some(message) = &state.last_message {
-        writeln!(stdout)?;
-        writeln!(stdout, "{message}")?;
+        writeln!(buffer)?;
+        writeln!(buffer, "notice  {message}")?;
     }
 
-    writeln!(stdout)?;
-    render_keys(&mut stdout, state)?;
+    writeln!(buffer)?;
+    render_keys(&mut buffer, state)?;
 
+    let lines = buffer_lines(&buffer);
+    let mut stdout = io::stdout();
+    draw_bottom_panel(&mut stdout, &lines).context("failed to render config UI")?;
     stdout.flush()?;
     Ok(())
 }
 
 fn render_header(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
-    writeln!(stdout, "Vegasroom Configuration")?;
+    let status = if state.dirty {
+        format!("{BOLD}unsaved{RESET}")
+    } else {
+        format!("{GREEN}saved{RESET}")
+    };
+    writeln!(stdout, "╭─ {BOLD}vegasroom config{RESET} · {status}")?;
     writeln!(
         stdout,
-        "Config file: {}",
+        "│  {DIM}{}{RESET}",
         display_path(&state.state_paths.config_yaml)
     )?;
-    writeln!(
-        stdout,
-        "Status: {}",
-        if state.dirty {
-            "unsaved changes"
-        } else {
-            "saved"
-        }
-    )?;
-    writeln!(stdout)?;
+    writeln!(stdout, "│")?;
     Ok(())
 }
 
 fn render_sections_screen(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
-    writeln!(stdout, "Sections")?;
+    writeln!(stdout, "│  {DIM}choose a section{RESET}")?;
     for (index, section) in SECTIONS.iter().enumerate() {
         let marker = if index == state.highlighted_section {
-            ">"
+            "›"
         } else {
             " "
         };
-        writeln!(stdout, "{marker} {}", section.title())?;
-    }
-
-    let section = state.highlighted_section();
-    writeln!(stdout)?;
-    writeln!(stdout, "Details: {}", section.title())?;
-    for line in section.summary(&state.config) {
-        writeln!(stdout, "  {line}")?;
+        let title = if index == state.highlighted_section {
+            format!("{BOLD}{}{RESET}", section.title())
+        } else {
+            section.title().to_owned()
+        };
+        writeln!(stdout, "│  {marker} {title}")?;
     }
 
     Ok(())
@@ -176,26 +167,40 @@ fn render_section_screen(
     state: &ConfigUiState,
     section: ConfigSection,
 ) -> Result<()> {
-    writeln!(stdout, "Section: {}", section.title())?;
+    writeln!(stdout, "│  {DIM}{}{RESET}", section.title())?;
     let rows = section.rows(&state.config, &state.state_paths);
     for (index, row) in rows.iter().enumerate() {
         let marker = if index == state.highlighted_row {
-            ">"
+            "›"
         } else {
             " "
         };
-        writeln!(stdout, "{marker} {}", row.title)?;
-    }
-
-    if let Some(row) = rows.get(state.highlighted_row) {
-        writeln!(stdout)?;
-        writeln!(stdout, "Details: {}", row.title)?;
-        for line in &row.details {
-            writeln!(stdout, "  {line}")?;
-        }
+        let title = styled_row_title(section, row, &state.config, index == state.highlighted_row);
+        writeln!(stdout, "│  {marker} {title}")?;
     }
 
     Ok(())
+}
+
+fn styled_row_title(
+    section: ConfigSection,
+    row: &SectionRow,
+    config: &Config,
+    highlighted: bool,
+) -> String {
+    if matches!(section, ConfigSection::SecurityPreset)
+        && row
+            .security_preset()
+            .is_some_and(|preset| Some(preset) == active_security_preset(config))
+    {
+        return format!("{GREEN}{BOLD}✓ {}{RESET}", row.title);
+    }
+
+    if highlighted {
+        format!("{BOLD}{}{RESET}", row.title)
+    } else {
+        row.title.clone()
+    }
 }
 
 fn confirm_quit() -> Result<QuitDecision> {
@@ -218,22 +223,18 @@ fn confirm_quit() -> Result<QuitDecision> {
 }
 
 fn render_quit_prompt() -> Result<()> {
-    let stdout = io::stdout();
-    let mut stdout = CrLfWriter::new(stdout);
-    execute!(
-        stdout,
-        terminal::Clear(ClearType::All),
-        cursor::MoveTo(0, 0)
-    )
-    .context("failed to render config quit prompt")?;
-
-    writeln!(stdout, "Unsaved config changes")?;
-    writeln!(stdout)?;
-    writeln!(stdout, "Save changes before quitting?")?;
-    writeln!(stdout)?;
-    writeln!(stdout, "  y  save and quit")?;
-    writeln!(stdout, "  n  quit without saving")?;
-    writeln!(stdout, "  c  cancel")?;
+    let lines = vec![
+        "╭─ unsaved config changes".to_owned(),
+        "│".to_owned(),
+        "│  save changes before quitting?".to_owned(),
+        "│".to_owned(),
+        "│  y  save and quit".to_owned(),
+        "│  n  quit without saving".to_owned(),
+        "│  c  cancel".to_owned(),
+        "╰".to_owned(),
+    ];
+    let mut stdout = io::stdout();
+    draw_bottom_panel(&mut stdout, &lines).context("failed to render config quit prompt")?;
     stdout.flush()?;
     Ok(())
 }
@@ -300,59 +301,79 @@ fn render_reset_defaults_preview(stdout: &mut impl Write, state: &ConfigUiState)
 
 fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
     match state.screen {
-        ConfigScreen::Sections => writeln!(
-            stdout,
-            "Keys: ↑/↓ or k/j move · Enter open section · s save · q quit"
-        )?,
+        ConfigScreen::Sections => writeln!(stdout, "╰─ ↑↓/jk move  enter open  s save  q quit")?,
         ConfigScreen::Section(_) => writeln!(
             stdout,
-            concat!(
-                "Keys: ↑/↓ or k/j move · Enter edit/toggle · ",
-                "Esc/Backspace back · s save · q quit"
-            )
+            "╰─ ↑↓/jk move  enter edit  esc/back back  s save  q quit"
         )?,
         ConfigScreen::PresetPreview(_) => writeln!(
             stdout,
-            "Keys: Enter apply preset · Esc/Backspace back · s save · q quit"
+            "╰─ enter apply preset  esc/back back  s save  q quit"
         )?,
         ConfigScreen::ResetDefaultsPreview => writeln!(
             stdout,
-            "Keys: Enter reset to defaults · Esc/Backspace back · s save · q quit"
+            "╰─ enter reset defaults  esc/back back  s save  q quit"
         )?,
     }
 
-    writeln!(
-        stdout,
-        "Saving and dirty-state prompts will follow the existing vr ssh configure pattern."
-    )?;
     Ok(())
 }
 
-struct CrLfWriter<W> {
-    inner: W,
+fn buffer_lines(buffer: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(buffer)
+        .lines()
+        .map(str::to_owned)
+        .collect()
 }
 
-impl<W> CrLfWriter<W> {
-    fn new(inner: W) -> Self {
-        Self { inner }
+fn draw_bottom_panel(stdout: &mut io::Stdout, lines: &[String]) -> Result<()> {
+    let (width, height) = terminal::size().unwrap_or((100, 30));
+    let width = width.max(1);
+    let height = height.max(1);
+    let max_rows = usize::from(height);
+    let visible_lines = if lines.len() > max_rows {
+        &lines[lines.len() - max_rows..]
+    } else {
+        lines
+    };
+    let start_row = height.saturating_sub(visible_lines.len() as u16);
+
+    execute!(stdout, terminal::Clear(ClearType::All))?;
+    for (index, line) in visible_lines.iter().enumerate() {
+        execute!(
+            stdout,
+            cursor::MoveTo(0, start_row + index as u16),
+            terminal::Clear(ClearType::CurrentLine)
+        )?;
+        write!(stdout, "{}", truncate_to_width(line, width))?;
     }
+
+    Ok(())
 }
 
-impl<W: Write> Write for CrLfWriter<W> {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        for byte in buf {
-            if *byte == b'\n' {
-                self.inner.write_all(b"\r\n")?;
-            } else {
-                self.inner.write_all(&[*byte])?;
-            }
+fn truncate_to_width(text: &str, width: u16) -> String {
+    let max_width = usize::from(width);
+    if UnicodeWidthStr::width(text) <= max_width {
+        return text.to_owned();
+    }
+
+    let ellipsis = "…";
+    let ellipsis_width = UnicodeWidthStr::width(ellipsis);
+    let target_width = max_width.saturating_sub(ellipsis_width);
+    let mut output = String::new();
+    let mut used_width = 0usize;
+
+    for ch in text.chars() {
+        let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if used_width + char_width > target_width {
+            break;
         }
-        Ok(buf.len())
+        output.push(ch);
+        used_width += char_width;
     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        self.inner.flush()
-    }
+    output.push_str(ellipsis);
+    output
 }
 
 struct TerminalSession;
@@ -445,9 +466,20 @@ impl ConfigUiState {
     fn open_highlighted(&mut self) -> ConfigUiAction {
         match self.screen {
             ConfigScreen::Sections => {
-                self.screen = ConfigScreen::Section(self.highlighted_section());
-                self.highlighted_row = 0;
-                self.last_message = None;
+                if matches!(self.highlighted_section(), ConfigSection::Ssh) {
+                    if self.dirty {
+                        self.last_message = Some(
+                            "Save or discard pending config changes before opening SSH key configuration."
+                                .to_owned(),
+                        );
+                    } else {
+                        return ConfigUiAction::OpenSshConfigure;
+                    }
+                } else {
+                    self.screen = ConfigScreen::Section(self.highlighted_section());
+                    self.highlighted_row = 0;
+                    self.last_message = None;
+                }
             }
             ConfigScreen::Section(section) => {
                 let rows = section.rows(&self.config, &self.state_paths);
@@ -457,11 +489,7 @@ impl ConfigUiState {
                             self.screen = ConfigScreen::PresetPreview(preset);
                             self.last_message = None;
                         }
-                        RowAction::ToggleRiskyMountPolicy => self.toggle_risky_mount_policy(),
-                        RowAction::ToggleReadOnlyWorkspace => self.toggle_read_only_workspace(),
-                        RowAction::ToggleReadOnlyRootfs => self.toggle_read_only_rootfs(),
                         RowAction::CycleColorMode => self.cycle_color_mode(),
-                        RowAction::CycleSshMode => self.cycle_ssh_mode(),
                         RowAction::ToggleGitInheritHost => self.toggle_git_inherit_host(),
                         RowAction::ValidateConfig => {
                             if let Err(error) = self.validate_config() {
@@ -472,16 +500,6 @@ impl ConfigUiState {
                         RowAction::PreviewResetDefaults => {
                             self.screen = ConfigScreen::ResetDefaultsPreview;
                             self.last_message = None;
-                        }
-                        RowAction::OpenSshConfigure => {
-                            if self.dirty {
-                                self.last_message = Some(
-                                    "Save or discard pending config changes before opening SSH key configuration."
-                                        .to_owned(),
-                                );
-                            } else {
-                                return ConfigUiAction::OpenSshConfigure;
-                            }
                         }
                         RowAction::Placeholder => {
                             self.last_message = Some(format!(
@@ -560,36 +578,6 @@ impl ConfigUiState {
         Ok(())
     }
 
-    fn toggle_risky_mount_policy(&mut self) {
-        self.config.workspace.risky_mount_policy = match self.config.workspace.risky_mount_policy {
-            RiskyMountPolicy::Warn => RiskyMountPolicy::Deny,
-            RiskyMountPolicy::Deny => RiskyMountPolicy::Warn,
-        };
-        self.dirty = true;
-        self.last_message = Some(format!(
-            "Set risky mount policy to {}. Press s to save.",
-            risky_mount_policy_name(self.config.workspace.risky_mount_policy)
-        ));
-    }
-
-    fn toggle_read_only_workspace(&mut self) {
-        self.config.harness.pi.read_only_workspace = !self.config.harness.pi.read_only_workspace;
-        self.dirty = true;
-        self.last_message = Some(format!(
-            "Set read-only workspace to {}. Press s to save.",
-            self.config.harness.pi.read_only_workspace
-        ));
-    }
-
-    fn toggle_read_only_rootfs(&mut self) {
-        self.config.harness.pi.read_only_rootfs = !self.config.harness.pi.read_only_rootfs;
-        self.dirty = true;
-        self.last_message = Some(format!(
-            "Set read-only root filesystem to {}. Press s to save.",
-            self.config.harness.pi.read_only_rootfs
-        ));
-    }
-
     fn cycle_color_mode(&mut self) {
         self.config.ui.color = match self.config.ui.color {
             ColorMode::Auto => ColorMode::Always,
@@ -600,20 +588,6 @@ impl ConfigUiState {
         self.last_message = Some(format!(
             "Set color mode to {}. Press s to save.",
             color_mode_name(self.config.ui.color)
-        ));
-    }
-
-    fn cycle_ssh_mode(&mut self) {
-        self.config.ssh.mode = match self.config.ssh.mode {
-            SshMode::Auto => SshMode::Host,
-            SshMode::Host => SshMode::Managed,
-            SshMode::Managed => SshMode::Off,
-            SshMode::Off => SshMode::Auto,
-        };
-        self.dirty = true;
-        self.last_message = Some(format!(
-            "Set SSH mode to {}. Press s to save.",
-            ssh_mode_name(self.config.ssh.mode)
         ));
     }
 
@@ -731,126 +705,23 @@ enum ConfigScreen {
 
 #[derive(Clone, Copy)]
 enum ConfigSection {
-    Overview,
     SecurityPreset,
-    Workspace,
     Ssh,
-    GitIdentity,
-    RuntimeDocker,
-    OutputColor,
     Advanced,
 }
 
 impl ConfigSection {
     fn title(self) -> &'static str {
         match self {
-            Self::Overview => "Overview",
-            Self::SecurityPreset => "Security preset",
-            Self::Workspace => "Workspace",
+            Self::SecurityPreset => "Security",
             Self::Ssh => "SSH",
-            Self::GitIdentity => "Git identity",
-            Self::RuntimeDocker => "Runtime / Docker",
-            Self::OutputColor => "Output / color",
             Self::Advanced => "Advanced",
-        }
-    }
-
-    fn summary(self, config: &Config) -> Vec<String> {
-        match self {
-            Self::Overview => vec![
-                format!("Security preset: {}", security_preset_name(config)),
-                format!(
-                    "Workspace policy: {}",
-                    risky_mount_policy_name(config.workspace.risky_mount_policy)
-                ),
-                format!("SSH mode: {}", ssh_mode_name(config.ssh.mode)),
-                format!(
-                    "Workspace read-only: {}",
-                    config.harness.pi.read_only_workspace
-                ),
-                format!(
-                    "Root filesystem read-only: {}",
-                    config.harness.pi.read_only_rootfs
-                ),
-                format!("Runtime network: {}", config.harness.pi.network),
-            ],
-            Self::SecurityPreset => vec![
-                "Choose a security posture without memorizing YAML fields.".to_owned(),
-                format!("Detected current preset: {}", security_preset_name(config)),
-            ],
-            Self::Workspace => vec![
-                "Configure default workspace location and risky mount behavior.".to_owned(),
-                format!(
-                    "Current risky mount policy: {}",
-                    risky_mount_policy_name(config.workspace.risky_mount_policy)
-                ),
-            ],
-            Self::Ssh => vec![
-                "Configure SSH agent behavior and selected managed keys.".to_owned(),
-                format!("Current SSH mode: {}", ssh_mode_name(config.ssh.mode)),
-            ],
-            Self::GitIdentity => vec![
-                "Configure the Git author identity injected into the room.".to_owned(),
-                format!("Inherit host identity: {}", config.git.inherit_host),
-            ],
-            Self::RuntimeDocker => vec![
-                "Configure Docker context, Compose runtime, image, command, and hardening."
-                    .to_owned(),
-                format!("Runtime network: {}", config.harness.pi.network),
-            ],
-            Self::OutputColor => vec![
-                "Configure output color behavior alongside remaining color polish.".to_owned(),
-                format!("Current color mode: {}", color_mode_name(config.ui.color)),
-                "Non-empty NO_COLOR still disables labels as an override.".to_owned(),
-            ],
-            Self::Advanced => vec![
-                "Inspect config path and future reset/backup actions.".to_owned(),
-                "Manual YAML editing remains supported.".to_owned(),
-            ],
         }
     }
 
     fn rows(self, config: &Config, state_paths: &StatePaths) -> Vec<SectionRow> {
         match self {
-            Self::Overview => vec![
-                SectionRow::new(
-                    "Security preset",
-                    vec![format!("Current: {}", security_preset_name(config))],
-                ),
-                SectionRow::new(
-                    "Workspace policy",
-                    vec![format!(
-                        "Current: {}",
-                        risky_mount_policy_name(config.workspace.risky_mount_policy)
-                    )],
-                ),
-                SectionRow::new(
-                    "SSH mode",
-                    vec![format!("Current: {}", ssh_mode_name(config.ssh.mode))],
-                ),
-                SectionRow::new(
-                    "Runtime hardening",
-                    vec![
-                        format!(
-                            "Workspace read-only: {}",
-                            config.harness.pi.read_only_workspace
-                        ),
-                        format!(
-                            "Root filesystem read-only: {}",
-                            config.harness.pi.read_only_rootfs
-                        ),
-                    ],
-                ),
-                SectionRow::new(
-                    "Color behavior",
-                    vec![format!("Current: {}", color_mode_name(config.ui.color))],
-                ),
-            ],
             Self::SecurityPreset => vec![
-                SectionRow::new(
-                    "Current preset",
-                    vec![format!("Detected: {}", security_preset_name(config))],
-                ),
                 SectionRow::preset(
                     SecurityPreset::DefaultCompatible,
                     vec![
@@ -876,149 +747,37 @@ and no host Git inheritance."
                     ],
                 ),
             ],
-            Self::Workspace => vec![
-                SectionRow::new(
-                    "Default workspace root",
-                    vec![format!("Current: {}", config.paths.workspace)],
-                ),
+            Self::Ssh => Vec::new(),
+            Self::Advanced => vec![
                 SectionRow::action(
-                    "Risky mount policy",
-                    vec![
-                        format!(
-                            "Current: {}",
-                            risky_mount_policy_name(config.workspace.risky_mount_policy)
-                        ),
-                        "Press Enter to toggle warn/deny.".to_owned(),
-                        "warn prints a warning and continues; deny refuses broad risky mounts."
-                            .to_owned(),
-                    ],
-                    RowAction::ToggleRiskyMountPolicy,
-                ),
-                SectionRow::action(
-                    "Read-only workspace",
-                    vec![
-                        format!("Current: {}", config.harness.pi.read_only_workspace),
-                        "Press Enter to toggle true/false.".to_owned(),
-                        "When enabled, Pi may not be able to edit project files.".to_owned(),
-                    ],
-                    RowAction::ToggleReadOnlyWorkspace,
-                ),
-            ],
-            Self::Ssh => vec![
-                SectionRow::action(
-                    "SSH mode",
-                    vec![
-                        format!("Current: {}", ssh_mode_name(config.ssh.mode)),
-                        "Press Enter to cycle auto/host/managed/off.".to_owned(),
-                        "auto uses managed keys when selected, otherwise host SSH_AUTH_SOCK."
-                            .to_owned(),
-                    ],
-                    RowAction::CycleSshMode,
-                ),
-                SectionRow::action(
-                    "Selected managed SSH keys",
-                    vec![
-                        format!("Current selected keys: {}", config.ssh.selected_keys.len()),
-                        "Press Enter to open the existing SSH key configuration flow.".to_owned(),
-                        "Save or discard other pending config changes first.".to_owned(),
-                    ],
-                    RowAction::OpenSshConfigure,
-                ),
-            ],
-            Self::GitIdentity => vec![
-                SectionRow::action(
-                    "Inherit host Git identity",
+                    "Git: inherit host identity",
                     vec![
                         format!("Current: {}", config.git.inherit_host),
                         "Press Enter to toggle true/false.".to_owned(),
-                        "Used only when no top-level or selected-key Git identity is available."
-                            .to_owned(),
                     ],
                     RowAction::ToggleGitInheritHost,
                 ),
                 SectionRow::new(
-                    "Configured user.name",
-                    vec![
-                        format!(
-                            "Current: {}",
-                            config.git.user_name.as_deref().unwrap_or("not set")
-                        ),
-                        "Text editing will be added in a later input slice.".to_owned(),
-                    ],
+                    "Git: configured user.name",
+                    vec![format!(
+                        "Current: {}",
+                        config.git.user_name.as_deref().unwrap_or("not set")
+                    )],
                 ),
                 SectionRow::new(
-                    "Configured user.email",
-                    vec![
-                        format!(
-                            "Current: {}",
-                            config.git.user_email.as_deref().unwrap_or("not set")
-                        ),
-                        "Text editing will be added in a later input slice.".to_owned(),
-                    ],
+                    "Git: configured user.email",
+                    vec![format!(
+                        "Current: {}",
+                        config.git.user_email.as_deref().unwrap_or("not set")
+                    )],
                 ),
-                SectionRow::new("Effective identity preview", git_identity_preview(config)),
-            ],
-            Self::RuntimeDocker => vec![
-                SectionRow::new(
-                    "Docker context",
-                    vec![format!("Current: {}", config.docker.context)],
-                ),
-                SectionRow::new(
-                    "Compose file",
-                    vec![
-                        format!("Current: {}", config.docker.compose_file),
-                        "Custom Compose files are advanced and may bypass managed runtime \
-assumptions."
-                            .to_owned(),
-                    ],
-                ),
-                SectionRow::new(
-                    "Pi image",
-                    vec![format!("Current: {}", config.harness.pi.image)],
-                ),
-                SectionRow::new(
-                    "Pi command",
-                    vec![format!("Current: {}", config.harness.pi.command)],
-                ),
-                SectionRow::new(
-                    "Runtime network",
-                    vec![
-                        format!("Current: {}", config.harness.pi.network),
-                        "Bridge networking remains experimental for Pi login compatibility."
-                            .to_owned(),
-                    ],
-                ),
-                SectionRow::new(
-                    "Build network",
-                    vec![format!("Current: {}", config.harness.pi.build_network)],
-                ),
+                SectionRow::new("Git: effective identity", git_identity_preview(config)),
                 SectionRow::action(
-                    "Read-only root filesystem",
-                    vec![
-                        format!("Current: {}", config.harness.pi.read_only_rootfs),
-                        "Press Enter to toggle true/false.".to_owned(),
-                        "Experimental hardening option with compatibility tradeoffs.".to_owned(),
-                    ],
-                    RowAction::ToggleReadOnlyRootfs,
+                    "Color mode",
+                    vec![format!("Current: {}", color_mode_name(config.ui.color))],
+                    RowAction::CycleColorMode,
                 ),
-            ],
-            Self::OutputColor => vec![SectionRow::action(
-                "Color mode",
-                vec![
-                    format!("Current: {}", color_mode_name(config.ui.color)),
-                    "Press Enter to cycle auto/always/never.".to_owned(),
-                    "auto colors terminal output; always forces ANSI; never disables ANSI."
-                        .to_owned(),
-                    "A non-empty NO_COLOR environment variable disables ANSI labels.".to_owned(),
-                ],
-                RowAction::CycleColorMode,
-            )],
-            Self::Advanced => vec![
                 SectionRow::new("Config path", vec![display_path(&state_paths.config_yaml)]),
-                SectionRow::new(
-                    "Manual YAML editing",
-                    vec!["Manual edits to ~/.vegasroom/config.yaml remain supported.".to_owned()],
-                ),
                 SectionRow::action(
                     "Validate current config",
                     vec!["Press Enter to validate the in-memory config model.".to_owned()],
@@ -1046,7 +805,7 @@ assumptions."
 
 struct SectionRow {
     title: String,
-    details: Vec<String>,
+    _details: Vec<String>,
     action: RowAction,
 }
 
@@ -1054,7 +813,7 @@ impl SectionRow {
     fn new(title: impl Into<String>, details: Vec<String>) -> Self {
         Self {
             title: title.into(),
-            details,
+            _details: details,
             action: RowAction::Placeholder,
         }
     }
@@ -1062,7 +821,7 @@ impl SectionRow {
     fn preset(preset: SecurityPreset, details: Vec<String>) -> Self {
         Self {
             title: preset.title().to_owned(),
-            details,
+            _details: details,
             action: RowAction::PreviewPreset(preset),
         }
     }
@@ -1070,8 +829,15 @@ impl SectionRow {
     fn action(title: impl Into<String>, details: Vec<String>, action: RowAction) -> Self {
         Self {
             title: title.into(),
-            details,
+            _details: details,
             action,
+        }
+    }
+
+    fn security_preset(&self) -> Option<SecurityPreset> {
+        match self.action {
+            RowAction::PreviewPreset(preset) => Some(preset),
+            _ => None,
         }
     }
 }
@@ -1080,15 +846,10 @@ impl SectionRow {
 enum RowAction {
     Placeholder,
     PreviewPreset(SecurityPreset),
-    ToggleRiskyMountPolicy,
-    ToggleReadOnlyWorkspace,
-    ToggleReadOnlyRootfs,
     CycleColorMode,
-    CycleSshMode,
     ToggleGitInheritHost,
     ValidateConfig,
     PreviewResetDefaults,
-    OpenSshConfigure,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1301,15 +1062,15 @@ fn push_change(
     }
 }
 
-fn security_preset_name(config: &Config) -> &'static str {
+fn active_security_preset(config: &Config) -> Option<SecurityPreset> {
     if matches_default_compatible(config) {
-        "Default / Compatible"
+        Some(SecurityPreset::DefaultCompatible)
     } else if matches_safer(config) {
-        "Safer"
+        Some(SecurityPreset::Safer)
     } else if matches_strict(config) {
-        "Strict"
+        Some(SecurityPreset::Strict)
     } else {
-        "Custom"
+        None
     }
 }
 
@@ -1389,18 +1150,25 @@ mod tests {
     fn default_config_matches_default_compatible_preset() {
         let config = Config::default();
 
-        assert_eq!(security_preset_name(&config), "Default / Compatible");
+        assert_eq!(
+            active_security_preset(&config),
+            Some(SecurityPreset::DefaultCompatible)
+        );
     }
 
     #[test]
-    fn crlf_writer_expands_newlines_for_raw_mode_rendering() {
-        let mut output = Vec::new();
-        {
-            let mut writer = CrLfWriter::new(&mut output);
-            write!(writer, "first\nsecond").unwrap();
-        }
+    fn truncation_respects_terminal_width() {
+        let truncated = truncate_to_width("abcdef", 5);
 
-        assert_eq!(output, b"first\r\nsecond");
+        assert_eq!(UnicodeWidthStr::width(truncated.as_str()), 5);
+        assert!(truncated.ends_with('…'));
+    }
+
+    #[test]
+    fn top_level_menu_is_minimal() {
+        let sections: Vec<_> = SECTIONS.iter().map(|section| section.title()).collect();
+
+        assert_eq!(sections, vec!["Security", "SSH", "Advanced"]);
     }
 
     #[test]
@@ -1408,7 +1176,7 @@ mod tests {
         let mut config = Config::default();
         config.workspace.risky_mount_policy = RiskyMountPolicy::Deny;
 
-        assert_eq!(security_preset_name(&config), "Safer");
+        assert_eq!(active_security_preset(&config), Some(SecurityPreset::Safer));
     }
 
     #[test]
@@ -1420,7 +1188,10 @@ mod tests {
         config.ssh.mode = SshMode::Managed;
         config.git.inherit_host = false;
 
-        assert_eq!(security_preset_name(&config), "Strict");
+        assert_eq!(
+            active_security_preset(&config),
+            Some(SecurityPreset::Strict)
+        );
     }
 
     #[test]
@@ -1432,6 +1203,16 @@ mod tests {
         assert_eq!(changes[0].field, "workspace.risky_mount_policy");
         assert_eq!(changes[0].before, "warn");
         assert_eq!(changes[0].after, "deny");
+    }
+
+    #[test]
+    fn security_section_only_lists_presets() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let rows = ConfigSection::SecurityPreset.rows(&config, &paths);
+        let titles: Vec<_> = rows.iter().map(|row| row.title.as_str()).collect();
+
+        assert_eq!(titles, vec!["Default / Compatible", "Safer", "Strict"]);
     }
 
     #[test]
@@ -1465,76 +1246,6 @@ mod tests {
     }
 
     #[test]
-    fn workspace_editor_toggles_risky_mount_policy() {
-        let config = Config::default();
-        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let mut state = ConfigUiState::new(config, paths);
-
-        state.toggle_risky_mount_policy();
-
-        assert!(state.dirty);
-        assert_eq!(
-            state.config.workspace.risky_mount_policy,
-            RiskyMountPolicy::Deny
-        );
-        assert!(state
-            .last_message
-            .as_deref()
-            .is_some_and(|message| message.contains("Press s to save")));
-    }
-
-    #[test]
-    fn workspace_editor_toggles_read_only_workspace() {
-        let config = Config::default();
-        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let mut state = ConfigUiState::new(config, paths);
-
-        state.toggle_read_only_workspace();
-
-        assert!(state.dirty);
-        assert!(state.config.harness.pi.read_only_workspace);
-    }
-
-    #[test]
-    fn workspace_section_exposes_current_config_rows() {
-        let config = Config::default();
-        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let rows = ConfigSection::Workspace.rows(&config, &paths);
-
-        assert!(rows.iter().any(|row| row.title == "Default workspace root"));
-        assert!(rows.iter().any(|row| row.title == "Risky mount policy"));
-        assert!(rows.iter().any(|row| row.title == "Read-only workspace"));
-    }
-
-    #[test]
-    fn runtime_editor_toggles_read_only_rootfs() {
-        let config = Config::default();
-        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let mut state = ConfigUiState::new(config, paths);
-
-        state.toggle_read_only_rootfs();
-
-        assert!(state.dirty);
-        assert!(state.config.harness.pi.read_only_rootfs);
-        assert!(state
-            .last_message
-            .as_deref()
-            .is_some_and(|message| message.contains("Press s to save")));
-    }
-
-    #[test]
-    fn runtime_section_exposes_current_config_rows() {
-        let config = Config::default();
-        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let rows = ConfigSection::RuntimeDocker.rows(&config, &paths);
-
-        assert!(rows.iter().any(|row| row.title == "Runtime network"));
-        assert!(rows
-            .iter()
-            .any(|row| row.title == "Read-only root filesystem"));
-    }
-
-    #[test]
     fn output_color_editor_cycles_color_mode() {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
@@ -1551,49 +1262,11 @@ mod tests {
     }
 
     #[test]
-    fn output_color_section_exposes_color_mode_row() {
-        let config = Config::default();
-        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let rows = ConfigSection::OutputColor.rows(&config, &paths);
-
-        assert!(rows.iter().any(|row| row.title == "Color mode"));
-    }
-
-    #[test]
-    fn ssh_editor_cycles_ssh_mode() {
-        let config = Config::default();
-        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let mut state = ConfigUiState::new(config, paths);
-
-        state.cycle_ssh_mode();
-
-        assert!(state.dirty);
-        assert_eq!(state.config.ssh.mode, SshMode::Host);
-        assert!(state
-            .last_message
-            .as_deref()
-            .is_some_and(|message| message.contains("Press s to save")));
-    }
-
-    #[test]
-    fn ssh_section_exposes_mode_and_key_configuration_rows() {
-        let config = Config::default();
-        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let rows = ConfigSection::Ssh.rows(&config, &paths);
-
-        assert!(rows.iter().any(|row| row.title == "SSH mode"));
-        assert!(rows
-            .iter()
-            .any(|row| row.title == "Selected managed SSH keys"));
-    }
-
-    #[test]
     fn ssh_key_configuration_is_blocked_when_dirty() {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
         let mut state = ConfigUiState::new(config, paths);
-        state.screen = ConfigScreen::Section(ConfigSection::Ssh);
-        state.highlighted_row = 1;
+        state.highlighted_section = 1;
         state.dirty = true;
 
         let action = state.open_highlighted();
@@ -1610,8 +1283,7 @@ mod tests {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
         let mut state = ConfigUiState::new(config, paths);
-        state.screen = ConfigScreen::Section(ConfigSection::Ssh);
-        state.highlighted_row = 1;
+        state.highlighted_section = 1;
 
         let action = state.open_highlighted();
 
@@ -1647,20 +1319,6 @@ mod tests {
             .iter()
             .any(|line| line.contains("Configured User <configured@example.com>")));
         assert!(preview.iter().any(|line| line.contains("git.user_name")));
-    }
-
-    #[test]
-    fn git_identity_section_exposes_editor_and_preview_rows() {
-        let config = Config::default();
-        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let rows = ConfigSection::GitIdentity.rows(&config, &paths);
-
-        assert!(rows
-            .iter()
-            .any(|row| row.title == "Inherit host Git identity"));
-        assert!(rows
-            .iter()
-            .any(|row| row.title == "Effective identity preview"));
     }
 
     #[test]

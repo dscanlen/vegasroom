@@ -16,8 +16,6 @@ vr init
 vr init --build
 vr doctor
 vr config
-vr ssh configure
-vr ssh status
 vr pi [workspace] [pi-args...]
 vr shell [workspace]
 ```
@@ -29,8 +27,6 @@ cargo run -- init
 cargo run -- init --build
 cargo run -- doctor
 cargo run -- config
-cargo run -- ssh configure
-cargo run -- ssh status
 cargo run -- pi
 cargo run -- shell
 cargo run
@@ -210,29 +206,13 @@ Vegasroom supports two SSH paths:
 - host-agent forwarding, when the host already has a usable `SSH_AUTH_SOCK`
 - managed SSH, where `vr` starts a temporary `ssh-agent`, adds user-selected keys, forwards only that socket, then stops the agent when the room exits
 
-Configure managed SSH keys interactively:
+Configure managed SSH keys interactively through the config TUI:
 
 ```bash
-vr ssh configure
+vr config
 ```
 
-By default this recursively scans `~/.ssh`. To scan another root:
-
-```bash
-vr ssh configure /mnt/secrethost/.ssh
-```
-
-Symlinked directories are not followed by default. To opt in:
-
-```bash
-vr ssh configure --follow-symlinks ~/.ssh
-```
-
-Show the current SSH configuration:
-
-```bash
-vr ssh status
-```
+The SSH section opens the managed key picker. `vr doctor` reports the saved SSH configuration and next-launch behavior.
 
 At launch, the container receives:
 
@@ -314,27 +294,7 @@ Opens the interactive Vegasroom configuration TUI.
 vr config
 ```
 
-The first implementation is a read-only shell for the planned configuration sections. Manual YAML editing remains supported at `~/.vegasroom/config.yaml`. See `docs/config-tui.md` for the TUI design.
-
-### `vr ssh configure`
-
-Recursively scans SSH key roots and lets you choose which keys Vegasroom should add to a temporary managed `ssh-agent` when launching a room.
-
-```bash
-vr ssh configure
-vr ssh configure /mnt/secrethost/.ssh
-vr ssh configure --follow-symlinks ~/.ssh
-```
-
-Use arrow keys or `k`/`j` to move, Enter/Space to toggle, `s` to save, `q` to quit, and `r` to rescan. See `docs/managed-ssh.md` for details.
-
-### `vr ssh status`
-
-Shows the configured SSH mode, selected keys, host agent status, and what Vegasroom will do on the next `vr pi` or `vr shell` launch.
-
-```bash
-vr ssh status
-```
+Manual YAML editing remains supported at `~/.vegasroom/config.yaml`. See `docs/config-tui.md` for the TUI design.
 
 ### `vr pi` and `vr`
 

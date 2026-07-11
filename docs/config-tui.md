@@ -14,7 +14,7 @@ If `vr config` is run without an interactive terminal, it should explain that co
 
 ## Navigation model
 
-Follow the existing `vr ssh configure` interaction pattern:
+Follow the shared Vegasroom TUI interaction pattern:
 
 ```text
 ↑/↓ or k/j  move
@@ -23,7 +23,7 @@ s           save changes
 q           quit
 ```
 
-Save, discard, and exit should not be top-level menu entries. They are actions/keybindings. If there are unsaved changes and the user quits, show a dirty-state prompt similar to `vr ssh configure`:
+Save, discard, and exit should not be top-level menu entries. They are actions/keybindings. If there are unsaved changes and the user quits, show a dirty-state prompt:
 
 ```text
 Save changes before quitting? y/n/c
@@ -33,20 +33,15 @@ Nested submenus use `Esc` or Backspace to return to the previous screen, while `
 
 ## Top-level sections
 
-The top-level TUI should expose sections, not commands:
+The top-level TUI is intentionally small:
 
 ```text
-Overview
-Security preset
-Workspace
+Security
 SSH
-Git identity
-Runtime / Docker
-Output / color
 Advanced
 ```
 
-Each section should show current values, plain-language descriptions, and any compatibility/security tradeoffs.
+Keep the menu stable and minimal. Avoid passive preview panes that change height as the highlight moves. Deeper or less-common settings belong in Advanced or manual YAML editing.
 
 ## Security presets
 
@@ -116,46 +111,17 @@ Do not move presets to bridge networking yet. Bridge remains experimental becaus
 
 ## Section scope
 
-### Overview
-
-Show a concise summary:
-
-```text
-Config file
-Security preset detection
-Workspace policy
-SSH mode
-Workspace read-only status
-Root filesystem read-only status
-Network mode
-Color behavior
-Unsaved-change status
-```
-
-### Workspace
-
-Configure:
-
-```text
-paths.workspace
-workspace.risky_mount_policy
-harness.pi.read_only_workspace
-```
-
-Initial editable controls toggle `workspace.risky_mount_policy` and `harness.pi.read_only_workspace`. Editing `paths.workspace` should use a later text-input flow.
-
 ### SSH
 
-Configure:
+The SSH menu item opens the managed SSH key picker directly. It reuses the same bottom-aligned visual language as the config menu and keeps the compact metadata for the highlighted key.
 
-```text
-ssh.mode
-ssh.selected_keys
-```
+SSH-specific public commands are not part of the CLI. Use `vr config` for SSH key selection and `vr doctor` for SSH readiness/status checks.
 
-The SSH mode row cycles `auto`, `host`, `managed`, and `off`. The selected-keys row exits the config TUI temporarily and launches the existing SSH configure flow rather than duplicating key-selection logic. Pending config changes must be saved or discarded before launching SSH key configuration.
+### Advanced
 
-### Git identity
+Advanced contains less-common config/status actions and fields, including Git identity, color mode, config path, validation, backup information, and reset-to-defaults preview.
+
+#### Git identity
 
 Configure:
 
@@ -175,25 +141,7 @@ The UI shows the effective identity preview based on current precedence:
 
 Initial editable controls toggle `git.inherit_host`. Editing `git.user_name` and `git.user_email` should use a later text-input flow.
 
-### Runtime / Docker
-
-Configure:
-
-```text
-docker.context
-docker.compose_file
-harness.pi.image
-harness.pi.command
-harness.pi.network
-harness.pi.build_network
-harness.pi.read_only_rootfs
-```
-
-Clearly label advanced/experimental choices, especially custom Compose files, bridge networking, and read-only rootfs.
-
-Initial editable controls toggle `harness.pi.read_only_rootfs`. Runtime/build network fields stay read-only placeholders for now because bridge networking is still an experimental validation path.
-
-### Output / color
+#### Output / color
 
 Configure:
 
@@ -211,7 +159,7 @@ never   disable ANSI color
 
 The Output / color section cycles `ui.color` through `auto`, `always`, and `never`. A non-empty `NO_COLOR` environment variable remains an override that disables colored PASS/WARN/FAIL labels.
 
-### Advanced
+#### Other advanced actions
 
 Expose non-everyday actions inside the TUI:
 
@@ -235,15 +183,6 @@ Before writing changes:
 
 Manual YAML editing remains supported and should be mentioned in the Advanced section.
 
-## Implementation slices
+## Implementation history
 
-1. Add `vr config` command and read-only TUI shell.
-2. Add overview/section rendering and preset detection.
-3. Add save model, dirty-state prompt, and backup writer.
-4. Add security preset editing with change preview.
-5. Add workspace editor.
-6. Add runtime hardening editor.
-7. Add `ui.color` config and output/color editor.
-8. Add SSH mode editor and link to existing SSH key configure flow.
-9. Add Git identity editor and effective identity preview.
-10. Polish validation, reset actions, and advanced screen.
+The first full Config TUI implementation exposed many sections. The modernized direction intentionally reduces the visible menu surface to Security, SSH, and Advanced while preserving the underlying config behavior and manual YAML editing support.

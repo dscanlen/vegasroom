@@ -201,7 +201,7 @@ managed  always start a temporary Vegasroom-managed ssh-agent
 off      do not forward SSH
 ```
 
-Use `vr ssh configure` to edit this interactively, or edit the YAML manually.
+Use `vr config` to edit this interactively, or edit the YAML manually.
 
 ## UI config
 

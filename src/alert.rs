@@ -26,10 +26,6 @@ pub fn fail() -> &'static str {
     fail_with_color(colors_enabled())
 }
 
-pub fn color_status_prefix(message: &str) -> String {
-    color_status_prefix_with_color(message, colors_enabled())
-}
-
 fn colors_enabled() -> bool {
     let color_mode = Config::load_or_default()
         .map(|config| config.ui.color)
@@ -81,18 +77,6 @@ fn fail_with_color(enabled: bool) -> &'static str {
     }
 }
 
-fn color_status_prefix_with_color(message: &str, enabled: bool) -> String {
-    if let Some(rest) = message.strip_prefix("PASS: ") {
-        format!("{}: {rest}", pass_with_color(enabled))
-    } else if let Some(rest) = message.strip_prefix("WARN: ") {
-        format!("{}: {rest}", warn_with_color(enabled))
-    } else if let Some(rest) = message.strip_prefix("FAIL: ") {
-        format!("{}: {rest}", fail_with_color(enabled))
-    } else {
-        message.to_owned()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,23 +119,5 @@ mod tests {
             Some(OsStr::new("1")),
             true
         ));
-    }
-
-    #[test]
-    fn only_status_prefix_is_colored() {
-        assert_eq!(
-            color_status_prefix_with_color("WARN: check this", true),
-            "\x1b[1;33mWARN\x1b[0m: check this"
-        );
-        assert_eq!(color_status_prefix_with_color("plain", true), "plain");
-    }
-
-    #[test]
-    fn status_prefix_is_plain_when_color_is_disabled() {
-        assert_eq!(
-            color_status_prefix_with_color("WARN: check this", false),
-            "WARN: check this"
-        );
-        assert_eq!(color_status_prefix_with_color("plain", false), "plain");
     }
 }

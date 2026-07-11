@@ -9,6 +9,9 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{ConfigureUiState, GREEN, RESET};
 
+const BOLD: &str = "\x1b[1m";
+const DIM: &str = "\x1b[2m";
+
 pub(super) fn render_configure_ui(state: &ConfigureUiState) -> Result<()> {
     let mut stdout = io::stdout();
     let (width, height) = terminal::size().unwrap_or((100, 30));
@@ -28,14 +31,16 @@ pub(super) fn render_quit_prompt() -> Result<()> {
     let width = width.max(1);
     let height = height.max(1);
 
-    let mut lines = Vec::new();
-    for line in wrap_text_to_width("You have unsaved SSH key selection changes.", width, "", "") {
-        lines.push(TuiLine::normal(line));
-    }
-    lines.push(TuiLine::normal(""));
-    lines.push(TuiLine::normal("Save before quitting?"));
-    lines.push(TuiLine::normal("  [y] save and quit"));
-    lines.push(TuiLine::normal("  [n] discard and quit"));
+    let lines = vec![
+        TuiLine::highlighted("╭─ unsaved SSH key changes"),
+        TuiLine::normal("│"),
+        TuiLine::normal("│  save before quitting?"),
+        TuiLine::normal("│"),
+        TuiLine::normal("│  y  save and quit"),
+        TuiLine::normal("│  n  quit without saving"),
+        TuiLine::normal("│  c  cancel"),
+        TuiLine::normal("╰"),
+    ];
 
     draw_tui_lines(&mut stdout, width, height, &lines)
         .context("failed to draw SSH configure quit prompt")?;
@@ -46,8 +51,9 @@ pub(super) fn render_quit_prompt() -> Result<()> {
 #[derive(Debug, Clone, Copy)]
 enum TuiLineStyle {
     Normal,
-    Selected,
+    Dim,
     Highlighted,
+    Selected,
     SelectedHighlighted,
 }
 
@@ -65,10 +71,10 @@ impl TuiLine {
         }
     }
 
-    fn selected(text: impl Into<String>) -> Self {
+    fn dim(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
-            style: TuiLineStyle::Selected,
+            style: TuiLineStyle::Dim,
         }
     }
 
@@ -76,6 +82,13 @@ impl TuiLine {
         Self {
             text: text.into(),
             style: TuiLineStyle::Highlighted,
+        }
+    }
+
+    fn selected(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            style: TuiLineStyle::Selected,
         }
     }
 
@@ -88,60 +101,31 @@ impl TuiLine {
 }
 
 fn build_configure_ui_lines(state: &ConfigureUiState, width: u16, height: u16) -> Vec<TuiLine> {
-    let mut lines = Vec::new();
+    let dirty = if state.is_dirty() { "unsaved" } else { "saved" };
+    let selected_count = state.selected_count();
+    let mut lines = vec![
+        TuiLine::highlighted(format!("╭─ ssh keys · {selected_count} selected · {dirty}")),
+        TuiLine::dim("│  select managed SSH keys for Vegasroom"),
+        TuiLine::normal("│"),
+    ];
 
-    lines.push(TuiLine::normal("Vegasroom SSH Key Configuration"));
-    for line in wrap_text_to_width(
-        "Use ↑/↓ or k/j to move, Enter or Space to select, s to save, q to quit, r to rescan.",
-        width,
-        "",
-        "",
-    ) {
-        lines.push(TuiLine::normal(line));
-    }
-    lines.push(TuiLine::normal(""));
+    let detail_rows = usize::from(!state.keys.is_empty()) * 5;
+    let message_rows = usize::from(state.last_message.is_some());
+    let fixed_rows = lines.len() + detail_rows + message_rows + 1;
+    let key_rows = usize::from(height).saturating_sub(fixed_rows).max(1);
+    append_key_list_lines(&mut lines, state, width, key_rows);
+    append_highlighted_key_detail_lines(&mut lines, state, width);
 
-    let dirty = if state.is_dirty() {
-        "unsaved changes"
-    } else {
-        "saved"
-    };
-    let mut footer = Vec::new();
-    footer.push(TuiLine::normal(""));
-    for line in wrap_text_to_width("Actions: [s Save]  [q Quit]", width, "", "") {
-        footer.push(TuiLine::normal(line));
-    }
-    for line in wrap_text_to_width(
-        &format!("Status: {} selected · {dirty}", state.selected_count()),
-        width,
-        "",
-        "",
-    ) {
-        footer.push(TuiLine::normal(line));
-    }
     if let Some(message) = &state.last_message {
-        for line in wrap_text_to_width(message, width, "", "") {
-            footer.push(TuiLine::normal(line));
-        }
+        lines.push(TuiLine::normal(truncate_to_width(
+            &format!("│  notice  {message}"),
+            width,
+        )));
     }
 
-    let used_fixed_rows = lines.len() + footer.len();
-    let available_rows = usize::from(height).saturating_sub(used_fixed_rows).max(1);
-
-    if state.keys.is_empty() {
-        for line in wrap_text_to_width("No SSH private keys were detected.", width, "", "") {
-            lines.push(TuiLine::normal(line));
-        }
-    } else {
-        let detail_rows = available_rows
-            .clamp(6, 10)
-            .min(available_rows.saturating_sub(3));
-        let list_rows = available_rows.saturating_sub(detail_rows).max(1);
-        append_key_list_lines(&mut lines, state, width, list_rows);
-        append_highlighted_key_detail_lines(&mut lines, state, width, detail_rows);
-    }
-
-    lines.extend(footer);
+    lines.push(TuiLine::normal(
+        "╰─ ↑↓/jk move  enter/space toggle  r rescan  s save  q quit",
+    ));
     lines
 }
 
@@ -151,27 +135,31 @@ fn append_key_list_lines(
     width: u16,
     list_rows: usize,
 ) {
-    let (start, end) = visible_list_window(state.keys.len(), state.highlighted, list_rows);
+    if state.keys.is_empty() {
+        lines.push(TuiLine::normal("│  no SSH private keys detected"));
+        return;
+    }
 
-    let list_title = format!(
-        "Keys: showing {}-{} of {}",
-        start + 1,
-        end,
-        state.keys.len()
-    );
-    lines.push(TuiLine::normal(truncate_to_width(&list_title, width)));
+    let (start, end) = visible_list_window(state.keys.len(), state.highlighted, list_rows);
+    lines.push(TuiLine::dim(truncate_to_width(
+        &format!("│  keys {}-{} of {}", start + 1, end, state.keys.len()),
+        width,
+    )));
 
     if start > 0 {
-        lines.push(TuiLine::normal("  ↑ more keys above"));
+        lines.push(TuiLine::dim("│    ↑ more"));
     }
 
     for index in start..end {
         let key = &state.keys[index];
         let selected = state.selected.get(index).copied().unwrap_or(false);
         let highlighted = index == state.highlighted;
-        let cursor = if highlighted { ">" } else { " " };
-        let checkbox = if selected { "☑" } else { "☐" };
-        let row = truncate_to_width(&format!("{cursor} {checkbox} {}", key.display_path), width);
+        let cursor = if highlighted { "›" } else { " " };
+        let checkbox = if selected { "✓" } else { "○" };
+        let row = truncate_to_width(
+            &format!("│  {cursor} {checkbox} {}", key.display_path),
+            width,
+        );
 
         let line = match (selected, highlighted) {
             (true, true) => TuiLine::selected_highlighted(row),
@@ -183,7 +171,7 @@ fn append_key_list_lines(
     }
 
     if end < state.keys.len() {
-        lines.push(TuiLine::normal("  ↓ more keys below"));
+        lines.push(TuiLine::dim("│    ↓ more"));
     }
 }
 
@@ -191,15 +179,7 @@ fn append_highlighted_key_detail_lines(
     lines: &mut Vec<TuiLine>,
     state: &ConfigureUiState,
     width: u16,
-    detail_rows: usize,
 ) {
-    if detail_rows == 0 {
-        return;
-    }
-
-    lines.push(TuiLine::normal(""));
-    lines.push(TuiLine::normal("Details"));
-
     let Some(key) = state.keys.get(state.highlighted) else {
         return;
     };
@@ -209,51 +189,34 @@ fn append_highlighted_key_detail_lines(
         .get(state.highlighted)
         .copied()
         .unwrap_or(false);
-    let mut detail_lines = Vec::new();
-    detail_lines.extend(wrap_text_to_width(
-        &format!("Path: {}", key.display_path),
-        width,
-        "  ",
-        "       ",
-    ));
-    detail_lines.extend(wrap_text_to_width(
-        &format!(
-            "Key: {}{}{}",
-            key.key_type.as_deref().unwrap_or("unknown"),
-            key.fingerprint
-                .as_deref()
-                .map(|fp| format!(" {fp}"))
-                .unwrap_or_default(),
-            key.comment
-                .as_deref()
-                .map(|comment| format!(" {comment}"))
-                .unwrap_or_default(),
-        ),
-        width,
-        "  ",
-        "       ",
-    ));
-    detail_lines.push(format!(
-        "  Public pair: {}",
-        if key.has_public_pair { "yes" } else { "no" }
-    ));
-    if let Some(false) = key.permissions_ok {
-        detail_lines.extend(wrap_text_to_width(
-            "Permissions appear broad",
-            width,
-            "  ",
-            "       ",
-        ));
-    }
+    let selected_label = if selected { "selected" } else { "not selected" };
+    let key_type = key.key_type.as_deref().unwrap_or("unknown");
+    let fingerprint = key.fingerprint.as_deref().unwrap_or("unknown fingerprint");
+    let comment = key.comment.as_deref().unwrap_or("no comment");
+    let public_pair = if key.has_public_pair { "yes" } else { "no" };
+    let permissions = match key.permissions_ok {
+        Some(true) => "ok",
+        Some(false) => "broad",
+        None => "unknown",
+    };
 
-    let max_detail_lines = detail_rows.saturating_sub(2).max(1);
-    for line in detail_lines.into_iter().take(max_detail_lines) {
-        if selected {
-            lines.push(TuiLine::selected(line));
-        } else {
-            lines.push(TuiLine::normal(line));
-        }
-    }
+    lines.push(TuiLine::normal("│"));
+    lines.push(TuiLine::dim(truncate_to_width(
+        &format!("│  key  {selected_label} · {key_type} · public pair {public_pair}"),
+        width,
+    )));
+    lines.push(TuiLine::dim(truncate_to_width(
+        &format!("│  fp   {fingerprint}"),
+        width,
+    )));
+    lines.push(TuiLine::dim(truncate_to_width(
+        &format!("│  note {comment}"),
+        width,
+    )));
+    lines.push(TuiLine::dim(truncate_to_width(
+        &format!("│  perms {permissions}"),
+        width,
+    )));
 }
 
 fn visible_list_window(total: usize, highlighted: usize, max_rows: usize) -> (usize, usize) {
@@ -274,7 +237,7 @@ fn visible_list_window(total: usize, highlighted: usize, max_rows: usize) -> (us
 }
 
 fn truncate_to_width(text: &str, width: u16) -> String {
-    let max_width = usize::from(width).saturating_sub(2).max(1);
+    let max_width = usize::from(width).max(1);
     if UnicodeWidthStr::width(text) <= max_width {
         return text.to_owned();
     }
@@ -307,96 +270,31 @@ fn draw_tui_lines(
     execute!(stdout, terminal::Clear(ClearType::All))?;
 
     let max_rows = usize::from(height);
-    for (row, line) in lines.iter().take(max_rows).enumerate() {
+    let visible_lines = if lines.len() > max_rows {
+        &lines[lines.len() - max_rows..]
+    } else {
+        lines
+    };
+    let start_row = height.saturating_sub(visible_lines.len() as u16);
+
+    for (index, line) in visible_lines.iter().enumerate() {
         execute!(
             stdout,
-            cursor::MoveTo(0, row as u16),
+            cursor::MoveTo(0, start_row + index as u16),
             terminal::Clear(ClearType::CurrentLine)
         )?;
 
         let text = truncate_to_width(&line.text, width);
         match line.style {
             TuiLineStyle::Normal => write!(stdout, "{text}")?,
+            TuiLineStyle::Dim => write!(stdout, "{DIM}{text}{RESET}")?,
+            TuiLineStyle::Highlighted => write!(stdout, "{BOLD}{text}{RESET}")?,
             TuiLineStyle::Selected => write!(stdout, "{GREEN}{text}{RESET}")?,
-            TuiLineStyle::Highlighted => write!(stdout, "\x1b[7m{text}{RESET}")?,
-            TuiLineStyle::SelectedHighlighted => write!(stdout, "\x1b[32;7m{text}{RESET}")?,
+            TuiLineStyle::SelectedHighlighted => write!(stdout, "{GREEN}{BOLD}{text}{RESET}")?,
         }
     }
 
     Ok(())
-}
-
-fn wrap_text_to_width(
-    text: &str,
-    width: u16,
-    first_prefix: &str,
-    continuation_prefix: &str,
-) -> Vec<String> {
-    let max_width = usize::from(width).saturating_sub(2).max(1);
-    let mut lines = Vec::new();
-    let mut remaining = text.trim_end();
-    let mut prefix = first_prefix;
-
-    if remaining.is_empty() {
-        lines.push(first_prefix.to_owned());
-        return lines;
-    }
-
-    while !remaining.is_empty() {
-        let prefix_width = UnicodeWidthStr::width(prefix);
-        let content_width = max_width.saturating_sub(prefix_width).max(1);
-        let (chunk, rest) = take_wrapped_chunk(remaining, content_width);
-        lines.push(format!("{prefix}{chunk}"));
-        remaining = rest.trim_start();
-        prefix = continuation_prefix;
-    }
-
-    lines
-}
-
-fn take_wrapped_chunk(input: &str, max_width: usize) -> (&str, &str) {
-    if UnicodeWidthStr::width(input) <= max_width {
-        return (input, "");
-    }
-
-    let mut boundary = input.len();
-    let mut used_width = 0usize;
-    let mut saw_char = false;
-
-    for (index, ch) in input.char_indices() {
-        let char_width = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if saw_char && used_width + char_width > max_width {
-            boundary = index;
-            break;
-        }
-
-        if !saw_char && char_width > max_width {
-            boundary = index + ch.len_utf8();
-            break;
-        }
-
-        used_width += char_width;
-        saw_char = true;
-    }
-
-    let hard_chunk = &input[..boundary];
-    if let Some(split_at) = last_whitespace_boundary(hard_chunk) {
-        if split_at > 0 {
-            let chunk = input[..split_at].trim_end();
-            let rest = &input[split_at..];
-            return (chunk, rest);
-        }
-    }
-
-    (&input[..boundary], &input[boundary..])
-}
-
-fn last_whitespace_boundary(input: &str) -> Option<usize> {
-    input
-        .char_indices()
-        .rev()
-        .find(|(_, ch)| ch.is_whitespace())
-        .map(|(index, _)| index)
 }
 
 #[cfg(test)]
@@ -407,7 +305,15 @@ mod tests {
     fn truncation_respects_display_width_budget() {
         let truncated = truncate_to_width("abcdef", 5);
 
-        assert_eq!(UnicodeWidthStr::width(truncated.as_str()), 3);
+        assert_eq!(UnicodeWidthStr::width(truncated.as_str()), 5);
         assert!(truncated.ends_with('…'));
+    }
+
+    #[test]
+    fn list_window_keeps_highlight_visible() {
+        let (start, end) = visible_list_window(20, 10, 8);
+
+        assert!(start <= 10);
+        assert!(end > 10);
     }
 }

@@ -110,6 +110,10 @@ fn configure_tui(
                         KeyCode::Char('n') | KeyCode::Char('N') => {
                             return Ok(0);
                         }
+                        KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
+                            state.last_message = Some("Quit canceled.".to_owned());
+                            break;
+                        }
                         _ => {}
                     }
                 }

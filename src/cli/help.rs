@@ -5,7 +5,6 @@ pub(super) const TOP_LEVEL_AFTER_HELP: &str = r#"Examples:
   vr
   vr pi .
   vr shell .
-  vr ssh configure
 
 Use `vr pi --help` for Pi workspace and pass-through help.
 Use `vr shell --help` for shell workspace help."#;
@@ -23,19 +22,6 @@ pub(super) const CONFIG_AFTER_HELP: &str = r#"Examples:
 Notes:
   Opens the interactive Vegasroom configuration TUI.
   Manual YAML editing remains supported at ~/.vegasroom/config.yaml."#;
-
-pub(super) const SSH_AFTER_HELP: &str = r#"Examples:
-  vr ssh configure
-  vr ssh configure ~/.ssh ~/work-keys
-  vr ssh status"#;
-
-pub(super) const SSH_CONFIGURE_AFTER_HELP: &str = r#"Examples:
-  vr ssh configure
-  vr ssh configure ~/.ssh ~/work-keys
-  vr ssh configure --follow-symlinks ~/.ssh"#;
-
-pub(super) const SSH_STATUS_AFTER_HELP: &str = r#"Examples:
-  vr ssh status"#;
 
 pub(super) fn print_pi_help() {
     println!("{}", pi_help_text());
