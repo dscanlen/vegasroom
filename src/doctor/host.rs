@@ -19,7 +19,7 @@ pub(super) fn check_ssh_configuration(
         checks.push(Check {
             status: Status::Warn,
             name: "Managed SSH keys",
-            detail: "no managed SSH keys configured. Run: vr ssh configure".to_owned(),
+            detail: "no managed SSH keys configured. Run: vr config".to_owned(),
         });
     } else {
         checks.push(Check {

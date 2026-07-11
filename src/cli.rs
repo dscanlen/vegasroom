@@ -7,10 +7,7 @@ mod commands;
 mod help;
 mod parser;
 
-use help::{
-    CONFIG_AFTER_HELP, DOCTOR_AFTER_HELP, INIT_AFTER_HELP, SSH_AFTER_HELP,
-    SSH_CONFIGURE_AFTER_HELP, SSH_STATUS_AFTER_HELP, TOP_LEVEL_AFTER_HELP,
-};
+use help::{CONFIG_AFTER_HELP, DOCTOR_AFTER_HELP, INIT_AFTER_HELP, TOP_LEVEL_AFTER_HELP};
 use parser::{parse_manual_launch, ManualLaunch, PiInvocation};
 
 #[derive(Debug, Parser)]
@@ -43,13 +40,6 @@ pub enum Commands {
     #[command(after_help = CONFIG_AFTER_HELP)]
     Config,
 
-    /// Configure or inspect Vegasroom SSH key behavior.
-    #[command(after_help = SSH_AFTER_HELP)]
-    Ssh {
-        #[command(subcommand)]
-        command: SshCommands,
-    },
-
     /// Launch Pi in the proven Docker/Compose runtime.
     ///
     /// Use `vr pi --help` for workspace and pass-through syntax.
@@ -59,25 +49,6 @@ pub enum Commands {
     ///
     /// Use `vr shell --help` for workspace syntax.
     Shell,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum SshCommands {
-    /// Recursively scan SSH key roots and interactively choose managed keys.
-    #[command(after_help = SSH_CONFIGURE_AFTER_HELP)]
-    Configure {
-        /// Follow symlinked directories while scanning. This can scan outside the requested roots.
-        #[arg(long)]
-        follow_symlinks: bool,
-
-        /// Optional scan roots. Defaults to ~/.ssh when omitted.
-        #[arg(value_name = "PATH")]
-        paths: Vec<String>,
-    },
-
-    /// Show managed SSH key configuration and next-launch behavior.
-    #[command(after_help = SSH_STATUS_AFTER_HELP)]
-    Status,
 }
 
 pub fn run() -> Result<i32> {
@@ -92,13 +63,6 @@ pub fn run() -> Result<i32> {
         Commands::Init { build } => commands::init(build),
         Commands::Doctor => commands::doctor(),
         Commands::Config => commands::config(),
-        Commands::Ssh { command } => match command {
-            SshCommands::Configure {
-                paths,
-                follow_symlinks,
-            } => commands::configure_ssh(&paths, follow_symlinks),
-            SshCommands::Status => commands::ssh_status(),
-        },
         Commands::Pi => commands::launch_pi(None, Vec::new()),
         Commands::Shell => commands::launch_shell(None),
     }

@@ -1,6 +1,5 @@
 mod discovery;
 mod runtime;
-mod status;
 mod ui;
 
 use std::{env, fs, path::PathBuf};
@@ -11,7 +10,6 @@ pub use runtime::{
     managed_keys_configured, planned_ssh_available, prepare_agent_override, selected_key_checks,
     SelectedKeyCheckStatus, SshRuntime, SshRuntimeMode,
 };
-pub use status::status;
 pub use ui::configure;
 
 pub const CONTAINER_SSH_AUTH_SOCK: &str = "/run/vegasroom-ssh-agent.sock";

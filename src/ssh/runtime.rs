@@ -201,7 +201,7 @@ fn prepare_managed_runtime(
     mode: SshRuntimeMode,
 ) -> Result<SshRuntime> {
     if config.ssh.selected_keys.is_empty() {
-        bail!("no managed SSH keys configured. Run: vr ssh configure");
+        bail!("no managed SSH keys configured. Run: vr config");
     }
 
     let agent = start_managed_agent()?;

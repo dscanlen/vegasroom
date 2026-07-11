@@ -177,16 +177,11 @@ vr pi -- --help
 If you do not want to manage `ssh-agent` manually, configure Vegasroom-managed SSH:
 
 ```bash
-vr ssh configure
-vr ssh status
+vr config
 vr doctor
 ```
 
-`vr ssh configure` recursively scans `~/.ssh` by default. To scan another location:
-
-```bash
-vr ssh configure /mnt/secrethost/.ssh
-```
+Use the SSH menu item in `vr config` to scan `~/.ssh` and select managed keys.
 
 Selected keys remain on the host. Vegasroom starts a temporary `ssh-agent`, runs `ssh-add` for selected keys, forwards only the socket into the room, and kills the agent after the room exits.
 
