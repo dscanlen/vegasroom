@@ -472,16 +472,26 @@ The planned Config TUI slices are complete and ready for end-to-end user testing
 
 ### Harness-independent package/library selection
 
-Large architectural feature, not started.
-
-Desired direction:
+Design started locally and awaiting validation/commit:
 
 ```text
-let users declare Rust/Python/npm/etc libraries for the room environment
-keep the list independent of harness provider
-avoid base image bloat by default
-first document base image and required default packages
-then decide build/generation model
+added docs/package-selection.md
+captured current base image and built-in package list
+proposed harness-independent environment/package config direction
+compared generated Dockerfile, per-launch bootstrap, and user-provided image build models
+recommended starting with environment.apt.packages and generated derived image as the first implementation slice
+listed validation requirements and deferred decisions
+linked the design from docs/design.md
 ```
 
-Start with a design document before code.
+Validation needed before commit:
+
+```bash
+./scripts/check.sh
+```
+
+Suggested commit message after validation:
+
+```text
+Document package selection design
+```
