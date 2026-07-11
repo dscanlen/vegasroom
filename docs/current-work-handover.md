@@ -5,10 +5,10 @@ This document captures the active feature/refactor sequence so work can resume c
 ## Branch
 
 ```text
-feature/code-review-recommendations
+feature/config-tui
 ```
 
-This branch is for repo review and cleanup work. Keep changes incremental and behavior-preserving unless explicitly agreed otherwise.
+This branch is for the interactive `vr config` TUI and preset work. Keep changes incremental and prefer design/skeleton slices before broad editing behavior.
 
 ## Completed and merged before this branch
 
@@ -260,37 +260,238 @@ possible --color auto|always|never config/flag
 persisted color policy in future config flow, if needed
 ```
 
-## Larger features still pending
+## Active work: Config TUI and presets
 
-### Config TUI and presets
-
-Large feature, not started.
+Large feature, started on this branch.
 
 Desired direction:
 
 ```text
-add vr config as a general configuration TUI
-move SSH configure flow into vr config eventually
+add bare `vr config` as the single interactive configuration TUI entry point
+avoid a broad `vr config <subcommand>` command tree
+use TUI keybindings like existing `vr ssh configure`: s saves, q quits, dirty-state prompt on quit
+configure all settings through top-level sections and nested submenus
 keep manual YAML editing supported
-add security presets: lowsec default, sec, highsec
+add user-facing security presets: Default / Compatible, Safer, Strict
+map presets to lowsec/sec/highsec-style behavior internally or in docs if useful
 add default_harness for bare `vr` launches once multiple harnesses exist
 bundle remaining color policy controls here if config-backed color behavior is desired
 ```
 
-This should be split into design and several implementation branches.
+Design started:
+
+```text
+added docs/config-tui.md with command surface, navigation model, sections, presets, save behavior, and implementation slices
+```
+
+### Subsection 1: add config TUI shell
+
+Committed locally on this branch:
+
+```text
+98bc60e Add config TUI shell
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+added `vr config` command
+added read-only config TUI shell with Overview, Security preset, Workspace, SSH, Git identity, Runtime / Docker, Output / color, and Advanced sections
+added non-TTY fallback that points users to manual YAML config editing
+added security preset detection helpers and tests
+kept save/discard/exit out of the menu; save/quit are keybindings
+```
+
+### Subsection 2: add config section submenus
+
+Committed locally on this branch:
+
+```text
+f2e0e52 Add config TUI section navigation
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+added real top-level-to-section navigation in the config TUI
+added per-section submenu rows for planned editable fields/actions
+added Esc/Backspace navigation back from section screens while keeping s/q as global save/quit keybindings
+kept submenus read-only placeholders for this slice
+added a test that the Workspace section exposes expected config rows
+```
+
+### Subsection 3: add config save model and backups
+
+Committed locally on this branch:
+
+```text
+a6d26bb Add config TUI save model
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+changed the global s keybinding to call real save plumbing
+added dirty-state quit prompt with save, discard, and cancel choices
+updated config TUI design doc to include the cancel prompt option
+added timestamped config backup writer before saving over an existing config
+reloads and validates config after save
+added tests for backup writing and dirty-state save clearing
+```
+
+### Subsection 4: add security preset editing
+
+Committed locally on this branch in this commit:
+
+```text
+Add config TUI security presets
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+added SecurityPreset::{DefaultCompatible, Safer, Strict}
+changed Security preset submenu rows to open a change preview screen
+Enter on the preview applies the selected preset to in-memory config and marks the TUI dirty only when values changed
+preset application preserves host networking for all presets because bridge remains experimental for Pi login
+added preset diff helpers for previewing exact field changes
+added tests for Safer preview diff, Strict preset application, and matching-preset no-op dirty behavior
+```
+
+### Subsection 5: add workspace config editor
+
+Committed locally on this branch:
+
+```text
+Add config TUI workspace editor
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+made Workspace section rows for risky_mount_policy and read_only_workspace editable toggles
+Enter on risky_mount_policy toggles warn/deny and marks config dirty
+Enter on read_only_workspace toggles true/false and marks config dirty
+kept paths.workspace as a placeholder for a later text-input slice
+added workspace editor toggle tests
+```
+
+### Subsection 6: add runtime hardening editor
+
+Committed locally on this branch:
+
+```text
+Add config TUI runtime hardening editor
+```
+
+Completed; validation was not run in this agent environment because cargo/rustfmt are unavailable.
+
+```text
+made Runtime / Docker read-only root filesystem row an editable toggle
+Enter on read_only_rootfs toggles true/false and marks config dirty
+kept runtime/build network fields as read-only placeholders because bridge remains experimental for Pi login
+added runtime editor toggle tests
+```
+
+### Subsection 7: add ui.color config and output/color editor
+
+Committed locally on this branch:
+
+```text
+Add config TUI color editor
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+added ui.color config with auto/always/never values and default auto
+changed colored status labels to honor ui.color while preserving non-empty NO_COLOR as an override
+added Output / color editor row that cycles auto -> always -> never -> auto
+updated config docs and config TUI design docs for active ui.color behavior
+added config parsing, alert policy, and config TUI color editor tests
+```
+
+### Subsection 8: add SSH mode editor and key configure handoff
+
+Committed locally on this branch:
+
+```text
+Add config TUI SSH editor
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+made SSH mode row editable and cycle auto -> host -> managed -> off -> auto
+made selected managed SSH keys row hand off to the existing vr ssh configure flow instead of duplicating key selection
+blocks SSH key configure handoff while config TUI has unsaved changes so direct writes from the SSH flow do not clobber pending config edits
+reloads config after returning from the SSH configure flow
+updated config TUI design docs for active SSH behavior
+added SSH mode, row exposure, dirty-blocking, and handoff action tests
+```
+
+### Subsection 9: add Git identity editor and effective preview
+
+Committed locally on this branch:
+
+```text
+Add config TUI Git identity editor
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+made Git identity inherit_host row editable and toggle true/false
+added effective Git identity preview using existing Git identity precedence
+kept git.user_name and git.user_email as placeholders for a later text-input slice
+updated config TUI design docs for active Git identity behavior
+added Git inherit_host toggle, effective preview, and row exposure tests
+```
+
+### Subsection 10: polish validation, reset actions, and advanced screen
+
+Committed locally on this branch:
+
+```text
+Polish config TUI advanced actions
+```
+
+Completed and validated by user with `./scripts/check.sh`.
+
+```text
+added Advanced validate-current-config action
+updated Advanced backup wording to reflect existing timestamped backup behavior
+added reset-all-to-defaults preview screen with exact changed-field diff
+Enter on reset preview applies defaults in memory and marks config dirty only when values changed
+fixed raw-mode config TUI rendering so newlines return to column 0
+updated config TUI design docs for active Advanced behavior
+added Advanced row exposure, validation, reset preview, reset application, and CRLF rendering tests
+```
+
+The planned Config TUI slices are complete and ready for end-to-end user testing.
 
 ### Harness-independent package/library selection
 
-Large architectural feature, not started.
-
-Desired direction:
+Design started locally and awaiting validation/commit:
 
 ```text
-let users declare Rust/Python/npm/etc libraries for the room environment
-keep the list independent of harness provider
-avoid base image bloat by default
-first document base image and required default packages
-then decide build/generation model
+added docs/package-selection.md
+captured current base image and built-in package list
+proposed harness-independent environment/package config direction
+compared generated Dockerfile, per-launch bootstrap, and user-provided image build models
+recommended starting with environment.apt.packages and generated derived image as the first implementation slice
+listed validation requirements and deferred decisions
+linked the design from docs/design.md
 ```
 
-Start with a design document before code.
+Validation needed before commit:
+
+```bash
+./scripts/check.sh
+```
+
+Suggested commit message after validation:
+
+```text
+Document package selection design
+```

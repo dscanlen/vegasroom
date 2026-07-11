@@ -15,6 +15,7 @@ vr
 vr init
 vr init --build
 vr doctor
+vr config
 vr ssh configure
 vr ssh status
 vr pi [workspace] [pi-args...]
@@ -27,6 +28,7 @@ Source-development equivalents:
 cargo run -- init
 cargo run -- init --build
 cargo run -- doctor
+cargo run -- config
 cargo run -- ssh configure
 cargo run -- ssh status
 cargo run -- pi
@@ -303,6 +305,16 @@ FAIL
 `WARN` means usable but degraded. `FAIL` means required functionality is missing.
 
 `vr doctor` also reports whether managed SSH keys are configured, whether key fingerprints still match, whether the room can receive an SSH agent socket, and which Git identity will be available inside the room.
+
+### `vr config`
+
+Opens the interactive Vegasroom configuration TUI.
+
+```bash
+vr config
+```
+
+The first implementation is a read-only shell for the planned configuration sections. Manual YAML editing remains supported at `~/.vegasroom/config.yaml`. See `docs/config-tui.md` for the TUI design.
 
 ### `vr ssh configure`
 

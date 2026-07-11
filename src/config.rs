@@ -30,6 +30,9 @@ git:
   user_name:
   user_email:
 
+ui:
+  color: auto
+
 harness:
   pi:
     image: vegasroom/pi:local
@@ -56,6 +59,9 @@ pub struct Config {
 
     #[serde(default)]
     pub git: GitConfig,
+
+    #[serde(default)]
+    pub ui: UiConfig,
 
     #[serde(default)]
     pub harness: HarnessConfig,
@@ -109,6 +115,21 @@ pub struct GitConfig {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_email: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UiConfig {
+    #[serde(default)]
+    pub color: ColorMode,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ColorMode {
+    #[default]
+    Auto,
+    Always,
+    Never,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -352,6 +373,7 @@ mod tests {
         assert!(config.git.inherit_host);
         assert!(config.git.user_name.is_none());
         assert!(config.git.user_email.is_none());
+        assert_eq!(config.ui.color, ColorMode::Auto);
         assert_eq!(config.harness.pi.image, "vegasroom/pi:local");
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.network, "host");
@@ -394,6 +416,7 @@ harness:
         assert_eq!(config.paths.workspace, "~/.vegasroom/workspace");
         assert_eq!(config.workspace.risky_mount_policy, RiskyMountPolicy::Warn);
         assert_eq!(config.ssh.mode, SshMode::Auto);
+        assert_eq!(config.ui.color, ColorMode::Auto);
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.build_network, "host");
         assert!(!config.harness.pi.read_only_workspace);
@@ -451,6 +474,18 @@ harness:
         .unwrap();
 
         assert!(config.harness.pi.read_only_rootfs);
+    }
+
+    #[test]
+    fn ui_color_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"ui:
+  color: never
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.ui.color, ColorMode::Never);
     }
 
     #[test]

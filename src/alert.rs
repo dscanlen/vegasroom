@@ -1,4 +1,10 @@
-use std::{env, ffi::OsStr};
+use std::{
+    env,
+    ffi::OsStr,
+    io::{self, IsTerminal},
+};
+
+use crate::config::{ColorMode, Config};
 
 const PASS: &str = "PASS";
 const WARN: &str = "WARN";
@@ -25,13 +31,29 @@ pub fn color_status_prefix(message: &str) -> String {
 }
 
 fn colors_enabled() -> bool {
-    colors_enabled_for_no_color(env::var_os("NO_COLOR").as_deref())
+    let color_mode = Config::load_or_default()
+        .map(|config| config.ui.color)
+        .unwrap_or_default();
+    colors_enabled_for_policy(
+        color_mode,
+        env::var_os("NO_COLOR").as_deref(),
+        io::stdout().is_terminal(),
+    )
 }
 
-fn colors_enabled_for_no_color(no_color: Option<&OsStr>) -> bool {
-    match no_color {
-        Some(value) => value.is_empty(),
-        None => true,
+fn colors_enabled_for_policy(
+    color_mode: ColorMode,
+    no_color: Option<&OsStr>,
+    stdout_is_terminal: bool,
+) -> bool {
+    if no_color.is_some_and(|value| !value.is_empty()) {
+        return false;
+    }
+
+    match color_mode {
+        ColorMode::Auto => stdout_is_terminal,
+        ColorMode::Always => true,
+        ColorMode::Never => false,
     }
 }
 
@@ -90,10 +112,29 @@ mod tests {
     }
 
     #[test]
+    fn auto_color_follows_terminal_detection() {
+        assert!(colors_enabled_for_policy(ColorMode::Auto, None, true));
+        assert!(!colors_enabled_for_policy(ColorMode::Auto, None, false));
+    }
+
+    #[test]
+    fn configured_color_policy_is_honored() {
+        assert!(colors_enabled_for_policy(ColorMode::Always, None, false));
+        assert!(!colors_enabled_for_policy(ColorMode::Never, None, true));
+    }
+
+    #[test]
     fn non_empty_no_color_disables_colors() {
-        assert!(colors_enabled_for_no_color(None));
-        assert!(colors_enabled_for_no_color(Some(OsStr::new(""))));
-        assert!(!colors_enabled_for_no_color(Some(OsStr::new("1"))));
+        assert!(colors_enabled_for_policy(
+            ColorMode::Always,
+            Some(OsStr::new("")),
+            false
+        ));
+        assert!(!colors_enabled_for_policy(
+            ColorMode::Always,
+            Some(OsStr::new("1")),
+            true
+        ));
     }
 
     #[test]

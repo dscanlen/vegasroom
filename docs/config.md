@@ -30,6 +30,9 @@ git:
   user_name:
   user_email:
 
+ui:
+  color: auto
+
 harness:
   pi:
     image: vegasroom/pi:local
@@ -59,6 +62,7 @@ Currently active:
 - `git.inherit_host`
 - `git.user_name`
 - `git.user_email`
+- `ui.color`
 
 Legacy/future-facing fields from earlier configs are ignored if present:
 
@@ -198,6 +202,22 @@ off      do not forward SSH
 ```
 
 Use `vr ssh configure` to edit this interactively, or edit the YAML manually.
+
+## UI config
+
+`ui.color` controls colored PASS/WARN/FAIL labels in terminal output. Supported values are:
+
+```text
+auto    color terminal output only
+always  force ANSI color
+never   disable ANSI color
+```
+
+A non-empty `NO_COLOR` environment variable overrides this setting and disables ANSI labels.
+
+## Interactive config TUI direction
+
+`vr config` is planned as the single interactive configuration TUI entry point. See [Config TUI design](config-tui.md) for the intended UX, sections, presets, save behavior, and implementation slices.
 
 ## Git identity
 

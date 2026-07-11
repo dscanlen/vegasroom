@@ -22,6 +22,7 @@ Persistent host state is limited to explicit bind mounts under `~/.vegasroom`.
 ```bash
 vr init
 vr doctor
+vr config
 vr pi
 vr shell
 vr
@@ -89,6 +90,7 @@ Pi login is handled by Pi itself. Vegasroom sets `BROWSER=echo` so browser login
 
 - Claude harness support
 - harness plugin abstraction
+- harness-independent package/library selection; see [Package selection design](package-selection.md)
 - non-root container migration
 - network isolation
 - hardening profiles

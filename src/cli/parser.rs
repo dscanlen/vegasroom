@@ -37,7 +37,7 @@ pub(super) fn parse_manual_launch(args: &[String]) -> Result<ManualLaunch> {
             None,
             args[2..].to_vec(),
         ))),
-        "--help" | "-h" | "--version" | "-V" | "init" | "doctor" | "ssh" => {
+        "--help" | "-h" | "--version" | "-V" | "init" | "doctor" | "config" | "ssh" => {
             Ok(ManualLaunch::DeferToClap)
         }
         value if value.starts_with('-') => Ok(ManualLaunch::Pi(PiInvocation::new(
@@ -129,6 +129,7 @@ mod tests {
             &["-V"],
             &["init"],
             &["doctor"],
+            &["config"],
             &["ssh"],
             &["unknown"],
         ];
