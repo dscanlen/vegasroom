@@ -17,6 +17,7 @@ pub struct StatePaths {
     pub pi_extensions: PathBuf,
     pub pi_skills: PathBuf,
     pub pi_sessions: PathBuf,
+    pub pi_npm_global: PathBuf,
     pub pi_auth_json: PathBuf,
     pub workspace: PathBuf,
     pub runtime_root: PathBuf,
@@ -51,6 +52,7 @@ impl StatePaths {
         let pi_extensions = pi_root.join(harness::PI_EXTENSIONS_DIR);
         let pi_skills = pi_root.join(harness::PI_SKILLS_DIR);
         let pi_sessions = pi_root.join(harness::PI_SESSIONS_DIR);
+        let pi_npm_global = pi_root.join(harness::PI_NPM_GLOBAL_DIR);
         let pi_auth_json = pi_root.join(harness::PI.auth_state_relative_path);
         let workspace = root.join("workspace");
         let runtime_root = root.join("runtime");
@@ -72,6 +74,7 @@ impl StatePaths {
             pi_extensions,
             pi_skills,
             pi_sessions,
+            pi_npm_global,
             pi_auth_json,
             workspace,
             runtime_root,
@@ -119,6 +122,7 @@ impl StatePaths {
             self.pi_extensions.clone(),
             self.pi_skills.clone(),
             self.pi_sessions.clone(),
+            self.pi_npm_global.clone(),
             self.workspace.clone(),
             self.runtime_root.clone(),
             self.runtime_harness_root.clone(),

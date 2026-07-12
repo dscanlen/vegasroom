@@ -16,6 +16,7 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 - Enables Docker's minimal init process for child-process reaping.
 - Supports an opt-in read-only `/workspace` mount with `harness.pi.read_only_workspace: true`.
 - Supports an opt-in read-only container root filesystem with `harness.pi.read_only_rootfs: true`.
+- Persists in-room Pi npm-global updates only through the explicit `~/.vegasroom/harness/pi/npm-global` bind mount.
 
 ## What the MVP does not provide
 
@@ -95,7 +96,7 @@ In managed SSH mode, Vegasroom runs `ssh-add` against selected private key files
 
 When a Git identity is configured or inherited, Vegasroom writes a generated gitconfig under a per-launch directory in `~/.vegasroom/cache` and mounts it read-only into the room. The generated file contains commit author/committer name and email only; it does not contain SSH private keys or Git credentials. Per-launch generated runtime files are removed on normal exit on a best-effort basis.
 
-### Pi auth state
+### Pi auth and package state
 
 Pi login state may persist under:
 
@@ -103,7 +104,13 @@ Pi login state may persist under:
 ~/.vegasroom/harness/pi/config/auth.json
 ```
 
-Treat the Pi harness state directory as sensitive.
+In-room global npm installs/updates for Pi may persist under:
+
+```text
+~/.vegasroom/harness/pi/npm-global
+```
+
+That prefix's `bin` directory is before the baked image install on `PATH`, so executable code persisted there is trusted by future rooms. Treat the Pi harness state directory as sensitive.
 
 ## Deferred hardening
 

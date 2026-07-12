@@ -195,3 +195,93 @@ pub(super) fn check_container_login_readiness(
 
     checks
 }
+
+pub(super) fn check_container_pi_package(
+    probe: &Result<docker::ContainerDoctorProbe>,
+) -> Vec<Check> {
+    let mut checks = Vec::new();
+    let pi_npm_global_path =
+        harness::PI.required_state_dir_container_path(harness::PI_NPM_GLOBAL_DIR);
+    let pi_npm_global_bin = format!("{pi_npm_global_path}/bin");
+    let pi_npm_global_bin_prefix = format!("{pi_npm_global_bin}/");
+
+    checks.push(match probe {
+        Ok(probe) if probe.pi_npm_global_writable => Check {
+            status: Status::Pass,
+            name: "Container Pi npm global writable",
+            detail: format!("{pi_npm_global_path} is writable inside the room"),
+        },
+        Ok(_) => Check {
+            status: Status::Fail,
+            name: "Container Pi npm global writable",
+            detail: format!(
+                "{pi_npm_global_path} is not writable inside the room; in-room Pi npm updates will not persist"
+            ),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container Pi npm global writable",
+            detail: format!("could not test Pi npm global write path inside the room: {err:#}"),
+        },
+    });
+
+    checks.push(match probe {
+        Ok(probe) if probe.npm_global_bin_on_path => Check {
+            status: Status::Pass,
+            name: "Container npm-global PATH",
+            detail: format!("{pi_npm_global_bin} is PATH state for persisted Pi updates"),
+        },
+        Ok(_) => Check {
+            status: Status::Fail,
+            name: "Container npm-global PATH",
+            detail: format!(
+                "{pi_npm_global_bin} is not on PATH; persisted Pi updates will not be detected"
+            ),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container npm-global PATH",
+            detail: format!("could not inspect PATH inside the room: {err:#}"),
+        },
+    });
+
+    checks.push(match probe {
+        Ok(probe) => match probe.pi_command_path.as_deref() {
+            Some(path) => {
+                if is_in_persistent_npm_global_bin(
+                    path,
+                    &pi_npm_global_bin,
+                    &pi_npm_global_bin_prefix,
+                ) {
+                    Check {
+                        status: Status::Pass,
+                        name: "Container Pi command",
+                        detail: format!("persisted user-installed Pi package is active: {path}"),
+                    }
+                } else {
+                    Check {
+                        status: Status::Pass,
+                        name: "Container Pi command",
+                        detail: format!("using baked image Pi package fallback: {path}"),
+                    }
+                }
+            }
+            None => Check {
+                status: Status::Fail,
+                name: "Container Pi command",
+                detail: "pi command was not found inside the room".to_owned(),
+            },
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container Pi command",
+            detail: format!("could not locate pi inside the room: {err:#}"),
+        },
+    });
+
+    checks
+}
+
+fn is_in_persistent_npm_global_bin(path: &str, bin: &str, bin_prefix: &str) -> bool {
+    path == bin || path.starts_with(bin_prefix)
+}

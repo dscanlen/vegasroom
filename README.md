@@ -122,6 +122,7 @@ Default layout:
   harness/pi/extensions/
   harness/pi/skills/
   harness/pi/sessions/
+  harness/pi/npm-global/
   ssh/
     known_hosts
   cache/
@@ -140,6 +141,7 @@ The runtime is intentionally the proven M1-M4 model:
 - ephemeral container removed after exit
 - `/workspace` mounted from the resolved host workspace, defaulting to `~/.vegasroom/workspace`
 - Pi state mounted from `~/.vegasroom/harness/pi/...`
+- Pi npm-global state mounted from `~/.vegasroom/harness/pi/npm-global` to `/home/agent/.npm-global`, with that bin directory first on `PATH`; if Pi or the user updates `@earendil-works/pi-coding-agent` in-room, future ephemeral containers use the persisted package before falling back to the image-baked Pi install.
 - `~/.vegasroom/ssh` mounted once at `/home/agent/.ssh`; `/root/.ssh` is an image-level symlink to that path for root-run SSH/Git compatibility
 - workspace mount can be made read-only with `harness.pi.read_only_workspace: true`
 - container root filesystem can be made read-only with opt-in `harness.pi.read_only_rootfs: true`
@@ -196,6 +198,30 @@ vr -- ask Pi a question
 ```
 
 `vr pi --help` shows Vegasroom's Pi wrapper help. Use `vr pi -- --help` to pass `--help` to Pi itself. Use `vr -- ...` when the first Pi argument is positional or ambiguous.
+
+## Pi updates inside the room
+
+The image includes a pinned baked fallback install of `@earendil-works/pi-coding-agent` from `harness/pi/Dockerfile`. Update that pin deliberately with:
+
+```bash
+scripts/update-pi-harness-version.sh latest
+```
+
+At runtime Vegasroom sets npm's global prefix to the persisted mount:
+
+```text
+~/.vegasroom/harness/pi/npm-global -> /home/agent/.npm-global
+```
+
+`/home/agent/.npm-global/bin` is first on `PATH`. If you run an in-room npm global install/update, for example:
+
+```bash
+npm install -g @earendil-works/pi-coding-agent@latest
+```
+
+that install is detected automatically on later `vr pi`/`vr shell` launches. `vr doctor` reports whether the active `pi` command comes from the persisted prefix or from the baked image fallback.
+
+If the Docker image is deleted and rebuilt, the persisted npm-global mount is still used as long as `~/.vegasroom/harness/pi/npm-global` remains intact.
 
 ## SSH model
 

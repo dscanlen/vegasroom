@@ -10,7 +10,8 @@ use crate::{config::Config, docker, harness, paths::StatePaths, ssh};
 
 use self::{
     container::{
-        check_container_git_identity, check_container_login_readiness, check_container_ssh,
+        check_container_git_identity, check_container_login_readiness, check_container_pi_package,
+        check_container_ssh,
     },
     host::{
         check_config_git_section, check_git_identity, check_host_ssh_agent, check_network_mode,
@@ -105,6 +106,7 @@ pub fn run() -> Result<i32> {
         ("Pi extensions", &state.pi_extensions),
         ("Pi skills", &state.pi_skills),
         ("Pi sessions", &state.pi_sessions),
+        ("Pi npm global", &state.pi_npm_global),
         ("SSH directory", &state.ssh_dir),
         ("Cache", &state.cache),
     ] {
@@ -122,6 +124,10 @@ pub fn run() -> Result<i32> {
     checks.push(check_dir_writable(
         "Pi sessions writable",
         &state.pi_sessions,
+    ));
+    checks.push(check_dir_writable(
+        "Pi npm global writable",
+        &state.pi_npm_global,
     ));
     checks.push(check_pi_auth_state(&state.pi_auth_json));
 
@@ -200,6 +206,7 @@ pub fn run() -> Result<i32> {
         checks.extend(check_container_ssh(&config));
         checks.push(check_container_git_identity(&container_probe));
         checks.extend(check_container_login_readiness(&container_probe));
+        checks.extend(check_container_pi_package(&container_probe));
     } else if !compose_ready {
         checks.push(Check {
             status: Status::Warn,

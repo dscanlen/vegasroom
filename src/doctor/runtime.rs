@@ -88,6 +88,18 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
         "workspace mount is not controlled by VR_WORKSPACE_READ_ONLY",
     ));
 
+    let npm_global_path = container_home_path(".npm-global");
+    checks.push(check_bool(
+        Status::Warn,
+        "Pi npm-global persistence",
+        contents.contains(".vegasroom/harness/pi/npm-global")
+            && contents.contains(format!("target: {npm_global_path}").as_str())
+            && contents.contains("NPM_CONFIG_PREFIX: /home/agent/.npm-global")
+            && contents.contains("/home/agent/.npm-global/bin"),
+        "in-room npm-global installs are persisted and placed before the baked Pi fallback on PATH",
+        "persistent npm-global mount/PATH configuration was not found; in-room Pi updates may not persist",
+    ));
+
     checks.push(check_bool(
         Status::Warn,
         "SSH directory mount model",
@@ -113,6 +125,15 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
                 format!(
                     "/root/.ssh image-level symlink to {harness_ssh_dir} was not found in the Pi Dockerfile"
                 ),
+            ));
+
+            checks.push(check_bool(
+                Status::Warn,
+                "Pi Dockerfile npm-global PATH",
+                dockerfile_contents.contains("NPM_CONFIG_PREFIX=/home/agent/.npm-global")
+                    && dockerfile_contents.contains("/home/agent/.npm-global/bin"),
+                "Dockerfile keeps user-updated Pi packages ahead of the baked fallback on PATH",
+                "Dockerfile does not configure the persistent npm-global prefix/PATH",
             ));
         }
     }

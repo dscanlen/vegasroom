@@ -138,6 +138,8 @@ resolves to:
 
 The managed Compose file receives the resolved host workspace through `VR_WORKSPACE` and mounts it at `/workspace`.
 
+Pi runtime state is stored under `~/.vegasroom/harness/pi`. In addition to Pi config/extensions/skills/sessions, `npm-global` is mounted at `/home/agent/.npm-global` and placed first on `PATH` so in-room Pi npm global updates persist across ephemeral containers. The image-baked Pi package version is pinned in `harness/pi/Dockerfile`; update it with `scripts/update-pi-harness-version.sh latest` before rebuilding when you want the fallback image to catch up.
+
 ## Workspace policy fields
 
 `workspace.risky_mount_policy` controls what Vegasroom does with broad or risky workspace mounts that are not already hard-blocked. Supported values are:

@@ -40,6 +40,7 @@ vr
   harness/pi/extensions/
   harness/pi/skills/
   harness/pi/sessions/
+  harness/pi/npm-global/
   ssh/
   cache/
 ```
@@ -58,6 +59,7 @@ MVP-preserved runtime decisions:
 - workspace mounted read-write by default, with opt-in `harness.pi.read_only_workspace`
 - container root filesystem writable by default, with opt-in `harness.pi.read_only_rootfs`
 - Pi state mounted read-write
+- Pi npm-global prefix mounted read-write at `/home/agent/.npm-global`, with `/home/agent/.npm-global/bin` before `/usr/local/bin` on `PATH`, so in-room Pi npm updates persist across ephemeral containers while the pinned image-baked install remains a fallback
 - Vegas-managed SSH directory mounted once at `/home/agent/.ssh`, not host `~/.ssh`
 - `/root/.ssh` provided as an image-level symlink to `/home/agent/.ssh` for root-run SSH/Git compatibility without a second bind mount
 - ssh-agent socket forwarded when available
