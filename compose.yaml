@@ -27,6 +27,14 @@ services:
     environment:
       HOME: /home/agent
       PI_CODING_AGENT_SESSION_DIR: /home/agent/.pi/sessions
+      # Persist npm-global installs outside the ephemeral container. If Pi (or the user)
+      # updates @earendil-works/pi-coding-agent in-room, the mounted prefix is first on
+      # PATH on future launches while /usr/local remains the baked fallback.
+      NPM_CONFIG_PREFIX: /home/agent/.npm-global
+      npm_config_prefix: /home/agent/.npm-global
+      NPM_CONFIG_CACHE: /home/agent/.cache/npm
+      npm_config_cache: /home/agent/.cache/npm
+      PATH: /home/agent/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       # Force browser-login helpers to print a URL instead of trying to launch a browser in the container.
       BROWSER: echo
       # SSH_AUTH_SOCK is injected by vr with a generated Compose override when
@@ -51,6 +59,9 @@ services:
       - type: bind
         source: ${HOME}/.vegasroom/harness/pi/sessions
         target: /home/agent/.pi/sessions
+      - type: bind
+        source: ${HOME}/.vegasroom/harness/pi/npm-global
+        target: /home/agent/.npm-global
       # Mount the SSH state directory, not the known_hosts file directly.
       # Docker creates missing bind sources as directories, which causes
       # file-vs-directory errors when binding a missing file to known_hosts.

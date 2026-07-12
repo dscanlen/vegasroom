@@ -15,6 +15,9 @@ pub struct SshAddCheck {
 pub struct ContainerDoctorProbe {
     pub pi_config_writable: bool,
     pub pi_sessions_writable: bool,
+    pub pi_npm_global_writable: bool,
+    pub npm_global_bin_on_path: bool,
+    pub pi_command_path: Option<String>,
     pub internet_reachable: bool,
     pub git_identity: Option<GitIdentity>,
 }
@@ -29,6 +32,8 @@ pub struct ContainerSshDoctorProbe {
 pub fn container_doctor_probe(config: &Config) -> Result<ContainerDoctorProbe> {
     let pi_config_path = harness::PI.required_state_dir_container_path(harness::PI_CONFIG_DIR);
     let pi_sessions_path = harness::PI.required_state_dir_container_path(harness::PI_SESSIONS_DIR);
+    let pi_npm_global_path =
+        harness::PI.required_state_dir_container_path(harness::PI_NPM_GLOBAL_DIR);
     let script = format!(
         r#"
 set +e
@@ -46,6 +51,21 @@ if echo m4 > "$tmp" 2>/dev/null && rm -f "$tmp"; then
 else
   echo 'VR_CHECK pi_sessions_writable=fail'
 fi
+
+tmp="{pi_npm_global_path}/.vr-m4-write-test"
+if echo m4 > "$tmp" 2>/dev/null && rm -f "$tmp"; then
+  echo 'VR_CHECK pi_npm_global_writable=pass'
+else
+  echo 'VR_CHECK pi_npm_global_writable=fail'
+fi
+
+case ":$PATH:" in
+  *":{pi_npm_global_path}/bin:"*) echo 'VR_CHECK npm_global_bin_on_path=pass' ;;
+  *) echo 'VR_CHECK npm_global_bin_on_path=fail' ;;
+esac
+
+pi_command_path="$(command -v pi 2>/dev/null || true)"
+printf 'VR_PI_COMMAND_PATH=%s\n' "$pi_command_path"
 
 if node -e "fetch('https://pi.dev').then(r => process.exit(r.status > 0 ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>/dev/null; then
   echo 'VR_CHECK internet=pass'
@@ -68,6 +88,12 @@ printf 'VR_GIT_EMAIL=%s\n' "${{GIT_AUTHOR_EMAIL:-}}"
     Ok(ContainerDoctorProbe {
         pi_config_writable: check_passed(&stdout, "pi_config_writable"),
         pi_sessions_writable: check_passed(&stdout, "pi_sessions_writable"),
+        pi_npm_global_writable: check_passed(&stdout, "pi_npm_global_writable"),
+        npm_global_bin_on_path: check_passed(&stdout, "npm_global_bin_on_path"),
+        pi_command_path: line_value(&stdout, "VR_PI_COMMAND_PATH=")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
         internet_reachable: check_passed(&stdout, "internet"),
         git_identity: git_identity::git_identity_from_parts(
             line_value(&stdout, "VR_GIT_NAME=")
@@ -172,6 +198,9 @@ mod tests {
         let output = "\
 noise
 VR_CHECK pi_config_writable=pass
+VR_CHECK pi_npm_global_writable=pass
+VR_CHECK npm_global_bin_on_path=pass
+VR_PI_COMMAND_PATH=/home/agent/.npm-global/bin/pi
 VR_CHECK internet=fail
 VR_SSH_ADD_STDOUT=one
 VR_SSH_ADD_STDOUT=two
@@ -179,6 +208,12 @@ VR_SSH_ADD_CODE=1
 ";
 
         assert!(check_passed(output, "pi_config_writable"));
+        assert!(check_passed(output, "pi_npm_global_writable"));
+        assert!(check_passed(output, "npm_global_bin_on_path"));
+        assert_eq!(
+            line_value(output, "VR_PI_COMMAND_PATH="),
+            Some("/home/agent/.npm-global/bin/pi")
+        );
         assert!(!check_passed(output, "internet"));
         assert_eq!(line_value(output, "VR_SSH_ADD_CODE="), Some("1"));
         assert_eq!(prefixed_lines(output, "VR_SSH_ADD_STDOUT="), "one\ntwo");

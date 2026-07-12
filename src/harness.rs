@@ -36,6 +36,7 @@ pub const PI_CONFIG_DIR: &str = "config";
 pub const PI_EXTENSIONS_DIR: &str = "extensions";
 pub const PI_SKILLS_DIR: &str = "skills";
 pub const PI_SESSIONS_DIR: &str = "sessions";
+pub const PI_NPM_GLOBAL_DIR: &str = "npm-global";
 
 pub const PI: HarnessDescriptor = HarnessDescriptor {
     id: "pi",
@@ -61,6 +62,10 @@ pub const PI: HarnessDescriptor = HarnessDescriptor {
         HarnessStateDir {
             name: PI_SESSIONS_DIR,
             container_path: "/home/agent/.pi/sessions",
+        },
+        HarnessStateDir {
+            name: PI_NPM_GLOBAL_DIR,
+            container_path: "/home/agent/.npm-global",
         },
     ],
     auth_state_relative_path: "config/auth.json",
@@ -89,6 +94,10 @@ mod tests {
         assert_eq!(
             PI.required_state_dir_container_path(PI_CONFIG_DIR),
             "/home/agent/.pi/agent"
+        );
+        assert_eq!(
+            PI.required_state_dir_container_path(PI_NPM_GLOBAL_DIR),
+            "/home/agent/.npm-global"
         );
         assert_eq!(PI.auth_state_relative_path, "config/auth.json");
     }
