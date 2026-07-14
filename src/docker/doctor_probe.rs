@@ -21,6 +21,8 @@ pub struct ContainerDoctorProbe {
     pub pi_command_path: Option<String>,
     pub python_available: bool,
     pub python_version: Option<String>,
+    pub go_available: bool,
+    pub go_version: Option<String>,
     pub internet_reachable: bool,
     pub git_identity: Option<GitIdentity>,
 }
@@ -75,6 +77,14 @@ fi
 python_version="$(python3 --version 2>/dev/null || true)"
 printf 'VR_PYTHON_VERSION=%s\n' "$python_version"
 
+if command -v go >/dev/null 2>/dev/null && command -v gofmt >/dev/null 2>/dev/null; then
+  echo 'VR_CHECK go=pass'
+else
+  echo 'VR_CHECK go=fail'
+fi
+go_version="$(go version 2>/dev/null || true)"
+printf 'VR_GO_VERSION=%s\n' "$go_version"
+
 if node -e "fetch('https://pi.dev').then(r => process.exit(r.status > 0 ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>/dev/null; then
   echo 'VR_CHECK internet=pass'
 else
@@ -110,6 +120,11 @@ printf 'VR_GIT_EMAIL=%s\n' "${{GIT_AUTHOR_EMAIL:-}}"
             .map(str::to_owned),
         python_available: check_passed(&stdout, "python"),
         python_version: line_value(&stdout, "VR_PYTHON_VERSION=")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        go_available: check_passed(&stdout, "go"),
+        go_version: line_value(&stdout, "VR_GO_VERSION=")
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned),
@@ -226,6 +241,8 @@ VR_PATH=/home/agent/.npm-global/bin:/usr/local/bin:/usr/bin
 VR_PI_COMMAND_PATH=/home/agent/.npm-global/bin/pi
 VR_CHECK python=pass
 VR_PYTHON_VERSION=Python 3.11.2
+VR_CHECK go=pass
+VR_GO_VERSION=go version go1.23.0 linux/amd64
 VR_CHECK internet=fail
 VR_SSH_ADD_STDOUT=one
 VR_SSH_ADD_STDOUT=two
@@ -246,6 +263,11 @@ VR_SSH_ADD_CODE=1
         assert_eq!(
             line_value(output, "VR_PYTHON_VERSION="),
             Some("Python 3.11.2")
+        );
+        assert!(check_passed(output, "go"));
+        assert_eq!(
+            line_value(output, "VR_GO_VERSION="),
+            Some("go version go1.23.0 linux/amd64")
         );
         assert!(!check_passed(output, "internet"));
         assert_eq!(line_value(output, "VR_SSH_ADD_CODE="), Some("1"));

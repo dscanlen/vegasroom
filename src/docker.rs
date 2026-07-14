@@ -77,6 +77,10 @@ pub fn environment_python_enabled(config: &Config) -> bool {
     environment::python_enabled(config)
 }
 
+pub fn environment_go_enabled(config: &Config) -> bool {
+    environment::go_enabled(config)
+}
+
 fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
     let compose_file = config.resolved_compose_file()?;
     let project_dir = compose_project_dir(&compose_file)?;

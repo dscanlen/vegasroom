@@ -230,6 +230,40 @@ pub(super) fn check_container_python(
     }
 }
 
+pub(super) fn check_container_go(
+    config: &Config,
+    probe: &Result<docker::ContainerDoctorProbe>,
+) -> Check {
+    if !docker::environment_go_enabled(config) {
+        return Check {
+            status: Status::Pass,
+            name: "Container Go toolchain",
+            detail: "disabled".to_owned(),
+        };
+    }
+
+    match probe {
+        Ok(probe) if probe.go_available => Check {
+            status: Status::Pass,
+            name: "Container Go toolchain",
+            detail: probe
+                .go_version
+                .clone()
+                .unwrap_or_else(|| "go and gofmt are available".to_owned()),
+        },
+        Ok(_) => Check {
+            status: Status::Fail,
+            name: "Container Go toolchain",
+            detail: "go or gofmt was not available inside the room".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container Go toolchain",
+            detail: format!("could not check Go inside the room: {err:#}"),
+        },
+    }
+}
+
 pub(super) fn check_container_pi_package(
     probe: &Result<docker::ContainerDoctorProbe>,
 ) -> Vec<Check> {

@@ -55,8 +55,15 @@ pub(super) fn python_enabled(config: &Config) -> bool {
     config.environment.python.enabled
 }
 
+pub(super) fn go_enabled(config: &Config) -> bool {
+    config.environment.go.enabled
+}
+
 pub(super) fn has_customization(config: &Config) -> bool {
-    !packages(config).is_empty() || rust_enabled(config) || python_enabled(config)
+    !packages(config).is_empty()
+        || rust_enabled(config)
+        || python_enabled(config)
+        || go_enabled(config)
 }
 
 pub(super) fn runtime_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> String {
@@ -206,6 +213,9 @@ fn run_build_image(
     if python_enabled(config) {
         println!("Installing Python toolchain");
     }
+    if go_enabled(config) {
+        println!("Installing Go toolchain");
+    }
     if rust_enabled(config) {
         let components = rust_components(config);
         println!("Installing Rust toolchain: {}", rust_toolchain(config));
@@ -284,6 +294,17 @@ ENV PIP_CACHE_DIR={container_home}/.cache/pip
         ));
     }
 
+    if go_enabled(config) {
+        contents.push_str(&format!(
+            r#"
+ENV GOCACHE={container_home}/.cache/go-build \
+    GOMODCACHE={container_home}/.cache/go-mod \
+    PATH=/usr/local/go/bin:${{PATH}}
+"#,
+            container_home = descriptor.container_home,
+        ));
+    }
+
     if rust_enabled(config) {
         contents.push_str(&format!(
             r#"
@@ -330,6 +351,9 @@ fn build_apt_packages(config: &Config) -> Vec<String> {
             .into_iter()
             .map(str::to_owned),
         );
+    }
+    if go_enabled(config) {
+        packages.extend(["golang"].into_iter().map(str::to_owned));
     }
     packages
         .into_iter()

@@ -10,8 +10,8 @@ use crate::{config::Config, docker, harness, paths::StatePaths, ssh};
 
 use self::{
     container::{
-        check_container_git_identity, check_container_login_readiness, check_container_pi_package,
-        check_container_python, check_container_ssh,
+        check_container_git_identity, check_container_go, check_container_login_readiness,
+        check_container_pi_package, check_container_python, check_container_ssh,
     },
     host::{
         check_config_git_section, check_git_identity, check_host_ssh_agent, check_network_mode,
@@ -124,6 +124,7 @@ pub fn run() -> Result<i32> {
     checks.push(check_environment_apt_packages(&config));
     checks.push(check_environment_rust(&config));
     checks.push(check_environment_python(&config));
+    checks.push(check_environment_go(&config));
     checks.push(check_known_hosts(&state.known_hosts));
     checks.push(check_dir_writable("Pi config writable", &state.pi_config));
     checks.push(check_dir_writable(
@@ -213,6 +214,7 @@ pub fn run() -> Result<i32> {
         checks.push(check_container_git_identity(&container_probe));
         checks.extend(check_container_login_readiness(&container_probe));
         checks.push(check_container_python(&config, &container_probe));
+        checks.push(check_container_go(&config, &container_probe));
         checks.extend(check_container_pi_package(&container_probe));
     } else if !compose_ready {
         checks.push(Check {
@@ -305,6 +307,22 @@ fn check_environment_python(config: &Config) -> Check {
         Check {
             status: Status::Pass,
             name: "Environment Python toolchain",
+            detail: "disabled".to_owned(),
+        }
+    }
+}
+
+fn check_environment_go(config: &Config) -> Check {
+    if docker::environment_go_enabled(config) {
+        Check {
+            status: Status::Pass,
+            name: "Environment Go toolchain",
+            detail: "enabled; installs go and gofmt".to_owned(),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Environment Go toolchain",
             detail: "disabled".to_owned(),
         }
     }

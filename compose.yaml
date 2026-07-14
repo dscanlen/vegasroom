@@ -37,7 +37,9 @@ services:
       CARGO_HOME: /home/agent/.cargo
       RUSTUP_HOME: /usr/local/rustup
       PIP_CACHE_DIR: /home/agent/.cache/pip
-      PATH: /home/agent/.npm-global/bin:/home/agent/.cargo/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      GOCACHE: /home/agent/.cache/go-build
+      GOMODCACHE: /home/agent/.cache/go-mod
+      PATH: /home/agent/.npm-global/bin:/home/agent/.cargo/bin:/usr/local/cargo/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       # Force browser-login helpers to print a URL instead of trying to launch a browser in the container.
       BROWSER: echo
       # SSH_AUTH_SOCK is injected by vr with a generated Compose override when

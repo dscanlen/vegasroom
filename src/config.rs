@@ -44,6 +44,8 @@ environment:
       - clippy
   python:
     enabled: false
+  go:
+    enabled: false
 
 harness:
   pi:
@@ -148,6 +150,9 @@ pub struct EnvironmentConfig {
 
     #[serde(default)]
     pub python: PythonEnvironmentConfig,
+
+    #[serde(default)]
+    pub go: GoEnvironmentConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -170,6 +175,12 @@ pub struct RustEnvironmentConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PythonEnvironmentConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GoEnvironmentConfig {
     #[serde(default)]
     pub enabled: bool,
 }
@@ -451,6 +462,7 @@ mod tests {
             vec!["rustfmt".to_owned(), "clippy".to_owned()]
         );
         assert!(!config.environment.python.enabled);
+        assert!(!config.environment.go.enabled);
         assert_eq!(config.harness.pi.image, "vegasroom/pi:local");
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.network, "host");
@@ -497,6 +509,7 @@ harness:
         assert!(config.environment.apt.packages.is_empty());
         assert!(!config.environment.rust.enabled);
         assert!(!config.environment.python.enabled);
+        assert!(!config.environment.go.enabled);
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.build_network, "host");
         assert!(!config.harness.pi.read_only_workspace);
@@ -565,6 +578,19 @@ harness:
         .unwrap();
 
         assert!(config.environment.python.enabled);
+    }
+
+    #[test]
+    fn environment_go_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"environment:
+  go:
+    enabled: true
+"#,
+        )
+        .unwrap();
+
+        assert!(config.environment.go.enabled);
     }
 
     #[test]

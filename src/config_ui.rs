@@ -208,6 +208,9 @@ fn styled_row_title(
             RowAction::TogglePythonToolchain if config.environment.python.enabled => {
                 return format!("{GREEN}{BOLD}{}{RESET}", row.title);
             }
+            RowAction::ToggleGoToolchain if config.environment.go.enabled => {
+                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+            }
             _ => {}
         }
     }
@@ -541,6 +544,7 @@ impl ConfigUiState {
                         RowAction::ToggleGitInheritHost => self.toggle_git_inherit_host(),
                         RowAction::ToggleRustToolchain => self.toggle_rust_toolchain(),
                         RowAction::TogglePythonToolchain => self.toggle_python_toolchain(),
+                        RowAction::ToggleGoToolchain => self.toggle_go_toolchain(),
                         RowAction::ValidateConfig => {
                             if let Err(error) = self.validate_config() {
                                 self.last_message =
@@ -678,6 +682,15 @@ impl ConfigUiState {
         self.last_message = Some(format!(
             "Set Python toolchain to {}. Press s to save; run `vr init --build` when ready.",
             enabled_name(self.config.environment.python.enabled)
+        ));
+    }
+
+    fn toggle_go_toolchain(&mut self) {
+        self.config.environment.go.enabled = !self.config.environment.go.enabled;
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set Go toolchain to {}. Press s to save; run `vr init --build` when ready.",
+            enabled_name(self.config.environment.go.enabled)
         ));
     }
 
@@ -870,9 +883,15 @@ and no host Git inheritance."
                     ],
                     RowAction::TogglePythonToolchain,
                 ),
-                SectionRow::new(
-                    "Go — not implemented",
-                    vec!["Coming in a future slice.".to_owned()],
+                SectionRow::action(
+                    toolchain_row_title("Go", config.environment.go.enabled),
+                    vec![
+                        format!("Current: {}", enabled_name(config.environment.go.enabled)),
+                        "Press Enter to toggle. Press s to save.".to_owned(),
+                        "Run `vr init --build` when ready to rebuild the environment image."
+                            .to_owned(),
+                    ],
+                    RowAction::ToggleGoToolchain,
                 ),
                 SectionRow::new(
                     "TypeScript — not implemented",
@@ -990,6 +1009,7 @@ enum RowAction {
     ToggleGitInheritHost,
     ToggleRustToolchain,
     TogglePythonToolchain,
+    ToggleGoToolchain,
     ValidateConfig,
     PreviewResetDefaults,
     PreviewPurgePackageCaches,
@@ -1205,6 +1225,12 @@ fn diff_configs(before: &Config, after: &Config) -> Vec<ConfigChange> {
         before.environment.python.enabled,
         after.environment.python.enabled,
     );
+    push_change(
+        &mut changes,
+        "environment.go.enabled",
+        before.environment.go.enabled,
+        after.environment.go.enabled,
+    );
     changes
 }
 
@@ -1232,6 +1258,8 @@ fn package_cache_paths(state: &StatePaths) -> Vec<PathBuf> {
     vec![
         state.cache.join("npm"),
         state.cache.join("pip"),
+        state.cache.join("go-build"),
+        state.cache.join("go-mod"),
         state.cargo_home.join("registry"),
         state.cargo_home.join("git"),
     ]
