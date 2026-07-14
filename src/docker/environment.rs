@@ -59,11 +59,30 @@ pub(super) fn go_enabled(config: &Config) -> bool {
     config.environment.go.enabled
 }
 
+pub(super) fn typescript_enabled(config: &Config) -> bool {
+    config.environment.typescript.enabled
+}
+
+pub(super) fn typescript_packages(config: &Config) -> Vec<String> {
+    config
+        .environment
+        .typescript
+        .packages
+        .iter()
+        .map(|package| package.trim())
+        .filter(|package| !package.is_empty())
+        .map(str::to_owned)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 pub(super) fn has_customization(config: &Config) -> bool {
     !packages(config).is_empty()
         || rust_enabled(config)
         || python_enabled(config)
         || go_enabled(config)
+        || typescript_enabled(config)
 }
 
 pub(super) fn runtime_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> String {
@@ -143,7 +162,8 @@ pub(super) fn image_exists(
 
 fn validate_environment(config: &Config) -> Result<()> {
     validate_packages(config)?;
-    validate_rust(config)
+    validate_rust(config)?;
+    validate_typescript(config)
 }
 
 pub(super) fn validate_packages(config: &Config) -> Result<()> {
@@ -173,6 +193,27 @@ fn validate_rust(config: &Config) -> Result<()> {
         if !is_safe_rust_component(&component) {
             bail!(
                 "invalid Rust component in environment.rust.components: {component}\nComponents may contain only ASCII letters, digits, '-', and '_'"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_typescript(config: &Config) -> Result<()> {
+    if !typescript_enabled(config) {
+        return Ok(());
+    }
+
+    let packages = typescript_packages(config);
+    if packages.is_empty() {
+        bail!("environment.typescript.enabled is true but no npm packages are configured");
+    }
+
+    for package in packages {
+        if !is_safe_npm_package_name(&package) {
+            bail!(
+                "invalid npm package in environment.typescript.packages: {package}\nPackage names may contain only ASCII letters, digits, '.', '+', '-', '_', '/', and one leading '@' for scoped packages"
             );
         }
     }
@@ -215,6 +256,12 @@ fn run_build_image(
     }
     if go_enabled(config) {
         println!("Installing Go toolchain");
+    }
+    if typescript_enabled(config) {
+        println!(
+            "Installing TypeScript npm packages: {}",
+            typescript_packages(config).join(", ")
+        );
     }
     if rust_enabled(config) {
         let components = rust_components(config);
@@ -302,6 +349,15 @@ ENV GOCACHE={container_home}/.cache/go-build \
     PATH=/usr/local/go/bin:${{PATH}}
 "#,
             container_home = descriptor.container_home,
+        ));
+    }
+
+    if typescript_enabled(config) {
+        let npm_packages = typescript_packages(config).join(" ");
+        contents.push_str(&format!(
+            r#"
+RUN NPM_CONFIG_PREFIX=/usr/local npm install -g --ignore-scripts {npm_packages}
+"#,
         ));
     }
 
@@ -405,6 +461,23 @@ fn is_safe_rust_component(component: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
+fn is_safe_npm_package_name(package: &str) -> bool {
+    if package.is_empty() || package.contains("//") {
+        return false;
+    }
+
+    let at_count = package.bytes().filter(|byte| *byte == b'@').count();
+    if at_count > 1 || at_count == 1 && !package.starts_with('@') {
+        return false;
+    }
+
+    package.bytes().all(|byte| {
+        byte.is_ascii_alphanumeric()
+            || matches!(byte, b'.' | b'+' | b'-' | b'_' | b'/')
+            || byte == b'@'
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,5 +507,15 @@ mod tests {
         assert!(is_safe_rust_component("rustfmt"));
         assert!(is_safe_rust_component("clippy"));
         assert!(!is_safe_rust_component("bad;component"));
+    }
+
+    #[test]
+    fn npm_package_names_are_validated() {
+        assert!(is_safe_npm_package_name("typescript"));
+        assert!(is_safe_npm_package_name("ts-node"));
+        assert!(is_safe_npm_package_name("@scope/package"));
+        assert!(!is_safe_npm_package_name("bad package"));
+        assert!(!is_safe_npm_package_name("bad;package"));
+        assert!(!is_safe_npm_package_name("scope/@bad"));
     }
 }

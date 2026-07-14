@@ -23,6 +23,8 @@ pub struct ContainerDoctorProbe {
     pub python_version: Option<String>,
     pub go_available: bool,
     pub go_version: Option<String>,
+    pub typescript_available: bool,
+    pub tsc_version: Option<String>,
     pub internet_reachable: bool,
     pub git_identity: Option<GitIdentity>,
 }
@@ -85,6 +87,14 @@ fi
 go_version="$(go version 2>/dev/null || true)"
 printf 'VR_GO_VERSION=%s\n' "$go_version"
 
+if command -v tsc >/dev/null 2>/dev/null; then
+  echo 'VR_CHECK typescript=pass'
+else
+  echo 'VR_CHECK typescript=fail'
+fi
+tsc_version="$(tsc --version 2>/dev/null || true)"
+printf 'VR_TSC_VERSION=%s\n' "$tsc_version"
+
 if node -e "fetch('https://pi.dev').then(r => process.exit(r.status > 0 ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>/dev/null; then
   echo 'VR_CHECK internet=pass'
 else
@@ -125,6 +135,11 @@ printf 'VR_GIT_EMAIL=%s\n' "${{GIT_AUTHOR_EMAIL:-}}"
             .map(str::to_owned),
         go_available: check_passed(&stdout, "go"),
         go_version: line_value(&stdout, "VR_GO_VERSION=")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        typescript_available: check_passed(&stdout, "typescript"),
+        tsc_version: line_value(&stdout, "VR_TSC_VERSION=")
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned),
@@ -243,6 +258,8 @@ VR_CHECK python=pass
 VR_PYTHON_VERSION=Python 3.11.2
 VR_CHECK go=pass
 VR_GO_VERSION=go version go1.23.0 linux/amd64
+VR_CHECK typescript=pass
+VR_TSC_VERSION=Version 5.9.3
 VR_CHECK internet=fail
 VR_SSH_ADD_STDOUT=one
 VR_SSH_ADD_STDOUT=two
@@ -269,6 +286,8 @@ VR_SSH_ADD_CODE=1
             line_value(output, "VR_GO_VERSION="),
             Some("go version go1.23.0 linux/amd64")
         );
+        assert!(check_passed(output, "typescript"));
+        assert_eq!(line_value(output, "VR_TSC_VERSION="), Some("Version 5.9.3"));
         assert!(!check_passed(output, "internet"));
         assert_eq!(line_value(output, "VR_SSH_ADD_CODE="), Some("1"));
         assert_eq!(prefixed_lines(output, "VR_SSH_ADD_STDOUT="), "one\ntwo");

@@ -46,6 +46,11 @@ environment:
     enabled: false
   go:
     enabled: false
+  typescript:
+    enabled: false
+    packages:
+      - typescript
+      - ts-node
 
 harness:
   pi:
@@ -153,6 +158,9 @@ pub struct EnvironmentConfig {
 
     #[serde(default)]
     pub go: GoEnvironmentConfig,
+
+    #[serde(default)]
+    pub typescript: TypeScriptEnvironmentConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -183,6 +191,15 @@ pub struct PythonEnvironmentConfig {
 pub struct GoEnvironmentConfig {
     #[serde(default)]
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeScriptEnvironmentConfig {
+    #[serde(default)]
+    pub enabled: bool,
+
+    #[serde(default = "default_typescript_packages")]
+    pub packages: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -433,6 +450,19 @@ impl Default for RustEnvironmentConfig {
     }
 }
 
+fn default_typescript_packages() -> Vec<String> {
+    vec!["typescript".to_owned(), "ts-node".to_owned()]
+}
+
+impl Default for TypeScriptEnvironmentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            packages: default_typescript_packages(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,6 +493,11 @@ mod tests {
         );
         assert!(!config.environment.python.enabled);
         assert!(!config.environment.go.enabled);
+        assert!(!config.environment.typescript.enabled);
+        assert_eq!(
+            config.environment.typescript.packages,
+            vec!["typescript".to_owned(), "ts-node".to_owned()]
+        );
         assert_eq!(config.harness.pi.image, "vegasroom/pi:local");
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.network, "host");
@@ -510,6 +545,7 @@ harness:
         assert!(!config.environment.rust.enabled);
         assert!(!config.environment.python.enabled);
         assert!(!config.environment.go.enabled);
+        assert!(!config.environment.typescript.enabled);
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.build_network, "host");
         assert!(!config.harness.pi.read_only_workspace);
@@ -591,6 +627,25 @@ harness:
         .unwrap();
 
         assert!(config.environment.go.enabled);
+    }
+
+    #[test]
+    fn environment_typescript_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"environment:
+  typescript:
+    enabled: true
+    packages:
+      - typescript
+"#,
+        )
+        .unwrap();
+
+        assert!(config.environment.typescript.enabled);
+        assert_eq!(
+            config.environment.typescript.packages,
+            vec!["typescript".to_owned()]
+        );
     }
 
     #[test]

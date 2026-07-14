@@ -12,6 +12,7 @@ use self::{
     container::{
         check_container_git_identity, check_container_go, check_container_login_readiness,
         check_container_pi_package, check_container_python, check_container_ssh,
+        check_container_typescript,
     },
     host::{
         check_config_git_section, check_git_identity, check_host_ssh_agent, check_network_mode,
@@ -125,6 +126,7 @@ pub fn run() -> Result<i32> {
     checks.push(check_environment_rust(&config));
     checks.push(check_environment_python(&config));
     checks.push(check_environment_go(&config));
+    checks.push(check_environment_typescript(&config));
     checks.push(check_known_hosts(&state.known_hosts));
     checks.push(check_dir_writable("Pi config writable", &state.pi_config));
     checks.push(check_dir_writable(
@@ -215,6 +217,7 @@ pub fn run() -> Result<i32> {
         checks.extend(check_container_login_readiness(&container_probe));
         checks.push(check_container_python(&config, &container_probe));
         checks.push(check_container_go(&config, &container_probe));
+        checks.push(check_container_typescript(&config, &container_probe));
         checks.extend(check_container_pi_package(&container_probe));
     } else if !compose_ready {
         checks.push(Check {
@@ -323,6 +326,25 @@ fn check_environment_go(config: &Config) -> Check {
         Check {
             status: Status::Pass,
             name: "Environment Go toolchain",
+            detail: "disabled".to_owned(),
+        }
+    }
+}
+
+fn check_environment_typescript(config: &Config) -> Check {
+    if docker::environment_typescript_enabled(config) {
+        Check {
+            status: Status::Pass,
+            name: "Environment TypeScript toolchain",
+            detail: format!(
+                "enabled; npm packages: {}",
+                docker::environment_typescript_packages(config).join(", ")
+            ),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Environment TypeScript toolchain",
             detail: "disabled".to_owned(),
         }
     }

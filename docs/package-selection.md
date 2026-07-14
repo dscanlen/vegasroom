@@ -2,7 +2,7 @@
 
 Vegasroom should eventually let users describe extra tools and libraries they want available inside a room without tying that declaration to a specific harness provider.
 
-This document captures the current implementation plus future design direction. The active slices are `environment.apt.packages`, `environment.rust`, `environment.python`, and `environment.go`.
+This document captures the current implementation plus future design direction. The active slices are `environment.apt.packages`, `environment.rust`, `environment.python`, `environment.go`, and `environment.typescript`.
 
 ## Goals
 
@@ -49,7 +49,7 @@ and creates the expected room/state directories for workspace, Pi state, SSH sta
 
 ## Config shape
 
-Use a harness-independent top-level section, not `harness.pi.packages`. The active slices are `environment.apt.packages`, `environment.rust`, `environment.python`, and `environment.go`:
+Use a harness-independent top-level section, not `harness.pi.packages`. The active slices are `environment.apt.packages`, `environment.rust`, `environment.python`, `environment.go`, and `environment.typescript`:
 
 ```yaml
 environment:
@@ -63,10 +63,11 @@ environment:
     enabled: true
   go:
     enabled: true
-  npm:
+  typescript:
+    enabled: true
     packages:
       - typescript
-      - eslint
+      - ts-node
   rust:
     enabled: true
     toolchain: stable
@@ -75,7 +76,7 @@ environment:
       - clippy
 ```
 
-npm language package manager entries are design direction only for now. Python package lists are intentionally not active yet; use project-local virtual environments for project dependencies.
+Python package lists are intentionally not active yet; use project-local virtual environments for project dependencies. General npm package management beyond the TypeScript toolchain package list remains deferred.
 
 Open questions for later slices:
 
@@ -140,7 +141,7 @@ Cons:
 
 ## Active path
 
-Vegasroom starts with Option A for OS packages, Rust/Cargo, basic Python, and Go support:
+Vegasroom starts with Option A for OS packages, Rust/Cargo, basic Python, Go, and TypeScript support:
 
 ```yaml
 environment:
@@ -161,8 +162,8 @@ Implementation:
 7. Persist Cargo cache/install state under `~/.vegasroom/environment/cargo`.
 8. Install Python, pip, and venv when `environment.python.enabled` is true.
 9. Install Go and gofmt when `environment.go.enabled` is true.
-10. Show configured environment packages/toolchains and runtime image state in `vr doctor`.
-11. Add TypeScript later.
+10. Install configured TypeScript npm packages when `environment.typescript.enabled` is true.
+11. Show configured environment packages/toolchains and runtime image state in `vr doctor`.
 
 ## Validation requirements
 

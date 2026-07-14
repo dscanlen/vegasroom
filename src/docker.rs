@@ -81,6 +81,14 @@ pub fn environment_go_enabled(config: &Config) -> bool {
     environment::go_enabled(config)
 }
 
+pub fn environment_typescript_enabled(config: &Config) -> bool {
+    environment::typescript_enabled(config)
+}
+
+pub fn environment_typescript_packages(config: &Config) -> Vec<String> {
+    environment::typescript_packages(config)
+}
+
 fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
     let compose_file = config.resolved_compose_file()?;
     let project_dir = compose_project_dir(&compose_file)?;

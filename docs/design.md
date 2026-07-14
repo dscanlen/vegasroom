@@ -61,7 +61,7 @@ MVP-preserved runtime decisions:
 - container root filesystem writable by default, with opt-in `harness.pi.read_only_rootfs`
 - Pi state mounted read-write
 - Pi npm-global prefix mounted read-write at `/home/agent/.npm-global`, with `/home/agent/.npm-global/bin` before `/usr/local/bin` on `PATH`, so in-room Pi npm updates persist across ephemeral containers while the pinned image-baked install remains a fallback
-- optional environment config, starting with `environment.apt.packages`, `environment.rust`, `environment.python`, and `environment.go`, generates a derived image such as `vegasroom/pi:local-env`, which is rebuilt when the requested package/toolchain set changes
+- optional environment config, starting with `environment.apt.packages`, `environment.rust`, `environment.python`, `environment.go`, and `environment.typescript`, generates a derived image such as `vegasroom/pi:local-env`, which is rebuilt when the requested package/toolchain set changes
 - Cargo cache/install state persists through `~/.vegasroom/environment/cargo` mounted at `/home/agent/.cargo`
 - Vegas-managed SSH directory mounted once at `/home/agent/.ssh`, not host `~/.ssh`
 - `/root/.ssh` provided as an image-level symlink to `/home/agent/.ssh` for root-run SSH/Git compatibility without a second bind mount

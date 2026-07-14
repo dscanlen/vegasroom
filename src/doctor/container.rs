@@ -264,6 +264,40 @@ pub(super) fn check_container_go(
     }
 }
 
+pub(super) fn check_container_typescript(
+    config: &Config,
+    probe: &Result<docker::ContainerDoctorProbe>,
+) -> Check {
+    if !docker::environment_typescript_enabled(config) {
+        return Check {
+            status: Status::Pass,
+            name: "Container TypeScript toolchain",
+            detail: "disabled".to_owned(),
+        };
+    }
+
+    match probe {
+        Ok(probe) if probe.typescript_available => Check {
+            status: Status::Pass,
+            name: "Container TypeScript toolchain",
+            detail: probe
+                .tsc_version
+                .clone()
+                .unwrap_or_else(|| "tsc is available".to_owned()),
+        },
+        Ok(_) => Check {
+            status: Status::Fail,
+            name: "Container TypeScript toolchain",
+            detail: "tsc was not available inside the room".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container TypeScript toolchain",
+            detail: format!("could not check TypeScript inside the room: {err:#}"),
+        },
+    }
+}
+
 pub(super) fn check_container_pi_package(
     probe: &Result<docker::ContainerDoctorProbe>,
 ) -> Vec<Check> {

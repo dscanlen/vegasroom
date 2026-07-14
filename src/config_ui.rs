@@ -211,6 +211,9 @@ fn styled_row_title(
             RowAction::ToggleGoToolchain if config.environment.go.enabled => {
                 return format!("{GREEN}{BOLD}{}{RESET}", row.title);
             }
+            RowAction::ToggleTypeScriptToolchain if config.environment.typescript.enabled => {
+                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+            }
             _ => {}
         }
     }
@@ -545,6 +548,7 @@ impl ConfigUiState {
                         RowAction::ToggleRustToolchain => self.toggle_rust_toolchain(),
                         RowAction::TogglePythonToolchain => self.toggle_python_toolchain(),
                         RowAction::ToggleGoToolchain => self.toggle_go_toolchain(),
+                        RowAction::ToggleTypeScriptToolchain => self.toggle_typescript_toolchain(),
                         RowAction::ValidateConfig => {
                             if let Err(error) = self.validate_config() {
                                 self.last_message =
@@ -691,6 +695,15 @@ impl ConfigUiState {
         self.last_message = Some(format!(
             "Set Go toolchain to {}. Press s to save; run `vr init --build` when ready.",
             enabled_name(self.config.environment.go.enabled)
+        ));
+    }
+
+    fn toggle_typescript_toolchain(&mut self) {
+        self.config.environment.typescript.enabled = !self.config.environment.typescript.enabled;
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set TypeScript toolchain to {}. Press s to save; run `vr init --build` when ready.",
+            enabled_name(self.config.environment.typescript.enabled)
         ));
     }
 
@@ -893,9 +906,19 @@ and no host Git inheritance."
                     ],
                     RowAction::ToggleGoToolchain,
                 ),
-                SectionRow::new(
-                    "TypeScript — not implemented",
-                    vec!["Coming in a future slice.".to_owned()],
+                SectionRow::action(
+                    toolchain_row_title("TypeScript", config.environment.typescript.enabled),
+                    vec![
+                        format!(
+                            "Current: {}; packages: {}",
+                            enabled_name(config.environment.typescript.enabled),
+                            config.environment.typescript.packages.join(", ")
+                        ),
+                        "Press Enter to toggle. Press s to save.".to_owned(),
+                        "Run `vr init --build` when ready to rebuild the environment image."
+                            .to_owned(),
+                    ],
+                    RowAction::ToggleTypeScriptToolchain,
                 ),
                 SectionRow::action(
                     "Purge package download caches",
@@ -1010,6 +1033,7 @@ enum RowAction {
     ToggleRustToolchain,
     TogglePythonToolchain,
     ToggleGoToolchain,
+    ToggleTypeScriptToolchain,
     ValidateConfig,
     PreviewResetDefaults,
     PreviewPurgePackageCaches,
@@ -1230,6 +1254,18 @@ fn diff_configs(before: &Config, after: &Config) -> Vec<ConfigChange> {
         "environment.go.enabled",
         before.environment.go.enabled,
         after.environment.go.enabled,
+    );
+    push_change(
+        &mut changes,
+        "environment.typescript.enabled",
+        before.environment.typescript.enabled,
+        after.environment.typescript.enabled,
+    );
+    push_change(
+        &mut changes,
+        "environment.typescript.packages",
+        before.environment.typescript.packages.join(","),
+        after.environment.typescript.packages.join(","),
     );
     changes
 }

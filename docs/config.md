@@ -46,6 +46,11 @@ environment:
     enabled: false
   go:
     enabled: false
+  typescript:
+    enabled: false
+    packages:
+      - typescript
+      - ts-node
 
 harness:
   pi:
@@ -83,6 +88,8 @@ Currently active:
 - `environment.rust.components`
 - `environment.python.enabled`
 - `environment.go.enabled`
+- `environment.typescript.enabled`
+- `environment.typescript.packages`
 
 Legacy/future-facing fields from earlier configs are ignored if present:
 
@@ -219,7 +226,20 @@ environment:
 
 Go installs Debian's `golang` package into the derived image. Go build and module download caches use `~/.vegasroom/cache/go-build` and `~/.vegasroom/cache/go-mod` through the existing `/home/agent/.cache` mount.
 
-When no environment packages or toolchains are enabled, Vegasroom uses `harness.pi.image` directly. When environment customizations are present, Vegasroom builds a derived image tag by appending `-env` to the configured image tag, for example `vegasroom/pi:local-env`. The derived image is rebuilt when the generated environment Dockerfile changes, so adding one package or enabling Rust/Python/Go later is enough for the next launch/build to pick it up.
+Enable TypeScript support with:
+
+```yaml
+environment:
+  typescript:
+    enabled: true
+    packages:
+      - typescript
+      - ts-node
+```
+
+TypeScript installs the configured npm packages globally into the derived image under `/usr/local`. User in-room npm-global installs still use the persisted `/home/agent/.npm-global` prefix.
+
+When no environment packages or toolchains are enabled, Vegasroom uses `harness.pi.image` directly. When environment customizations are present, Vegasroom builds a derived image tag by appending `-env` to the configured image tag, for example `vegasroom/pi:local-env`. The derived image is rebuilt when the generated environment Dockerfile changes, so adding one package or enabling Rust/Python/Go/TypeScript later is enough for the next launch/build to pick it up.
 
 Package/toolchain names are validated conservatively before generating the Dockerfile.
 

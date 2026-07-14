@@ -228,7 +228,18 @@ environment:
     enabled: true
 ```
 
-When packages or toolchains are configured, Vegasroom builds a derived runtime image such as `vegasroom/pi:local-env` from the base Pi image. If you add one package or enable a toolchain later, the next `vr pi`, `vr shell`, or `vr init --build` regenerates and rebuilds that derived image so the room launches with the updated environment. Cargo cache/install state persists under `~/.vegasroom/environment/cargo`; pip, Go build, and Go module download caches use the persisted room cache at `~/.vegasroom/cache/...`.
+Enable TypeScript when agents need `tsc` or related npm tools:
+
+```yaml
+environment:
+  typescript:
+    enabled: true
+    packages:
+      - typescript
+      - ts-node
+```
+
+When packages or toolchains are configured, Vegasroom builds a derived runtime image such as `vegasroom/pi:local-env` from the base Pi image. If you add one package or enable a toolchain later, the next `vr pi`, `vr shell`, or `vr init --build` regenerates and rebuilds that derived image so the room launches with the updated environment. Cargo cache/install state persists under `~/.vegasroom/environment/cargo`; pip, Go build, Go module, and npm download caches use the persisted room cache at `~/.vegasroom/cache/...`.
 
 Pi-specific arguments can be passed through after the workspace, after an explicit separator, or at top level when the first token is a flag other than Vegasroom help/version flags:
 
