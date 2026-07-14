@@ -1,13 +1,102 @@
 # TODO
 
-- Ensure all TUI menus function consistently across Vegasroom, including alignment, bottom-panel rendering, visual styling, navigation keys, save/quit behavior, dirty-state prompts, and help/hotkey wording.
-- Split `src/config_ui.rs` into smaller modules without changing behavior. Preserve the current TUI flow, keybindings, rendering, dirty/save/quit semantics, confirmation prompts, and tests. Suggested layout: `src/config_ui/mod.rs` as the orchestration/public entrypoint, `state.rs` for `ConfigUiState`/screens/actions, `render.rs` for drawing/truncation/bottom panel, `sections.rs` for section/row definitions, `presets.rs` for security presets/diffs, `persistence.rs` for save/backup/reset helpers, and `cache.rs` for environment cache purge helpers. Move colocated tests with the code they cover where practical. Do this in small mechanical slices and run `./scripts/check.sh` after each slice.
-- Decide and implement release workflow details: tag strategy, release artifact targets, tag-only vs `workflow_dispatch`, changelog format, PR/push CI policy, and whether release automation should update pinned harness package versions using `scripts/update-pi-harness-version.sh latest`.
-- Decide whether pinned harness package updates should be checked on a schedule, during release preparation, or only manually.
-- Make config/runtime writes crash-safe by writing to a temporary file, syncing where appropriate, and atomically renaming over the destination.
-- Revisit harness-independent package/library selection version syntax and update policy for `environment.apt.packages`, `environment.rust`, `environment.python`, `environment.go`, and `environment.typescript`.
-- Improve `vr config` Environment polish: show package-cache size estimates before purge, improve confirmation wording if needed, and keep future toolchain activation controls in `vr config` as part of each toolchain feature.
-- Brainstorm dependency-cache/profile concepts before implementation: keep toolchains minimal by default, preserve isolation, avoid global project dependency leakage, and consider whether named environment cache profiles/purge controls are worth adding later. The motivating idea is to persist package/module download caches for codebases across ephemeral containers so agents do not repeatedly download Cargo crates, Go modules, npm packages, or Python wheels between sessions. Any future layer needs explicit security controls to preserve Vegasroom's isolation policy, likely opt-in scoping, clear cache ownership, inspection, and purge controls; more design work is required before implementation.
-- Revisit whether config TUI needs text-input editing for fields such as `paths.workspace`, `git.user_name`, and `git.user_email`, or whether manual YAML editing is sufficient.
-- Add `default_harness` / bare `vr` harness selection once multiple harnesses exist.
-- Decide whether a CLI `--color auto|always|never` override is needed in addition to persisted `ui.color` and `NO_COLOR`.
+## Branch and commit workflow
+
+- Create one branch per feature/fix/change before editing code. Use focused names such as `fix/digest-derived-image-tag` or `feature/private-state-permissions`.
+- Commit after each code change, grouped by file or tightly related file set, with a useful message.
+- Do not push a feature branch until the feature/fix is working as expected and checks pass.
+- Run `bash scripts/check.sh` before handoff/merge unless the change is documentation-only.
+
+## P0 - next fixes
+
+1. Fix derived image tag generation for digest-based base images.
+   - Current issue: digest inputs fall back to a malformed derived tag like `vegasroom/pi:local:env`.
+   - Add tests for base image values containing `@sha256:`.
+   - Decide/implement a valid fallback tag format.
+
+2. Clarify and implement the requested Vegasroom container/image naming convention.
+   - Requested shape: `vegasroom/{harness}:latest/{version}`.
+   - First confirm exact Docker object: image repository/tag, Compose project/container name, or both.
+   - Note: the literal requested string is not a valid Docker image reference or container name because `/` cannot appear after `:` in an image tag and `:`/`/` are not valid container-name separators. Choose a valid equivalent, such as separate `vegasroom/{harness}:latest` and `vegasroom/{harness}:{version}` image tags, or labels for version metadata.
+
+3. Harden permissions for sensitive Vegasroom state.
+   - Set `~/.vegasroom` and sensitive subdirectories to private Unix permissions where supported.
+   - Sensitive areas include Pi auth/config, sessions, npm-global persisted executables, SSH state, cache runtime overrides, and generated gitconfig/agent override files.
+   - Add `vr doctor` permission checks and remediation guidance.
+
+4. Add semantic config validation.
+   - Keep serde round-trip validation, but also validate meaningful config values before save/launch/doctor.
+   - Include environment apt/npm/Rust validation, Docker image/network sanity, SSH mode constraints, and workspace/security policy sanity.
+   - Consider warning on unknown YAML fields so typos in security-sensitive config are not silently ignored.
+
+5. Improve config TUI information display.
+   - Render `SectionRow` details/current values instead of hiding them in `_details`.
+   - Preserve stable bottom-panel layout; avoid jumpy passive preview panes.
+   - Add tests for rendered output containing current values such as Git identity, color mode, toolchain enabled state, and cache purge explanation.
+
+## P1 - security and consistency polish
+
+6. Make config/runtime writes crash-safe.
+   - Write to a temporary file in the same directory, flush/sync where appropriate, and atomically rename over the destination.
+   - Apply to `Config::save_to_path`, managed runtime writes, generated overrides, and config TUI backup/save flow.
+
+7. Ensure all TUI menus function consistently across Vegasroom.
+   - Align bottom-panel rendering, visual styling, navigation keys, save/quit behavior, dirty-state prompts, and help/hotkey wording.
+   - Reconcile config TUI and SSH key picker behavior, including Enter/Space handling, Esc/Backspace semantics, and status/notice wording.
+   - Respect `ui.color` and `NO_COLOR` consistently in TUI and line-mode output.
+
+8. Update `docs/config-tui.md` to match current behavior or adjust the TUI back to the documented design.
+   - Current code exposes top-level `Security`, `Environment`, `SSH`, and `Advanced`.
+   - Existing doc still says top-level sections are `Security`, `SSH`, and `Advanced`.
+   - Document whether Environment remains top-level.
+   - Document current save behavior or implement the planned changed-field summary before save.
+
+9. Resolve custom Compose-file behavior.
+   - `docker.compose_file` appears configurable, but launch/init currently repairs it back to the managed runtime file.
+   - Decide whether custom Compose files are supported.
+   - If unsupported, remove/deprecate the field or document it as managed/internal.
+
+10. Sanitize generated YAML values consistently.
+    - SSH agent override path escaping should replace CR/LF like Git identity YAML escaping does.
+    - Add tests for newline-containing hostile `SSH_AUTH_SOCK` values.
+
+## P2 - planned refactors and UX improvements
+
+11. Split `src/config_ui.rs` into smaller modules without changing behavior.
+    - Preserve the current TUI flow, keybindings, rendering, dirty/save/quit semantics, confirmation prompts, and tests.
+    - Suggested layout: `src/config_ui/mod.rs` as the orchestration/public entrypoint, `state.rs` for `ConfigUiState`/screens/actions, `render.rs` for drawing/truncation/bottom panel, `sections.rs` for section/row definitions, `presets.rs` for security presets/diffs, `persistence.rs` for save/backup/reset helpers, and `cache.rs` for environment cache purge helpers.
+    - Move colocated tests with the code they cover where practical.
+    - Do this in small mechanical slices and run `bash scripts/check.sh` after each slice.
+
+12. Revisit config TUI text-input editing.
+    - Decide whether fields such as `paths.workspace`, `git.user_name`, and `git.user_email` need in-TUI text input or whether manual YAML editing is sufficient.
+
+13. Improve `vr config` Environment polish.
+    - Show package-cache size estimates before purge.
+    - Improve confirmation wording if needed.
+    - Keep future toolchain activation controls in `vr config` as part of each toolchain feature.
+
+14. Revisit harness-independent package/library selection version syntax and update policy.
+    - Cover `environment.apt.packages`, `environment.rust`, `environment.python`, `environment.go`, and `environment.typescript`.
+
+15. Brainstorm dependency-cache/profile concepts before implementation.
+    - Keep toolchains minimal by default.
+    - Preserve isolation and avoid global project dependency leakage.
+    - Consider whether named environment cache profiles/purge controls are worth adding later.
+    - Motivation: persist package/module download caches for codebases across ephemeral containers so agents do not repeatedly download Cargo crates, Go modules, npm packages, or Python wheels between sessions.
+    - Any future layer needs explicit security controls, likely opt-in scoping, clear cache ownership, inspection, and purge controls.
+
+## P3 - release/process/future features
+
+16. Decide and implement release workflow details.
+    - Tag strategy, release artifact targets, tag-only vs `workflow_dispatch`, changelog format, PR/push CI policy, and whether release automation should update pinned harness package versions using `scripts/update-pi-harness-version.sh latest`.
+
+17. Decide whether pinned harness package updates should be checked on a schedule, during release preparation, or only manually.
+
+18. Add `default_harness` / bare `vr` harness selection once multiple harnesses exist.
+
+19. Decide whether a CLI `--color auto|always|never` override is needed in addition to persisted `ui.color` and `NO_COLOR`.
+
+20. Revisit `vr ssh` command handling.
+    - The manual parser reserves `ssh`, but no public `vr ssh` command exists.
+    - Decide whether to add a command, route to `vr config`, or stop reserving it.
