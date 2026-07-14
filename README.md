@@ -123,6 +123,7 @@ Default layout:
   harness/pi/skills/
   harness/pi/sessions/
   harness/pi/npm-global/
+  environment/cargo/
   ssh/
     known_hosts
   cache/
@@ -185,6 +186,60 @@ For `vr pi my-git-repo`, Vegasroom may create `~/.vegasroom/workspace/my-git-rep
 Set `harness.pi.read_only_workspace: true` in `~/.vegasroom/config.yaml` to mount `/workspace` read-only. This applies to the default workspace and to explicit command-line workspace arguments such as `vr pi .`, `vr pi my-git-repo`, and `vr pi /path/to/project`.
 
 Set `harness.pi.read_only_rootfs: true` to make the container root filesystem read-only while keeping explicit Vegasroom mounts and tmpfs scratch paths writable.
+
+## Environment packages and toolchains
+
+Add Debian packages to `~/.vegasroom/config.yaml` with a simple harness-independent list:
+
+```yaml
+environment:
+  apt:
+    packages:
+      - build-essential
+      - pkg-config
+      - python3
+```
+
+Enable the Rust toolchain when agents need to run Cargo commands:
+
+```yaml
+environment:
+  rust:
+    enabled: true
+    toolchain: stable
+    components:
+      - rustfmt
+      - clippy
+```
+
+Enable Python when agents need Python, pip, or venv:
+
+```yaml
+environment:
+  python:
+    enabled: true
+```
+
+Enable Go when agents need `go` or `gofmt`:
+
+```yaml
+environment:
+  go:
+    enabled: true
+```
+
+Enable TypeScript when agents need `tsc` or related npm tools:
+
+```yaml
+environment:
+  typescript:
+    enabled: true
+    packages:
+      - typescript
+      - ts-node
+```
+
+When packages or toolchains are configured, `vr init --build` builds a derived runtime image such as `vegasroom/pi:local-env` from the base Pi image. If you add one package or enable/disable a toolchain later, `vr pi`, `vr shell`, and `vr doctor` warn when the derived image is stale; run `vr init --build` when you are ready to rebuild it. Cargo cache/install state persists under `~/.vegasroom/environment/cargo`; pip, Go build, Go module, and npm download caches use the persisted room cache at `~/.vegasroom/cache/...`.
 
 Pi-specific arguments can be passed through after the workspace, after an explicit separator, or at top level when the first token is a flag other than Vegasroom help/version flags:
 

@@ -10,8 +10,9 @@ use crate::{config::Config, docker, harness, paths::StatePaths, ssh};
 
 use self::{
     container::{
-        check_container_git_identity, check_container_login_readiness, check_container_pi_package,
-        check_container_ssh,
+        check_container_git_identity, check_container_go, check_container_login_readiness,
+        check_container_pi_package, check_container_python, check_container_ssh,
+        check_container_typescript,
     },
     host::{
         check_config_git_section, check_git_identity, check_host_ssh_agent, check_network_mode,
@@ -107,6 +108,8 @@ pub fn run() -> Result<i32> {
         ("Pi skills", &state.pi_skills),
         ("Pi sessions", &state.pi_sessions),
         ("Pi npm global", &state.pi_npm_global),
+        ("Environment", &state.environment_root),
+        ("Cargo home", &state.cargo_home),
         ("SSH directory", &state.ssh_dir),
         ("Cache", &state.cache),
     ] {
@@ -119,6 +122,12 @@ pub fn run() -> Result<i32> {
     checks.push(check_workspace_risky_mount_policy(&config));
     checks.push(check_workspace_mount_mode(&config));
     checks.push(check_read_only_rootfs_mode(&config));
+    checks.push(check_environment_apt_packages(&config));
+    checks.push(check_environment_rust(&config));
+    checks.push(check_environment_python(&config));
+    checks.push(check_environment_go(&config));
+    checks.push(check_environment_typescript(&config));
+    checks.push(check_environment_image_freshness(&config));
     checks.push(check_known_hosts(&state.known_hosts));
     checks.push(check_dir_writable("Pi config writable", &state.pi_config));
     checks.push(check_dir_writable(
@@ -129,6 +138,7 @@ pub fn run() -> Result<i32> {
         "Pi npm global writable",
         &state.pi_npm_global,
     ));
+    checks.push(check_dir_writable("Cargo home writable", &state.cargo_home));
     checks.push(check_pi_auth_state(&state.pi_auth_json));
 
     let compose_ready = match config.resolved_compose_file() {
@@ -170,7 +180,7 @@ pub fn run() -> Result<i32> {
             checks.push(Check {
                 status: Status::Pass,
                 name: "Pi image",
-                detail: format!("{} exists", config.harness.pi.image),
+                detail: format!("{} exists", docker::pi_runtime_image(&config)),
             });
             true
         }
@@ -180,7 +190,7 @@ pub fn run() -> Result<i32> {
                 name: "Pi image",
                 detail: format!(
                     "{} was not found. Run: vr init --build",
-                    config.harness.pi.image
+                    docker::pi_runtime_image(&config)
                 ),
             });
             false
@@ -206,6 +216,9 @@ pub fn run() -> Result<i32> {
         checks.extend(check_container_ssh(&config));
         checks.push(check_container_git_identity(&container_probe));
         checks.extend(check_container_login_readiness(&container_probe));
+        checks.push(check_container_python(&config, &container_probe));
+        checks.push(check_container_go(&config, &container_probe));
+        checks.push(check_container_typescript(&config, &container_probe));
         checks.extend(check_container_pi_package(&container_probe));
     } else if !compose_ready {
         checks.push(Check {
@@ -241,6 +254,120 @@ pub fn run() -> Result<i32> {
         Ok(1)
     } else {
         Ok(0)
+    }
+}
+
+fn check_environment_apt_packages(config: &Config) -> Check {
+    let packages = docker::environment_apt_packages(config);
+    if packages.is_empty() {
+        Check {
+            status: Status::Pass,
+            name: "Environment apt packages",
+            detail: "no extra apt packages configured".to_owned(),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Environment apt packages",
+            detail: format!("configured: {}", packages.join(", ")),
+        }
+    }
+}
+
+fn check_environment_rust(config: &Config) -> Check {
+    if !docker::environment_rust_enabled(config) {
+        return Check {
+            status: Status::Pass,
+            name: "Environment Rust toolchain",
+            detail: "disabled".to_owned(),
+        };
+    }
+
+    let components = docker::environment_rust_components(config);
+    let component_detail = if components.is_empty() {
+        "no extra components".to_owned()
+    } else {
+        format!("components: {}", components.join(", "))
+    };
+
+    Check {
+        status: Status::Pass,
+        name: "Environment Rust toolchain",
+        detail: format!(
+            "enabled; toolchain: {}; {component_detail}",
+            docker::environment_rust_toolchain(config)
+        ),
+    }
+}
+
+fn check_environment_python(config: &Config) -> Check {
+    if docker::environment_python_enabled(config) {
+        Check {
+            status: Status::Pass,
+            name: "Environment Python toolchain",
+            detail: "enabled; installs python, python3, pip, and venv".to_owned(),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Environment Python toolchain",
+            detail: "disabled".to_owned(),
+        }
+    }
+}
+
+fn check_environment_go(config: &Config) -> Check {
+    if docker::environment_go_enabled(config) {
+        Check {
+            status: Status::Pass,
+            name: "Environment Go toolchain",
+            detail: "enabled; installs go and gofmt".to_owned(),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Environment Go toolchain",
+            detail: "disabled".to_owned(),
+        }
+    }
+}
+
+fn check_environment_typescript(config: &Config) -> Check {
+    if docker::environment_typescript_enabled(config) {
+        Check {
+            status: Status::Pass,
+            name: "Environment TypeScript toolchain",
+            detail: format!(
+                "enabled; npm packages: {}",
+                docker::environment_typescript_packages(config).join(", ")
+            ),
+        }
+    } else {
+        Check {
+            status: Status::Pass,
+            name: "Environment TypeScript toolchain",
+            detail: "disabled".to_owned(),
+        }
+    }
+}
+
+fn check_environment_image_freshness(config: &Config) -> Check {
+    match docker::environment_image_stale(config) {
+        Ok(false) => Check {
+            status: Status::Pass,
+            name: "Environment image freshness",
+            detail: "environment image inputs match current config".to_owned(),
+        },
+        Ok(true) => Check {
+            status: Status::Warn,
+            name: "Environment image freshness",
+            detail: "environment image is out of date for current package/toolchain config. Run: vr init --build".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Environment image freshness",
+            detail: format!("could not check environment image freshness: {err:#}"),
+        },
     }
 }
 

@@ -33,6 +33,25 @@ git:
 ui:
   color: auto
 
+environment:
+  apt:
+    packages: []
+  rust:
+    enabled: false
+    toolchain: stable
+    components:
+      - rustfmt
+      - clippy
+  python:
+    enabled: false
+  go:
+    enabled: false
+  typescript:
+    enabled: false
+    packages:
+      - typescript
+      - ts-node
+
 harness:
   pi:
     image: vegasroom/pi:local
@@ -62,6 +81,9 @@ pub struct Config {
 
     #[serde(default)]
     pub ui: UiConfig,
+
+    #[serde(default)]
+    pub environment: EnvironmentConfig,
 
     #[serde(default)]
     pub harness: HarnessConfig,
@@ -121,6 +143,63 @@ pub struct GitConfig {
 pub struct UiConfig {
     #[serde(default)]
     pub color: ColorMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct EnvironmentConfig {
+    #[serde(default)]
+    pub apt: AptEnvironmentConfig,
+
+    #[serde(default)]
+    pub rust: RustEnvironmentConfig,
+
+    #[serde(default)]
+    pub python: PythonEnvironmentConfig,
+
+    #[serde(default)]
+    pub go: GoEnvironmentConfig,
+
+    #[serde(default)]
+    pub typescript: TypeScriptEnvironmentConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AptEnvironmentConfig {
+    #[serde(default)]
+    pub packages: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RustEnvironmentConfig {
+    #[serde(default)]
+    pub enabled: bool,
+
+    #[serde(default = "default_rust_toolchain")]
+    pub toolchain: String,
+
+    #[serde(default = "default_rust_components")]
+    pub components: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PythonEnvironmentConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GoEnvironmentConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TypeScriptEnvironmentConfig {
+    #[serde(default)]
+    pub enabled: bool,
+
+    #[serde(default = "default_typescript_packages")]
+    pub packages: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -353,6 +432,37 @@ fn default_network() -> String {
     "host".to_owned()
 }
 
+fn default_rust_toolchain() -> String {
+    "stable".to_owned()
+}
+
+fn default_rust_components() -> Vec<String> {
+    vec!["rustfmt".to_owned(), "clippy".to_owned()]
+}
+
+impl Default for RustEnvironmentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            toolchain: default_rust_toolchain(),
+            components: default_rust_components(),
+        }
+    }
+}
+
+fn default_typescript_packages() -> Vec<String> {
+    vec!["typescript".to_owned(), "ts-node".to_owned()]
+}
+
+impl Default for TypeScriptEnvironmentConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            packages: default_typescript_packages(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,6 +484,20 @@ mod tests {
         assert!(config.git.user_name.is_none());
         assert!(config.git.user_email.is_none());
         assert_eq!(config.ui.color, ColorMode::Auto);
+        assert!(config.environment.apt.packages.is_empty());
+        assert!(!config.environment.rust.enabled);
+        assert_eq!(config.environment.rust.toolchain, "stable");
+        assert_eq!(
+            config.environment.rust.components,
+            vec!["rustfmt".to_owned(), "clippy".to_owned()]
+        );
+        assert!(!config.environment.python.enabled);
+        assert!(!config.environment.go.enabled);
+        assert!(!config.environment.typescript.enabled);
+        assert_eq!(
+            config.environment.typescript.packages,
+            vec!["typescript".to_owned(), "ts-node".to_owned()]
+        );
         assert_eq!(config.harness.pi.image, "vegasroom/pi:local");
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.network, "host");
@@ -404,7 +528,7 @@ harness:
         let serialized = serde_yaml::to_string(&config).unwrap();
         assert!(!serialized.contains("default_harness"));
         assert!(!serialized.contains("root:"));
-        assert!(!serialized.contains("enabled:"));
+        assert!(!serialized.contains("  pi:\n    enabled:"));
         assert!(!serialized.contains("ssh_agent:"));
     }
 
@@ -417,6 +541,11 @@ harness:
         assert_eq!(config.workspace.risky_mount_policy, RiskyMountPolicy::Warn);
         assert_eq!(config.ssh.mode, SshMode::Auto);
         assert_eq!(config.ui.color, ColorMode::Auto);
+        assert!(config.environment.apt.packages.is_empty());
+        assert!(!config.environment.rust.enabled);
+        assert!(!config.environment.python.enabled);
+        assert!(!config.environment.go.enabled);
+        assert!(!config.environment.typescript.enabled);
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.build_network, "host");
         assert!(!config.harness.pi.read_only_workspace);
@@ -433,6 +562,90 @@ harness:
         .unwrap();
 
         assert_eq!(config.workspace.risky_mount_policy, RiskyMountPolicy::Deny);
+    }
+
+    #[test]
+    fn environment_apt_packages_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"environment:
+  apt:
+    packages:
+      - build-essential
+      - pkg-config
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.environment.apt.packages,
+            vec!["build-essential".to_owned(), "pkg-config".to_owned()]
+        );
+    }
+
+    #[test]
+    fn environment_rust_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"environment:
+  rust:
+    enabled: true
+    toolchain: nightly
+    components:
+      - rustfmt
+"#,
+        )
+        .unwrap();
+
+        assert!(config.environment.rust.enabled);
+        assert_eq!(config.environment.rust.toolchain, "nightly");
+        assert_eq!(
+            config.environment.rust.components,
+            vec!["rustfmt".to_owned()]
+        );
+    }
+
+    #[test]
+    fn environment_python_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"environment:
+  python:
+    enabled: true
+"#,
+        )
+        .unwrap();
+
+        assert!(config.environment.python.enabled);
+    }
+
+    #[test]
+    fn environment_go_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"environment:
+  go:
+    enabled: true
+"#,
+        )
+        .unwrap();
+
+        assert!(config.environment.go.enabled);
+    }
+
+    #[test]
+    fn environment_typescript_config_is_parsed() {
+        let config: Config = serde_yaml::from_str(
+            r#"environment:
+  typescript:
+    enabled: true
+    packages:
+      - typescript
+"#,
+        )
+        .unwrap();
+
+        assert!(config.environment.typescript.enabled);
+        assert_eq!(
+            config.environment.typescript.packages,
+            vec!["typescript".to_owned()]
+        );
     }
 
     #[test]

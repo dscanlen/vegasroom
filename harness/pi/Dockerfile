@@ -36,6 +36,7 @@ RUN mkdir -p \
       /home/agent/.pi/skills \
       /home/agent/.pi/sessions \
       /home/agent/.npm-global \
+      /home/agent/.cargo \
       /home/agent/.ssh \
       /home/agent/.cache \
       /tmp/vegasroom \

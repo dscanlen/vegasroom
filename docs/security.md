@@ -17,6 +17,7 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 - Supports an opt-in read-only `/workspace` mount with `harness.pi.read_only_workspace: true`.
 - Supports an opt-in read-only container root filesystem with `harness.pi.read_only_rootfs: true`.
 - Persists in-room Pi npm-global updates only through the explicit `~/.vegasroom/harness/pi/npm-global` bind mount.
+- Installs user-requested `environment.apt.packages`, `environment.rust`, `environment.python`, `environment.go`, and `environment.typescript` only into a generated derived image, not by mounting host package state.
 
 ## What the MVP does not provide
 
@@ -95,6 +96,10 @@ In managed SSH mode, Vegasroom runs `ssh-add` against selected private key files
 ### Git identity injection
 
 When a Git identity is configured or inherited, Vegasroom writes a generated gitconfig under a per-launch directory in `~/.vegasroom/cache` and mounts it read-only into the room. The generated file contains commit author/committer name and email only; it does not contain SSH private keys or Git credentials. Per-launch generated runtime files are removed on normal exit on a best-effort basis.
+
+### Environment packages and toolchains
+
+`environment.apt.packages` installs extra Debian packages into a derived Docker image. `environment.rust` installs Rust through rustup into that same derived image. `environment.python` installs Debian's Python, pip, and venv packages into the derived image. `environment.go` installs Debian's Go toolchain into the derived image. `environment.typescript` installs configured npm packages into the derived image. Cargo cache/install state persists under `~/.vegasroom/environment/cargo`, and pip/Go/npm download caches use the existing Vegasroom cache mount. Names are validated conservatively before generating the Dockerfile, but installed packages/toolchains are still code that becomes available inside future rooms. Only add packages and toolchains you trust from their configured upstreams.
 
 ### Pi auth and package state
 

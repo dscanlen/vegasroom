@@ -34,7 +34,12 @@ services:
       npm_config_prefix: /home/agent/.npm-global
       NPM_CONFIG_CACHE: /home/agent/.cache/npm
       npm_config_cache: /home/agent/.cache/npm
-      PATH: /home/agent/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      CARGO_HOME: /home/agent/.cargo
+      RUSTUP_HOME: /usr/local/rustup
+      PIP_CACHE_DIR: /home/agent/.cache/pip
+      GOCACHE: /home/agent/.cache/go-build
+      GOMODCACHE: /home/agent/.cache/go-mod
+      PATH: /home/agent/.npm-global/bin:/home/agent/.cargo/bin:/usr/local/cargo/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       # Force browser-login helpers to print a URL instead of trying to launch a browser in the container.
       BROWSER: echo
       # SSH_AUTH_SOCK is injected by vr with a generated Compose override when
@@ -62,6 +67,9 @@ services:
       - type: bind
         source: ${HOME}/.vegasroom/harness/pi/npm-global
         target: /home/agent/.npm-global
+      - type: bind
+        source: ${HOME}/.vegasroom/environment/cargo
+        target: /home/agent/.cargo
       # Mount the SSH state directory, not the known_hosts file directly.
       # Docker creates missing bind sources as directories, which causes
       # file-vs-directory errors when binding a missing file to known_hosts.

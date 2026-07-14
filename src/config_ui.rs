@@ -28,6 +28,7 @@ const DIM: &str = "\x1b[2m";
 
 const SECTIONS: &[ConfigSection] = &[
     ConfigSection::SecurityPreset,
+    ConfigSection::Environment,
     ConfigSection::Ssh,
     ConfigSection::Advanced,
 ];
@@ -110,6 +111,9 @@ fn render(state: &ConfigUiState) -> Result<()> {
         ConfigScreen::Section(section) => render_section_screen(&mut buffer, state, section)?,
         ConfigScreen::PresetPreview(preset) => render_preset_preview(&mut buffer, state, preset)?,
         ConfigScreen::ResetDefaultsPreview => render_reset_defaults_preview(&mut buffer, state)?,
+        ConfigScreen::PurgePackageCachesPreview => {
+            render_purge_package_caches_preview(&mut buffer, state)?
+        }
     }
 
     if let Some(message) = &state.last_message {
@@ -194,6 +198,24 @@ fn styled_row_title(
             .is_some_and(|preset| Some(preset) == active_security_preset(config))
     {
         return format!("{GREEN}{BOLD}✓ {}{RESET}", row.title);
+    }
+
+    if matches!(section, ConfigSection::Environment) {
+        match row.action {
+            RowAction::ToggleRustToolchain if config.environment.rust.enabled => {
+                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+            }
+            RowAction::TogglePythonToolchain if config.environment.python.enabled => {
+                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+            }
+            RowAction::ToggleGoToolchain if config.environment.go.enabled => {
+                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+            }
+            RowAction::ToggleTypeScriptToolchain if config.environment.typescript.enabled => {
+                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+            }
+            _ => {}
+        }
     }
 
     if highlighted {
@@ -299,6 +321,30 @@ fn render_reset_defaults_preview(stdout: &mut impl Write, state: &ConfigUiState)
     Ok(())
 }
 
+fn render_purge_package_caches_preview(
+    stdout: &mut impl Write,
+    state: &ConfigUiState,
+) -> Result<()> {
+    writeln!(stdout, "Purge package download caches")?;
+    writeln!(stdout)?;
+    writeln!(stdout, "This removes safe package download caches only:")?;
+    for path in package_cache_paths(&state.state_paths) {
+        writeln!(stdout, "  {}", display_path(&path))?;
+    }
+    writeln!(stdout)?;
+    writeln!(
+        stdout,
+        "It preserves toolchain settings, auth, SSH, workspaces,"
+    )?;
+    writeln!(
+        stdout,
+        "Pi npm-global installs, and Cargo-installed binaries."
+    )?;
+    writeln!(stdout)?;
+    writeln!(stdout, "Press Enter to purge, or Esc/Backspace to cancel.")?;
+    Ok(())
+}
+
 fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
     match state.screen {
         ConfigScreen::Sections => writeln!(stdout, "╰─ ↑↓/jk move  enter open  s save  q quit")?,
@@ -313,6 +359,10 @@ fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
         ConfigScreen::ResetDefaultsPreview => writeln!(
             stdout,
             "╰─ enter reset defaults  esc/back back  s save  q quit"
+        )?,
+        ConfigScreen::PurgePackageCachesPreview => writeln!(
+            stdout,
+            "╰─ enter purge caches  esc/back cancel  s save  q quit"
         )?,
     }
 
@@ -441,7 +491,9 @@ impl ConfigUiState {
                     self.highlighted_row -= 1;
                 }
             }
-            ConfigScreen::PresetPreview(_) | ConfigScreen::ResetDefaultsPreview => {}
+            ConfigScreen::PresetPreview(_)
+            | ConfigScreen::ResetDefaultsPreview
+            | ConfigScreen::PurgePackageCachesPreview => {}
         }
         self.last_message = None;
     }
@@ -458,7 +510,9 @@ impl ConfigUiState {
                 }
                 self.highlighted_row = (self.highlighted_row + 1) % len;
             }
-            ConfigScreen::PresetPreview(_) | ConfigScreen::ResetDefaultsPreview => {}
+            ConfigScreen::PresetPreview(_)
+            | ConfigScreen::ResetDefaultsPreview
+            | ConfigScreen::PurgePackageCachesPreview => {}
         }
         self.last_message = None;
     }
@@ -491,6 +545,10 @@ impl ConfigUiState {
                         }
                         RowAction::CycleColorMode => self.cycle_color_mode(),
                         RowAction::ToggleGitInheritHost => self.toggle_git_inherit_host(),
+                        RowAction::ToggleRustToolchain => self.toggle_rust_toolchain(),
+                        RowAction::TogglePythonToolchain => self.toggle_python_toolchain(),
+                        RowAction::ToggleGoToolchain => self.toggle_go_toolchain(),
+                        RowAction::ToggleTypeScriptToolchain => self.toggle_typescript_toolchain(),
                         RowAction::ValidateConfig => {
                             if let Err(error) = self.validate_config() {
                                 self.last_message =
@@ -499,6 +557,10 @@ impl ConfigUiState {
                         }
                         RowAction::PreviewResetDefaults => {
                             self.screen = ConfigScreen::ResetDefaultsPreview;
+                            self.last_message = None;
+                        }
+                        RowAction::PreviewPurgePackageCaches => {
+                            self.screen = ConfigScreen::PurgePackageCachesPreview;
                             self.last_message = None;
                         }
                         RowAction::Placeholder => {
@@ -512,6 +574,11 @@ impl ConfigUiState {
             }
             ConfigScreen::PresetPreview(preset) => self.apply_preset(preset),
             ConfigScreen::ResetDefaultsPreview => self.apply_reset_defaults(),
+            ConfigScreen::PurgePackageCachesPreview => {
+                if let Err(error) = self.purge_package_caches() {
+                    self.last_message = Some(format!("Package cache purge failed: {error:#}"));
+                }
+            }
         }
 
         ConfigUiAction::Continue
@@ -531,6 +598,10 @@ impl ConfigUiState {
             }
             ConfigScreen::ResetDefaultsPreview => {
                 self.screen = ConfigScreen::Section(ConfigSection::Advanced);
+                self.last_message = None;
+            }
+            ConfigScreen::PurgePackageCachesPreview => {
+                self.screen = ConfigScreen::Section(ConfigSection::Environment);
                 self.last_message = None;
             }
         }
@@ -598,6 +669,53 @@ impl ConfigUiState {
             "Set host Git identity inheritance to {}. Press s to save.",
             self.config.git.inherit_host
         ));
+    }
+
+    fn toggle_rust_toolchain(&mut self) {
+        self.config.environment.rust.enabled = !self.config.environment.rust.enabled;
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set Rust toolchain to {}. Press s to save; run `vr init --build` when ready.",
+            enabled_name(self.config.environment.rust.enabled)
+        ));
+    }
+
+    fn toggle_python_toolchain(&mut self) {
+        self.config.environment.python.enabled = !self.config.environment.python.enabled;
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set Python toolchain to {}. Press s to save; run `vr init --build` when ready.",
+            enabled_name(self.config.environment.python.enabled)
+        ));
+    }
+
+    fn toggle_go_toolchain(&mut self) {
+        self.config.environment.go.enabled = !self.config.environment.go.enabled;
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set Go toolchain to {}. Press s to save; run `vr init --build` when ready.",
+            enabled_name(self.config.environment.go.enabled)
+        ));
+    }
+
+    fn toggle_typescript_toolchain(&mut self) {
+        self.config.environment.typescript.enabled = !self.config.environment.typescript.enabled;
+        self.dirty = true;
+        self.last_message = Some(format!(
+            "Set TypeScript toolchain to {}. Press s to save; run `vr init --build` when ready.",
+            enabled_name(self.config.environment.typescript.enabled)
+        ));
+    }
+
+    fn purge_package_caches(&mut self) -> Result<()> {
+        let purged = purge_package_cache_paths(&self.state_paths)?;
+        self.screen = ConfigScreen::Section(ConfigSection::Environment);
+        self.last_message = Some(if purged == 0 {
+            "No package cache directories were present.".to_owned()
+        } else {
+            format!("Purged {purged} package cache directorie(s).")
+        });
+        Ok(())
     }
 
     fn save(&mut self) -> Result<()> {
@@ -701,11 +819,13 @@ enum ConfigScreen {
     Section(ConfigSection),
     PresetPreview(SecurityPreset),
     ResetDefaultsPreview,
+    PurgePackageCachesPreview,
 }
 
 #[derive(Clone, Copy)]
 enum ConfigSection {
     SecurityPreset,
+    Environment,
     Ssh,
     Advanced,
 }
@@ -714,6 +834,7 @@ impl ConfigSection {
     fn title(self) -> &'static str {
         match self {
             Self::SecurityPreset => "Security",
+            Self::Environment => "Environment",
             Self::Ssh => "SSH",
             Self::Advanced => "Advanced",
         }
@@ -745,6 +866,67 @@ and no host Git inheritance."
                             .to_owned(),
                         "May reduce editing, Git, login, or shell compatibility.".to_owned(),
                     ],
+                ),
+            ],
+            Self::Environment => vec![
+                SectionRow::action(
+                    toolchain_row_title("Rust", config.environment.rust.enabled),
+                    vec![
+                        format!(
+                            "Current: {} ({})",
+                            enabled_name(config.environment.rust.enabled),
+                            config.environment.rust.toolchain
+                        ),
+                        "Press Enter to toggle. Press s to save.".to_owned(),
+                        "Run `vr init --build` when ready to rebuild the environment image."
+                            .to_owned(),
+                    ],
+                    RowAction::ToggleRustToolchain,
+                ),
+                SectionRow::action(
+                    toolchain_row_title("Python", config.environment.python.enabled),
+                    vec![
+                        format!(
+                            "Current: {}",
+                            enabled_name(config.environment.python.enabled)
+                        ),
+                        "Press Enter to toggle. Press s to save.".to_owned(),
+                        "Run `vr init --build` when ready to rebuild the environment image."
+                            .to_owned(),
+                    ],
+                    RowAction::TogglePythonToolchain,
+                ),
+                SectionRow::action(
+                    toolchain_row_title("Go", config.environment.go.enabled),
+                    vec![
+                        format!("Current: {}", enabled_name(config.environment.go.enabled)),
+                        "Press Enter to toggle. Press s to save.".to_owned(),
+                        "Run `vr init --build` when ready to rebuild the environment image."
+                            .to_owned(),
+                    ],
+                    RowAction::ToggleGoToolchain,
+                ),
+                SectionRow::action(
+                    toolchain_row_title("TypeScript", config.environment.typescript.enabled),
+                    vec![
+                        format!(
+                            "Current: {}; packages: {}",
+                            enabled_name(config.environment.typescript.enabled),
+                            config.environment.typescript.packages.join(", ")
+                        ),
+                        "Press Enter to toggle. Press s to save.".to_owned(),
+                        "Run `vr init --build` when ready to rebuild the environment image."
+                            .to_owned(),
+                    ],
+                    RowAction::ToggleTypeScriptToolchain,
+                ),
+                SectionRow::action(
+                    "Purge package download caches",
+                    vec![
+                        "Removes npm/pip download caches and Cargo registry/git caches.".to_owned(),
+                        "Preserves workspaces, auth, SSH, Pi npm-global, and Cargo bin.".to_owned(),
+                    ],
+                    RowAction::PreviewPurgePackageCaches,
                 ),
             ],
             Self::Ssh => Vec::new(),
@@ -848,8 +1030,13 @@ enum RowAction {
     PreviewPreset(SecurityPreset),
     CycleColorMode,
     ToggleGitInheritHost,
+    ToggleRustToolchain,
+    TogglePythonToolchain,
+    ToggleGoToolchain,
+    ToggleTypeScriptToolchain,
     ValidateConfig,
     PreviewResetDefaults,
+    PreviewPurgePackageCaches,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1038,11 +1225,92 @@ fn diff_configs(before: &Config, after: &Config) -> Vec<ConfigChange> {
         color_mode_name(before.ui.color),
         color_mode_name(after.ui.color),
     );
+    push_change(
+        &mut changes,
+        "environment.rust.enabled",
+        before.environment.rust.enabled,
+        after.environment.rust.enabled,
+    );
+    push_change(
+        &mut changes,
+        "environment.rust.toolchain",
+        before.environment.rust.toolchain.as_str(),
+        after.environment.rust.toolchain.as_str(),
+    );
+    push_change(
+        &mut changes,
+        "environment.rust.components",
+        before.environment.rust.components.join(","),
+        after.environment.rust.components.join(","),
+    );
+    push_change(
+        &mut changes,
+        "environment.python.enabled",
+        before.environment.python.enabled,
+        after.environment.python.enabled,
+    );
+    push_change(
+        &mut changes,
+        "environment.go.enabled",
+        before.environment.go.enabled,
+        after.environment.go.enabled,
+    );
+    push_change(
+        &mut changes,
+        "environment.typescript.enabled",
+        before.environment.typescript.enabled,
+        after.environment.typescript.enabled,
+    );
+    push_change(
+        &mut changes,
+        "environment.typescript.packages",
+        before.environment.typescript.packages.join(","),
+        after.environment.typescript.packages.join(","),
+    );
     changes
 }
 
 fn option_value(value: Option<&str>) -> &str {
     value.unwrap_or("not set")
+}
+
+fn enabled_name(enabled: bool) -> &'static str {
+    if enabled {
+        "enabled"
+    } else {
+        "disabled"
+    }
+}
+
+fn toolchain_row_title(name: &str, enabled: bool) -> String {
+    if enabled {
+        format!("✓ {name}")
+    } else {
+        name.to_owned()
+    }
+}
+
+fn package_cache_paths(state: &StatePaths) -> Vec<PathBuf> {
+    vec![
+        state.cache.join("npm"),
+        state.cache.join("pip"),
+        state.cache.join("go-build"),
+        state.cache.join("go-mod"),
+        state.cargo_home.join("registry"),
+        state.cargo_home.join("git"),
+    ]
+}
+
+fn purge_package_cache_paths(state: &StatePaths) -> Result<usize> {
+    let mut purged = 0;
+    for path in package_cache_paths(state) {
+        if path.exists() {
+            fs::remove_dir_all(&path)
+                .with_context(|| format!("failed to remove cache path: {}", display_path(&path)))?;
+            purged += 1;
+        }
+    }
+    Ok(purged)
 }
 
 fn push_change(
@@ -1168,7 +1436,7 @@ mod tests {
     fn top_level_menu_is_minimal() {
         let sections: Vec<_> = SECTIONS.iter().map(|section| section.title()).collect();
 
-        assert_eq!(sections, vec!["Security", "SSH", "Advanced"]);
+        assert_eq!(sections, vec!["Security", "Environment", "SSH", "Advanced"]);
     }
 
     #[test]
@@ -1266,7 +1534,10 @@ mod tests {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
         let mut state = ConfigUiState::new(config, paths);
-        state.highlighted_section = 1;
+        state.highlighted_section = SECTIONS
+            .iter()
+            .position(|section| matches!(section, ConfigSection::Ssh))
+            .unwrap();
         state.dirty = true;
 
         let action = state.open_highlighted();
@@ -1283,7 +1554,10 @@ mod tests {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
         let mut state = ConfigUiState::new(config, paths);
-        state.highlighted_section = 1;
+        state.highlighted_section = SECTIONS
+            .iter()
+            .position(|section| matches!(section, ConfigSection::Ssh))
+            .unwrap();
 
         let action = state.open_highlighted();
 
