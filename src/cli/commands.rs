@@ -38,9 +38,10 @@ pub(super) fn launch_pi(workspace_arg: Option<&str>, pi_args: Vec<String>) -> Re
     let config = Config::load_or_default()?;
     let workspace = workspace::resolve_workspace(workspace_arg, &config)?;
     print_workspace_messages(&workspace, &config);
+    print_environment_image_warning(&config)?;
 
     docker::ensure_pi_image_exists(&config)
-        .with_context(|| "Pi image was not found. Run: vr init --build")?;
+        .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
     docker::run_pi(&config, &workspace, &pi_args)
 }
 
@@ -52,10 +53,21 @@ pub(super) fn launch_shell(workspace_arg: Option<&str>) -> Result<i32> {
     let config = Config::load_or_default()?;
     let workspace = workspace::resolve_workspace(workspace_arg, &config)?;
     print_workspace_messages(&workspace, &config);
+    print_environment_image_warning(&config)?;
 
     docker::ensure_pi_image_exists(&config)
-        .with_context(|| "Pi image was not found. Run: vr init --build")?;
+        .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
     docker::run_shell(&config, &workspace)
+}
+
+fn print_environment_image_warning(config: &Config) -> Result<()> {
+    if docker::environment_image_stale(config)? {
+        eprintln!(
+            "{}: Environment image is out of date for the current package/toolchain config. Run `vr init --build` when ready.",
+            alert::warn()
+        );
+    }
+    Ok(())
 }
 
 fn print_workspace_messages(workspace: &workspace::ResolvedWorkspace, config: &Config) {

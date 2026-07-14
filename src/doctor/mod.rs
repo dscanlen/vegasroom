@@ -127,6 +127,7 @@ pub fn run() -> Result<i32> {
     checks.push(check_environment_python(&config));
     checks.push(check_environment_go(&config));
     checks.push(check_environment_typescript(&config));
+    checks.push(check_environment_image_freshness(&config));
     checks.push(check_known_hosts(&state.known_hosts));
     checks.push(check_dir_writable("Pi config writable", &state.pi_config));
     checks.push(check_dir_writable(
@@ -347,6 +348,26 @@ fn check_environment_typescript(config: &Config) -> Check {
             name: "Environment TypeScript toolchain",
             detail: "disabled".to_owned(),
         }
+    }
+}
+
+fn check_environment_image_freshness(config: &Config) -> Check {
+    match docker::environment_image_stale(config) {
+        Ok(false) => Check {
+            status: Status::Pass,
+            name: "Environment image freshness",
+            detail: "environment image inputs match current config".to_owned(),
+        },
+        Ok(true) => Check {
+            status: Status::Warn,
+            name: "Environment image freshness",
+            detail: "environment image is out of date for current package/toolchain config. Run: vr init --build".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Environment image freshness",
+            detail: format!("could not check environment image freshness: {err:#}"),
+        },
     }
 }
 

@@ -157,7 +157,7 @@ Implementation:
 2. Generate a derived Dockerfile under `~/.vegasroom/runtime/environment/pi/Dockerfile`.
 3. Build a derived image tag from `harness.pi.image`, for example `vegasroom/pi:local-env`.
 4. Use the derived image only when environment packages are configured.
-5. Rebuild the derived image when the generated Dockerfile changes, so adding one package later is enough for the next launch/build to pick it up.
+5. Rebuild the derived image with `vr init --build`; room startup and doctor warn when the generated Dockerfile is stale relative to current config.
 6. Install Rust with rustup when `environment.rust.enabled` is true.
 7. Persist Cargo cache/install state under `~/.vegasroom/environment/cargo`.
 8. Install Python, pip, and venv when `environment.python.enabled` is true.

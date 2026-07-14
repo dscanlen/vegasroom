@@ -53,6 +53,10 @@ pub fn image_exists(config: &Config) -> Result<bool> {
     }
 }
 
+pub fn environment_image_stale(config: &Config) -> Result<bool> {
+    environment::image_stale(config, &harness::PI)
+}
+
 pub fn pi_runtime_image(config: &Config) -> String {
     environment::runtime_image(config, &harness::PI)
 }

@@ -239,7 +239,7 @@ environment:
 
 TypeScript installs the configured npm packages globally into the derived image under `/usr/local`. User in-room npm-global installs still use the persisted `/home/agent/.npm-global` prefix.
 
-When no environment packages or toolchains are enabled, Vegasroom uses `harness.pi.image` directly. When environment customizations are present, Vegasroom builds a derived image tag by appending `-env` to the configured image tag, for example `vegasroom/pi:local-env`. The derived image is rebuilt when the generated environment Dockerfile changes, so adding one package or enabling Rust/Python/Go/TypeScript later is enough for the next launch/build to pick it up.
+When no environment packages or toolchains are enabled, Vegasroom uses `harness.pi.image` directly. When environment customizations are present, Vegasroom builds a derived image tag by appending `-env` to the configured image tag, for example `vegasroom/pi:local-env`. The derived image is rebuilt by `vr init --build`. If the current package/toolchain config differs from the generated environment Dockerfile, `vr pi`, `vr shell`, and `vr doctor` warn that the environment image is stale so you can rebuild when ready.
 
 Package/toolchain names are validated conservatively before generating the Dockerfile.
 

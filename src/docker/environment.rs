@@ -95,51 +95,26 @@ pub(super) fn runtime_image(config: &Config, descriptor: &harness::HarnessDescri
 }
 
 pub(super) fn ensure_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
-    ensure_image_inner(config, descriptor, false)
-}
-
-pub(super) fn build_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
-    ensure_image_inner(config, descriptor, true)
-}
-
-fn ensure_image_inner(
-    config: &Config,
-    descriptor: &harness::HarnessDescriptor,
-    force: bool,
-) -> Result<()> {
     if !has_customization(config) {
         return Ok(());
     }
 
     validate_environment(config)?;
 
-    let state = StatePaths::default()?;
-    let dockerfile_path = dockerfile_path(&state, descriptor);
-    let next_contents = dockerfile_contents(config, descriptor);
-    let dockerfile_changed = fs::read_to_string(&dockerfile_path)
-        .map(|current| current != next_contents)
-        .unwrap_or(true);
-
-    if let Some(parent) = dockerfile_path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "failed to create environment runtime directory: {}",
-                display_path(parent)
-            )
-        })?;
-    }
-
-    fs::write(&dockerfile_path, next_contents).with_context(|| {
-        format!(
-            "failed to write environment Dockerfile: {}",
-            display_path(&dockerfile_path)
-        )
-    })?;
-
     let image = runtime_image(config, descriptor);
-    if !force && !dockerfile_changed && image_tag_exists(config, &image)? {
+    if image_tag_exists(config, &image)? {
+        Ok(())
+    } else {
+        bail!("environment image not found: {image}\nRun: vr init --build")
+    }
+}
+
+pub(super) fn build_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
+    if !has_customization(config) {
         return Ok(());
     }
+
+    validate_environment(config)?;
 
     if !harness_image_exists(config, descriptor)? {
         bail!(
@@ -149,7 +124,28 @@ fn ensure_image_inner(
         );
     }
 
+    let state = StatePaths::default()?;
+    write_dockerfile(config, descriptor, &state)?;
+    let image = runtime_image(config, descriptor);
     run_build_image(config, descriptor, &state, &image)
+}
+
+pub(super) fn image_stale(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+) -> Result<bool> {
+    if !has_customization(config) {
+        return Ok(false);
+    }
+
+    validate_environment(config)?;
+
+    let state = StatePaths::default()?;
+    let dockerfile_path = dockerfile_path(&state, descriptor);
+    let next_contents = dockerfile_contents(config, descriptor);
+    Ok(fs::read_to_string(&dockerfile_path)
+        .map(|current| current != next_contents)
+        .unwrap_or(true))
 }
 
 pub(super) fn image_exists(
@@ -230,6 +226,31 @@ pub(super) fn dockerfile_path(
         .join("environment")
         .join(descriptor.id)
         .join("Dockerfile")
+}
+
+fn write_dockerfile(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+    state: &StatePaths,
+) -> Result<PathBuf> {
+    let dockerfile_path = dockerfile_path(state, descriptor);
+    if let Some(parent) = dockerfile_path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create environment runtime directory: {}",
+                display_path(parent)
+            )
+        })?;
+    }
+
+    fs::write(&dockerfile_path, dockerfile_contents(config, descriptor)).with_context(|| {
+        format!(
+            "failed to write environment Dockerfile: {}",
+            display_path(&dockerfile_path)
+        )
+    })?;
+
+    Ok(dockerfile_path)
 }
 
 fn run_build_image(
