@@ -17,7 +17,10 @@ pub struct ContainerDoctorProbe {
     pub pi_sessions_writable: bool,
     pub pi_npm_global_writable: bool,
     pub npm_global_bin_on_path: bool,
+    pub container_path: String,
     pub pi_command_path: Option<String>,
+    pub python_available: bool,
+    pub python_version: Option<String>,
     pub internet_reachable: bool,
     pub git_identity: Option<GitIdentity>,
 }
@@ -59,13 +62,18 @@ else
   echo 'VR_CHECK pi_npm_global_writable=fail'
 fi
 
-case ":$PATH:" in
-  *":{pi_npm_global_path}/bin:"*) echo 'VR_CHECK npm_global_bin_on_path=pass' ;;
-  *) echo 'VR_CHECK npm_global_bin_on_path=fail' ;;
-esac
+printf 'VR_PATH=%s\n' "$PATH"
 
 pi_command_path="$(command -v pi 2>/dev/null || true)"
 printf 'VR_PI_COMMAND_PATH=%s\n' "$pi_command_path"
+
+if command -v python >/dev/null 2>/dev/null && command -v python3 >/dev/null 2>/dev/null && python3 -m pip --version >/dev/null 2>/dev/null && python3 -m venv --help >/dev/null 2>/dev/null; then
+  echo 'VR_CHECK python=pass'
+else
+  echo 'VR_CHECK python=fail'
+fi
+python_version="$(python3 --version 2>/dev/null || true)"
+printf 'VR_PYTHON_VERSION=%s\n' "$python_version"
 
 if node -e "fetch('https://pi.dev').then(r => process.exit(r.status > 0 ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>/dev/null; then
   echo 'VR_CHECK internet=pass'
@@ -85,12 +93,23 @@ printf 'VR_GIT_EMAIL=%s\n' "${{GIT_AUTHOR_EMAIL:-}}"
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let container_path = line_value(&stdout, "VR_PATH=")
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_owned();
+    let npm_global_bin = format!("{pi_npm_global_path}/bin");
     Ok(ContainerDoctorProbe {
         pi_config_writable: check_passed(&stdout, "pi_config_writable"),
         pi_sessions_writable: check_passed(&stdout, "pi_sessions_writable"),
         pi_npm_global_writable: check_passed(&stdout, "pi_npm_global_writable"),
-        npm_global_bin_on_path: check_passed(&stdout, "npm_global_bin_on_path"),
+        npm_global_bin_on_path: path_contains_entry(&container_path, &npm_global_bin),
+        container_path,
         pi_command_path: line_value(&stdout, "VR_PI_COMMAND_PATH=")
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        python_available: check_passed(&stdout, "python"),
+        python_version: line_value(&stdout, "VR_PYTHON_VERSION=")
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned),
@@ -181,6 +200,10 @@ fn line_value<'a>(output: &'a str, prefix: &str) -> Option<&'a str> {
     output.lines().find_map(|line| line.strip_prefix(prefix))
 }
 
+fn path_contains_entry(path: &str, entry: &str) -> bool {
+    path.split(':').any(|candidate| candidate == entry)
+}
+
 fn prefixed_lines(output: &str, prefix: &str) -> String {
     output
         .lines()
@@ -199,8 +222,10 @@ mod tests {
 noise
 VR_CHECK pi_config_writable=pass
 VR_CHECK pi_npm_global_writable=pass
-VR_CHECK npm_global_bin_on_path=pass
+VR_PATH=/home/agent/.npm-global/bin:/usr/local/bin:/usr/bin
 VR_PI_COMMAND_PATH=/home/agent/.npm-global/bin/pi
+VR_CHECK python=pass
+VR_PYTHON_VERSION=Python 3.11.2
 VR_CHECK internet=fail
 VR_SSH_ADD_STDOUT=one
 VR_SSH_ADD_STDOUT=two
@@ -209,10 +234,18 @@ VR_SSH_ADD_CODE=1
 
         assert!(check_passed(output, "pi_config_writable"));
         assert!(check_passed(output, "pi_npm_global_writable"));
-        assert!(check_passed(output, "npm_global_bin_on_path"));
+        assert!(path_contains_entry(
+            line_value(output, "VR_PATH=").unwrap(),
+            "/home/agent/.npm-global/bin"
+        ));
         assert_eq!(
             line_value(output, "VR_PI_COMMAND_PATH="),
             Some("/home/agent/.npm-global/bin/pi")
+        );
+        assert!(check_passed(output, "python"));
+        assert_eq!(
+            line_value(output, "VR_PYTHON_VERSION="),
+            Some("Python 3.11.2")
         );
         assert!(!check_passed(output, "internet"));
         assert_eq!(line_value(output, "VR_SSH_ADD_CODE="), Some("1"));

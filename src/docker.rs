@@ -3,6 +3,7 @@ use std::process::{Command, Output, Stdio};
 use anyhow::{anyhow, Context, Result};
 
 mod doctor_probe;
+mod environment;
 mod git_identity;
 mod overrides;
 mod runtime_files;
@@ -22,7 +23,8 @@ use crate::{
 };
 
 pub fn build_pi_image(config: &Config) -> Result<()> {
-    build_harness_image(config, &harness::PI)
+    build_harness_image(config, &harness::PI)?;
+    environment::build_image(config, &harness::PI)
 }
 
 pub fn run_pi(config: &Config, workspace: &ResolvedWorkspace, pi_args: &[String]) -> Result<i32> {
@@ -44,7 +46,35 @@ pub fn ensure_pi_image_exists(config: &Config) -> Result<()> {
 }
 
 pub fn image_exists(config: &Config) -> Result<bool> {
-    harness_image_exists(config, &harness::PI)
+    if environment::has_customization(config) {
+        environment::image_exists(config, &harness::PI)
+    } else {
+        harness_image_exists(config, &harness::PI)
+    }
+}
+
+pub fn pi_runtime_image(config: &Config) -> String {
+    environment::runtime_image(config, &harness::PI)
+}
+
+pub fn environment_apt_packages(config: &Config) -> Vec<String> {
+    environment::packages(config)
+}
+
+pub fn environment_rust_enabled(config: &Config) -> bool {
+    environment::rust_enabled(config)
+}
+
+pub fn environment_rust_toolchain(config: &Config) -> String {
+    environment::rust_toolchain(config)
+}
+
+pub fn environment_rust_components(config: &Config) -> Vec<String> {
+    environment::rust_components(config)
+}
+
+pub fn environment_python_enabled(config: &Config) -> bool {
+    environment::python_enabled(config)
 }
 
 fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
@@ -53,6 +83,9 @@ fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor)
 
     let mut command = base_docker(config);
     apply_compose_config_env(&mut command, config);
+    if descriptor.id == harness::PI.id {
+        command.env("VR_PI_IMAGE", &config.harness.pi.image);
+    }
     let status = command
         .arg("compose")
         .arg("-f")
@@ -95,6 +128,10 @@ fn ensure_harness_image_exists(
     config: &Config,
     descriptor: &harness::HarnessDescriptor,
 ) -> Result<()> {
+    if descriptor.id == harness::PI.id && environment::has_customization(config) {
+        return environment::ensure_image(config, descriptor);
+    }
+
     if harness_image_exists(config, descriptor)? {
         Ok(())
     } else {
@@ -222,7 +259,7 @@ fn compose_shell_output_with_ssh(
     )?;
     invocation
         .command
-        .args(["run", "--rm", harness::PI.service_name, "sh", "-lc", script])
+        .args(["run", "--rm", harness::PI.service_name, "sh", "-c", script])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -331,7 +368,10 @@ fn harness_compose_args(
 
 fn apply_compose_config_env(command: &mut Command, config: &Config) {
     command
-        .env("VR_PI_IMAGE", &config.harness.pi.image)
+        .env(
+            "VR_PI_IMAGE",
+            environment::runtime_image(config, &harness::PI),
+        )
         .env("VR_PI_NETWORK_MODE", &config.harness.pi.network)
         .env("VR_PI_BUILD_NETWORK", &config.harness.pi.build_network)
         .env(

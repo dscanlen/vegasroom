@@ -196,6 +196,40 @@ pub(super) fn check_container_login_readiness(
     checks
 }
 
+pub(super) fn check_container_python(
+    config: &Config,
+    probe: &Result<docker::ContainerDoctorProbe>,
+) -> Check {
+    if !docker::environment_python_enabled(config) {
+        return Check {
+            status: Status::Pass,
+            name: "Container Python toolchain",
+            detail: "disabled".to_owned(),
+        };
+    }
+
+    match probe {
+        Ok(probe) if probe.python_available => Check {
+            status: Status::Pass,
+            name: "Container Python toolchain",
+            detail: probe
+                .python_version
+                .clone()
+                .unwrap_or_else(|| "python, python3, pip, and venv are available".to_owned()),
+        },
+        Ok(_) => Check {
+            status: Status::Fail,
+            name: "Container Python toolchain",
+            detail: "python/python3, pip, or venv was not available inside the room".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Container Python toolchain",
+            detail: format!("could not check Python inside the room: {err:#}"),
+        },
+    }
+}
+
 pub(super) fn check_container_pi_package(
     probe: &Result<docker::ContainerDoctorProbe>,
 ) -> Vec<Check> {
@@ -231,11 +265,12 @@ pub(super) fn check_container_pi_package(
             name: "Container npm-global PATH",
             detail: format!("{pi_npm_global_bin} is PATH state for persisted Pi updates"),
         },
-        Ok(_) => Check {
+        Ok(probe) => Check {
             status: Status::Fail,
             name: "Container npm-global PATH",
             detail: format!(
-                "{pi_npm_global_bin} is not on PATH; persisted Pi updates will not be detected"
+                "{pi_npm_global_bin} is not on PATH; persisted Pi updates will not be detected. Container PATH: {}",
+                probe.container_path
             ),
         },
         Err(err) => Check {

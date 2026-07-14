@@ -2,7 +2,7 @@
 
 Vegasroom should eventually let users describe extra tools and libraries they want available inside a room without tying that declaration to a specific harness provider.
 
-This document captures the design direction only. No package-selection config is active yet.
+This document captures the current implementation plus future design direction. The active slices are `environment.apt.packages`, `environment.rust`, and `environment.python`.
 
 ## Goals
 
@@ -47,9 +47,9 @@ The image also installs:
 
 and creates the expected room/state directories for workspace, Pi state, SSH state, cache, and scratch paths.
 
-## Proposed config shape
+## Config shape
 
-Use a harness-independent top-level section, not `harness.pi.packages`:
+Use a harness-independent top-level section, not `harness.pi.packages`. The active slices are `environment.apt.packages`, `environment.rust`, and `environment.python`:
 
 ```yaml
 environment:
@@ -60,23 +60,25 @@ environment:
       - python3
       - python3-venv
   python:
-    packages:
-      - pytest
-      - requests
+    enabled: true
   npm:
     packages:
       - typescript
       - eslint
   rust:
-    crates:
-      - cargo-edit
+    enabled: true
+    toolchain: stable
+    components:
+      - rustfmt
+      - clippy
 ```
 
-Open questions before activation:
+npm/Go language package manager entries are design direction only for now. Python package lists are intentionally not active yet; use project-local virtual environments for project dependencies.
 
-- Whether `environment` or `packages` is the clearer top-level name.
+Open questions for later slices:
+
 - Whether language package managers should be global installs, per-room cache installs, or project-local instructions.
-- Whether versions are required in the first slice.
+- Whether versions are required beyond basic apt package names.
 - How to represent OS package managers on non-Debian future images.
 
 ## Build model options
@@ -134,9 +136,9 @@ Cons:
 - Not friendly enough for the desired package-selection feature.
 - Provider/harness-independent declarations remain unsolved.
 
-## Recommended path
+## Active path
 
-Start with Option A for OS packages only:
+Vegasroom starts with Option A for OS packages, Rust/Cargo, and basic Python support:
 
 ```yaml
 environment:
@@ -146,14 +148,18 @@ environment:
       - pkg-config
 ```
 
-Implementation outline:
+Implementation:
 
 1. Add docs and schema for `environment.apt.packages`.
-2. Generate a derived Dockerfile under `~/.vegasroom/runtime/environment/Dockerfile`.
+2. Generate a derived Dockerfile under `~/.vegasroom/runtime/environment/pi/Dockerfile`.
 3. Build a derived image tag from `harness.pi.image`, for example `vegasroom/pi:local-env`.
-4. Teach launch/build to use the derived image only when environment packages are configured.
-5. Add `vr doctor` checks that show configured environment packages and whether the derived image exists.
-6. Add language package managers later, one ecosystem at a time.
+4. Use the derived image only when environment packages are configured.
+5. Rebuild the derived image when the generated Dockerfile changes, so adding one package later is enough for the next launch/build to pick it up.
+6. Install Rust with rustup when `environment.rust.enabled` is true.
+7. Persist Cargo cache/install state under `~/.vegasroom/environment/cargo`.
+8. Install Python, pip, and venv when `environment.python.enabled` is true.
+9. Show configured environment packages/toolchains and runtime image state in `vr doctor`.
+10. Add Go and TypeScript later, one ecosystem at a time.
 
 ## Validation requirements
 

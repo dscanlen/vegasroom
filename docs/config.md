@@ -33,6 +33,18 @@ git:
 ui:
   color: auto
 
+environment:
+  apt:
+    packages: []
+  rust:
+    enabled: false
+    toolchain: stable
+    components:
+      - rustfmt
+      - clippy
+  python:
+    enabled: false
+
 harness:
   pi:
     image: vegasroom/pi:local
@@ -63,6 +75,11 @@ Currently active:
 - `git.user_name`
 - `git.user_email`
 - `ui.color`
+- `environment.apt.packages`
+- `environment.rust.enabled`
+- `environment.rust.toolchain`
+- `environment.rust.components`
+- `environment.python.enabled`
 
 Legacy/future-facing fields from earlier configs are ignored if present:
 
@@ -151,6 +168,47 @@ deny  refuse the risky workspace before Docker starts
 
 Credential directories, virtual system roots, `/`, and Vegasroom state outside the configured workspace root are always refused regardless of this policy. The policy applies to warning-level paths such as the host home directory and risky system paths under `/tmp`, `/etc`, `/usr`, `/var`, and similar roots.
 
+
+## Environment package fields
+
+`environment.apt.packages` is a simple list of extra Debian packages to install into a generated runtime image:
+
+```yaml
+environment:
+  apt:
+    packages:
+      - build-essential
+      - pkg-config
+      - python3
+```
+
+Enable Rust/Cargo support with:
+
+```yaml
+environment:
+  rust:
+    enabled: true
+    toolchain: stable
+    components:
+      - rustfmt
+      - clippy
+```
+
+Rust is installed through `rustup` into the derived image with `/usr/local/cargo/bin` on `PATH`. Cargo cache/install state persists under `~/.vegasroom/environment/cargo`, mounted at `/home/agent/.cargo`.
+
+Enable Python support with:
+
+```yaml
+environment:
+  python:
+    enabled: true
+```
+
+Python installs `python3`, `python3-pip`, `python3-venv`, and `python-is-python3` into the derived image. The pip download cache uses `~/.vegasroom/cache/pip` through the existing `/home/agent/.cache` mount.
+
+When no environment packages or toolchains are enabled, Vegasroom uses `harness.pi.image` directly. When environment customizations are present, Vegasroom builds a derived image tag by appending `-env` to the configured image tag, for example `vegasroom/pi:local-env`. The derived image is rebuilt when the generated environment Dockerfile changes, so adding one package or enabling Rust/Python later is enough for the next launch/build to pick it up.
+
+Package/toolchain names are validated conservatively before generating the Dockerfile.
 
 ## Pi harness runtime fields
 
