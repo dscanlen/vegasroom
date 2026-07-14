@@ -1,7 +1,7 @@
 # TODO
 
 - Ensure all TUI menus function consistently across Vegasroom, including alignment, bottom-panel rendering, visual styling, navigation keys, save/quit behavior, dirty-state prompts, and help/hotkey wording.
-- Split `src/config_ui.rs` into smaller modules, likely state, render, actions, presets, diff/save helpers, and tests.
+- Split `src/config_ui.rs` into smaller modules without changing behavior. Preserve the current TUI flow, keybindings, rendering, dirty/save/quit semantics, confirmation prompts, and tests. Suggested layout: `src/config_ui/mod.rs` as the orchestration/public entrypoint, `state.rs` for `ConfigUiState`/screens/actions, `render.rs` for drawing/truncation/bottom panel, `sections.rs` for section/row definitions, `presets.rs` for security presets/diffs, `persistence.rs` for save/backup/reset helpers, and `cache.rs` for environment cache purge helpers. Move colocated tests with the code they cover where practical. Do this in small mechanical slices and run `./scripts/check.sh` after each slice.
 - Decide and implement release workflow details: tag strategy, release artifact targets, tag-only vs `workflow_dispatch`, changelog format, PR/push CI policy, and whether release automation should update pinned harness package versions using `scripts/update-pi-harness-version.sh latest`.
 - Decide whether pinned harness package updates should be checked on a schedule, during release preparation, or only manually.
 - Make config/runtime writes crash-safe by writing to a temporary file, syncing where appropriate, and atomically renaming over the destination.
