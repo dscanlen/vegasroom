@@ -14,10 +14,10 @@
    - Add tests for base image values containing `@sha256:`.
    - Decide/implement a valid fallback tag format.
 
-2. Clarify and implement the requested Vegasroom container/image naming convention.
-   - Requested shape: `vegasroom/{harness}:latest/{version}`.
-   - First confirm exact Docker object: image repository/tag, Compose project/container name, or both.
-   - Note: the literal requested string is not a valid Docker image reference or container name because `/` cannot appear after `:` in an image tag and `:`/`/` are not valid container-name separators. Choose a valid equivalent, such as separate `vegasroom/{harness}:latest` and `vegasroom/{harness}:{version}` image tags, or labels for version metadata.
+2. Implement the confirmed Vegasroom image tagging convention.
+   - Use valid Docker image tags equivalent to the requested `vegasroom/{harness}:latest/{version}` shape.
+   - Confirmed convention: tag harness images separately as `vegasroom/{harness}:latest` and `vegasroom/{harness}:{version}` where version metadata is available.
+   - Decide whether Compose should run the `latest` tag by default, the exact version tag by default, or retain local development tags while release builds add both tags.
 
 3. Harden permissions for sensitive Vegasroom state.
    - Set `~/.vegasroom` and sensitive subdirectories to private Unix permissions where supported.
