@@ -45,16 +45,15 @@ Controls:
 ↑ / k     move highlight up
 ↓ / j     move highlight down
 Enter     select/deselect highlighted key
-Space     select/deselect highlighted key
 s         save current selection and remain in the selector
-q         quit
+Esc/q     quit
 r         rescan current roots
 ```
 
 If there are unsaved changes when quitting, Vegasroom prompts:
 
 ```text
-Save before quitting?
+Save changes before quitting?
   y  save and quit
   n  discard and quit
   c  cancel

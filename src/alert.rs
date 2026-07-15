@@ -27,13 +27,15 @@ pub fn fail() -> &'static str {
 }
 
 fn colors_enabled() -> bool {
-    let color_mode = Config::load_or_default()
-        .map(|config| config.ui.color)
-        .unwrap_or_default();
+    let config = Config::load_or_default().unwrap_or_default();
+    colors_enabled_for_config(&config, io::stdout().is_terminal())
+}
+
+pub(crate) fn colors_enabled_for_config(config: &Config, stdout_is_terminal: bool) -> bool {
     colors_enabled_for_policy(
-        color_mode,
+        config.ui.color,
         env::var_os("NO_COLOR").as_deref(),
-        io::stdout().is_terminal(),
+        stdout_is_terminal,
     )
 }
 

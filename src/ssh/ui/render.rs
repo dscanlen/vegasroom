@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 use anyhow::{Context, Result};
 use crossterm::{
@@ -6,6 +6,8 @@ use crossterm::{
     terminal::{self, ClearType},
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+
+use crate::{alert, config::Config};
 
 use super::{ConfigureUiState, GREEN, RESET};
 
@@ -19,7 +21,9 @@ pub(super) fn render_configure_ui(state: &ConfigureUiState) -> Result<()> {
     let height = height.max(1);
 
     let lines = build_configure_ui_lines(state, width, height);
-    draw_tui_lines(&mut stdout, width, height, &lines)
+    let colors_enabled =
+        alert::colors_enabled_for_config(&state.config, io::stdout().is_terminal());
+    draw_tui_lines(&mut stdout, width, height, &lines, colors_enabled)
         .context("failed to redraw SSH configure UI")?;
     stdout.flush()?;
     Ok(())
@@ -34,7 +38,7 @@ pub(super) fn render_quit_prompt() -> Result<()> {
     let lines = vec![
         TuiLine::highlighted("╭─ unsaved SSH key changes"),
         TuiLine::normal("│"),
-        TuiLine::normal("│  save before quitting?"),
+        TuiLine::normal("│  save changes before quitting?"),
         TuiLine::normal("│"),
         TuiLine::normal("│  y  save and quit"),
         TuiLine::normal("│  n  quit without saving"),
@@ -42,7 +46,9 @@ pub(super) fn render_quit_prompt() -> Result<()> {
         TuiLine::normal("╰"),
     ];
 
-    draw_tui_lines(&mut stdout, width, height, &lines)
+    let config = Config::load_or_default().unwrap_or_default();
+    let colors_enabled = alert::colors_enabled_for_config(&config, io::stdout().is_terminal());
+    draw_tui_lines(&mut stdout, width, height, &lines, colors_enabled)
         .context("failed to draw SSH configure quit prompt")?;
     stdout.flush()?;
     Ok(())
@@ -124,7 +130,7 @@ fn build_configure_ui_lines(state: &ConfigureUiState, width: u16, height: u16) -
     }
 
     lines.push(TuiLine::normal(
-        "╰─ ↑↓/jk move  enter/space toggle  r rescan  s save  q quit",
+        "╰─ ↑↓/jk move  enter toggle  r rescan  s save  esc/q quit",
     ));
     lines
 }
@@ -266,6 +272,7 @@ fn draw_tui_lines(
     width: u16,
     height: u16,
     lines: &[TuiLine],
+    colors_enabled: bool,
 ) -> Result<()> {
     execute!(stdout, terminal::Clear(ClearType::All))?;
 
@@ -285,12 +292,14 @@ fn draw_tui_lines(
         )?;
 
         let text = truncate_to_width(&line.text, width);
-        match line.style {
-            TuiLineStyle::Normal => write!(stdout, "{text}")?,
-            TuiLineStyle::Dim => write!(stdout, "{DIM}{text}{RESET}")?,
-            TuiLineStyle::Highlighted => write!(stdout, "{BOLD}{text}{RESET}")?,
-            TuiLineStyle::Selected => write!(stdout, "{GREEN}{text}{RESET}")?,
-            TuiLineStyle::SelectedHighlighted => write!(stdout, "{GREEN}{BOLD}{text}{RESET}")?,
+        match (colors_enabled, line.style) {
+            (_, TuiLineStyle::Normal) | (false, _) => write!(stdout, "{text}")?,
+            (true, TuiLineStyle::Dim) => write!(stdout, "{DIM}{text}{RESET}")?,
+            (true, TuiLineStyle::Highlighted) => write!(stdout, "{BOLD}{text}{RESET}")?,
+            (true, TuiLineStyle::Selected) => write!(stdout, "{GREEN}{text}{RESET}")?,
+            (true, TuiLineStyle::SelectedHighlighted) => {
+                write!(stdout, "{GREEN}{BOLD}{text}{RESET}")?
+            }
         }
     }
 
@@ -300,6 +309,9 @@ fn draw_tui_lines(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
+    use crate::config::Config;
 
     #[test]
     fn truncation_respects_display_width_budget() {
@@ -315,5 +327,23 @@ mod tests {
 
         assert!(start <= 10);
         assert!(end > 10);
+    }
+
+    #[test]
+    fn help_uses_enter_for_toggle_and_escape_for_quit() {
+        let state = ConfigureUiState::new(
+            Vec::new(),
+            Vec::new(),
+            Config::default(),
+            vec![PathBuf::from("/tmp")],
+            false,
+        );
+
+        let lines = build_configure_ui_lines(&state, 100, 30);
+        let footer = &lines.last().unwrap().text;
+
+        assert!(footer.contains("enter toggle"));
+        assert!(footer.contains("esc/q quit"));
+        assert!(!footer.contains("space"));
     }
 }

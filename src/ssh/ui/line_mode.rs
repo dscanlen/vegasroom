@@ -1,8 +1,9 @@
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 
 use anyhow::Result;
 
 use crate::{
+    alert,
     config::Config,
     paths::{display_path, StatePaths},
 };
@@ -15,7 +16,7 @@ pub(super) fn configure_line_mode(
     mut config: Config,
 ) -> Result<i32> {
     loop {
-        print_selector(&discovered, &selected)?;
+        print_selector(&discovered, &selected, &config)?;
         print!("Command [number toggles, s save, q quit]: ");
         io::stdout().flush()?;
 
@@ -53,13 +54,14 @@ pub(super) fn configure_line_mode(
     }
 }
 
-fn print_selector(keys: &[DiscoveredSshKey], selected: &[bool]) -> Result<()> {
+fn print_selector(keys: &[DiscoveredSshKey], selected: &[bool], config: &Config) -> Result<()> {
+    let colors_enabled = alert::colors_enabled_for_config(config, io::stdout().is_terminal());
     println!();
     println!("Detected SSH keys:");
     for (index, (key, is_selected)) in keys.iter().zip(selected.iter()).enumerate() {
         let marker = if *is_selected { "[✓]" } else { "[ ]" };
         let first_line = format!("{marker} {}. {}", index + 1, key.display_path);
-        if *is_selected {
+        if *is_selected && colors_enabled {
             println!("{GREEN}{first_line}{RESET}");
         } else {
             println!("{first_line}");
@@ -83,13 +85,17 @@ fn print_selector(keys: &[DiscoveredSshKey], selected: &[bool]) -> Result<()> {
                 None => "",
             }
         );
-        if *is_selected {
+        if *is_selected && colors_enabled {
             println!("{GREEN}{detail}{RESET}");
         } else {
             println!("{detail}");
         }
     }
     println!();
-    println!("Selected rows are green. Unselected rows use the default terminal color.");
+    if colors_enabled {
+        println!("Selected rows are green. Unselected rows use the default terminal color.");
+    } else {
+        println!("Selected rows use [✓]. Unselected rows use [ ].");
+    }
     Ok(())
 }
