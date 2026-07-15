@@ -122,12 +122,13 @@ and no host Git inheritance."
             ],
             Self::Ssh => Vec::new(),
             Self::Advanced => vec![
-                SectionRow::manual_edit(
+                SectionRow::edit_text(
                     "Workspace path",
                     vec![
                         format!("Current: {}", config.paths.workspace),
-                        "Edit paths.workspace manually in the config YAML.".to_owned(),
+                        "Press Enter to edit paths.workspace.".to_owned(),
                     ],
+                    TextField::WorkspacePath,
                 ),
                 SectionRow::action(
                     "Git: inherit host identity",
@@ -137,25 +138,27 @@ and no host Git inheritance."
                     ],
                     RowAction::ToggleGitInheritHost,
                 ),
-                SectionRow::manual_edit(
+                SectionRow::edit_text(
                     "Git: configured user.name",
                     vec![
                         format!(
                             "Current: {}",
                             config.git.user_name.as_deref().unwrap_or("not set")
                         ),
-                        "Edit git.user_name manually in the config YAML.".to_owned(),
+                        "Press Enter to edit git.user_name; leave blank to clear.".to_owned(),
                     ],
+                    TextField::GitUserName,
                 ),
-                SectionRow::manual_edit(
+                SectionRow::edit_text(
                     "Git: configured user.email",
                     vec![
                         format!(
                             "Current: {}",
                             config.git.user_email.as_deref().unwrap_or("not set")
                         ),
-                        "Edit git.user_email manually in the config YAML.".to_owned(),
+                        "Press Enter to edit git.user_email; leave blank to clear.".to_owned(),
                     ],
+                    TextField::GitUserEmail,
                 ),
                 SectionRow::new("Git: effective identity", git_identity_preview(config)),
                 SectionRow::action(
@@ -214,11 +217,15 @@ impl SectionRow {
         }
     }
 
-    pub(super) fn manual_edit(title: impl Into<String>, details: Vec<String>) -> Self {
+    pub(super) fn edit_text(
+        title: impl Into<String>,
+        details: Vec<String>,
+        field: TextField,
+    ) -> Self {
         Self {
             title: title.into(),
             details,
-            action: RowAction::ManualEdit,
+            action: RowAction::EditText(field),
         }
     }
 
@@ -242,10 +249,50 @@ impl SectionRow {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum TextField {
+    WorkspacePath,
+    GitUserName,
+    GitUserEmail,
+}
+
+impl TextField {
+    pub(super) fn config_path(self) -> &'static str {
+        match self {
+            Self::WorkspacePath => "paths.workspace",
+            Self::GitUserName => "git.user_name",
+            Self::GitUserEmail => "git.user_email",
+        }
+    }
+
+    pub(super) fn title(self) -> &'static str {
+        match self {
+            Self::WorkspacePath => "Workspace path",
+            Self::GitUserName => "Git: configured user.name",
+            Self::GitUserEmail => "Git: configured user.email",
+        }
+    }
+
+    pub(super) fn current_value(self, config: &Config) -> String {
+        match self {
+            Self::WorkspacePath => config.paths.workspace.clone(),
+            Self::GitUserName => config.git.user_name.clone().unwrap_or_default(),
+            Self::GitUserEmail => config.git.user_email.clone().unwrap_or_default(),
+        }
+    }
+
+    pub(super) fn help(self) -> &'static str {
+        match self {
+            Self::WorkspacePath => "Workspace path must not be blank.",
+            Self::GitUserName | Self::GitUserEmail => "Leave blank to clear this optional value.",
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum RowAction {
     Placeholder,
-    ManualEdit,
+    EditText(TextField),
     PreviewPreset(SecurityPreset),
     CycleColorMode,
     ToggleGitInheritHost,

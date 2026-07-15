@@ -35,8 +35,11 @@ use presets::{
 };
 use render::{render, render_quit_prompt, TerminalSession};
 #[cfg(test)]
-use render::{render_header, render_keys, render_section_screen, truncate_to_width, TuiStyles};
-use sections::{ConfigSection, RowAction, SectionRow, SECTIONS};
+use render::{
+    render_header, render_keys, render_section_screen, render_text_input, truncate_to_width,
+    TuiStyles,
+};
+use sections::{ConfigSection, RowAction, SectionRow, TextField, SECTIONS};
 use state::{ConfigScreen, ConfigUiAction, ConfigUiExit, ConfigUiState, QuitDecision};
 use values::{color_mode_name, git_identity_preview};
 
@@ -78,6 +81,11 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<ConfigUiExit> {
             continue;
         };
 
+        if matches!(state.screen, ConfigScreen::TextInput(_)) {
+            handle_text_input_key(&mut state, key.code)?;
+            continue;
+        }
+
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => state.move_up(),
             KeyCode::Down | KeyCode::Char('j') => state.move_down(),
@@ -103,6 +111,18 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<ConfigUiExit> {
             _ => {}
         }
     }
+}
+
+fn handle_text_input_key(state: &mut ConfigUiState, code: KeyCode) -> Result<()> {
+    match code {
+        KeyCode::Enter => state.apply_text_input()?,
+        KeyCode::Esc => state.cancel_text_input(),
+        KeyCode::Backspace | KeyCode::Delete => state.pop_input_char(),
+        KeyCode::Char(ch) => state.push_input_char(ch),
+        _ => {}
+    }
+
+    Ok(())
 }
 
 fn confirm_config_quit_if_needed(state: &mut ConfigUiState) -> Result<Option<ConfigUiExit>> {
@@ -281,7 +301,7 @@ mod tests {
         let output = render_section_to_string(&state, ConfigSection::Advanced);
 
         assert!(output.contains("Workspace path"));
-        assert!(output.contains("Edit paths.workspace manually in the config YAML."));
+        assert!(output.contains("Press Enter to edit paths.workspace."));
         assert!(output.contains("Current: false"));
         assert!(output.contains("Current: Configured User"));
         assert!(output.contains("Current: configured@example.com"));
@@ -401,10 +421,11 @@ mod tests {
     }
 
     #[test]
-    fn manual_edit_rows_point_to_config_yaml() {
-        let config = Config::default();
+    fn editable_text_rows_open_input_screen_with_current_value() {
+        let mut config = Config::default();
+        config.git.user_name = Some("Configured User".to_owned());
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
-        let mut state = ConfigUiState::new(config, paths.clone());
+        let mut state = ConfigUiState::new(config, paths);
         state.screen = ConfigScreen::Section(ConfigSection::Advanced);
         state.highlighted_row = ConfigSection::Advanced
             .rows(&state.config, &state.state_paths)
@@ -416,10 +437,87 @@ mod tests {
 
         assert!(matches!(action, ConfigUiAction::Continue));
         assert!(!state.dirty);
-        assert!(state.last_message.as_deref().is_some_and(|message| {
-            message.contains("Edit Git: configured user.name manually")
-                && message.contains(&display_path(&paths.config_yaml))
-        }));
+        assert!(matches!(
+            state.screen,
+            ConfigScreen::TextInput(TextField::GitUserName)
+        ));
+        assert_eq!(state.input_buffer, "Configured User");
+    }
+
+    #[test]
+    fn text_input_render_shows_field_help_and_buffer() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+        state.screen = ConfigScreen::TextInput(TextField::WorkspacePath);
+        state.input_buffer = "/tmp/workspace".to_owned();
+        let mut output = Vec::new();
+
+        render_text_input(
+            &mut output,
+            &state,
+            TextField::WorkspacePath,
+            TuiStyles::plain(),
+        )
+        .unwrap();
+        let output = String::from_utf8(output).unwrap();
+
+        assert!(output.contains("Field: paths.workspace"));
+        assert!(output.contains("Workspace path must not be blank."));
+        assert!(output.contains("/tmp/workspace"));
+    }
+
+    #[test]
+    fn text_input_updates_workspace_path_and_marks_dirty() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+        state.screen = ConfigScreen::TextInput(TextField::WorkspacePath);
+        state.input_buffer = "/tmp/new-workspace".to_owned();
+
+        state.apply_text_input().unwrap();
+
+        assert!(state.dirty);
+        assert_eq!(state.config.paths.workspace, "/tmp/new-workspace");
+        assert!(matches!(
+            state.screen,
+            ConfigScreen::Section(ConfigSection::Advanced)
+        ));
+    }
+
+    #[test]
+    fn text_input_blank_git_value_clears_optional_field() {
+        let mut config = Config::default();
+        config.git.user_email = Some("configured@example.com".to_owned());
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+        state.screen = ConfigScreen::TextInput(TextField::GitUserEmail);
+        state.input_buffer = "   ".to_owned();
+
+        state.apply_text_input().unwrap();
+
+        assert!(state.dirty);
+        assert_eq!(state.config.git.user_email, None);
+    }
+
+    #[test]
+    fn text_input_rejects_blank_workspace_path() {
+        let config = Config::default();
+        let original_workspace = config.paths.workspace.clone();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+        state.screen = ConfigScreen::TextInput(TextField::WorkspacePath);
+        state.input_buffer = "   ".to_owned();
+
+        let err = state.apply_text_input().unwrap_err();
+
+        assert!(err.to_string().contains("paths.workspace"));
+        assert!(!state.dirty);
+        assert_eq!(state.config.paths.workspace, original_workspace);
+        assert!(matches!(
+            state.screen,
+            ConfigScreen::TextInput(TextField::WorkspacePath)
+        ));
     }
 
     #[test]

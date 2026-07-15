@@ -11,7 +11,8 @@ use crate::{alert, config::Config, paths::display_path};
 
 use super::{
     active_security_preset, package_cache_paths, preset_changes, reset_defaults_changes,
-    ConfigScreen, ConfigSection, ConfigUiState, RowAction, SectionRow, SecurityPreset, SECTIONS,
+    ConfigScreen, ConfigSection, ConfigUiState, RowAction, SectionRow, SecurityPreset, TextField,
+    SECTIONS,
 };
 
 const RESET: &str = "\x1b[0m";
@@ -83,6 +84,7 @@ pub(super) fn render(state: &ConfigUiState) -> Result<()> {
         ConfigScreen::PurgePackageCachesPreview => {
             render_purge_package_caches_preview(&mut buffer, state)?
         }
+        ConfigScreen::TextInput(field) => render_text_input(&mut buffer, state, field, styles)?,
     }
 
     if let Some(message) = &state.last_message {
@@ -290,6 +292,23 @@ fn render_reset_defaults_preview(stdout: &mut impl Write, state: &ConfigUiState)
     Ok(())
 }
 
+pub(super) fn render_text_input(
+    stdout: &mut impl Write,
+    state: &ConfigUiState,
+    field: TextField,
+    styles: TuiStyles,
+) -> Result<()> {
+    writeln!(stdout, "│  {}", styles.dim("Advanced"))?;
+    writeln!(stdout, "│  {}", styles.bold(field.title()))?;
+    writeln!(stdout, "│")?;
+    writeln!(stdout, "│  Field: {}", field.config_path())?;
+    writeln!(stdout, "│  {}", field.help())?;
+    writeln!(stdout, "│")?;
+    writeln!(stdout, "│  Value:")?;
+    writeln!(stdout, "│  › {}{}", state.input_buffer, styles.dim("_"))?;
+    Ok(())
+}
+
 fn render_purge_package_caches_preview(
     stdout: &mut impl Write,
     state: &ConfigUiState,
@@ -332,6 +351,10 @@ pub(super) fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Res
         ConfigScreen::PurgePackageCachesPreview => {
             writeln!(stdout, "╰─ enter purge caches  esc cancel  s save  q quit")?
         }
+        ConfigScreen::TextInput(_) => writeln!(
+            stdout,
+            "╰─ type edit  backspace delete  enter apply  esc cancel"
+        )?,
     }
 
     Ok(())

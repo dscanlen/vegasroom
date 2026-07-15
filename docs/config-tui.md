@@ -29,7 +29,7 @@ Save, discard, and exit should not be top-level menu entries. They are actions/k
 Save changes before quitting? y/n/c
 ```
 
-Nested config screens use `Esc` to return to the previous screen, while `s` and `q` remain global actions. On the root config menu, `Esc` quits like `q`.
+Nested config screens use `Esc` to return to the previous screen, while `s` and `q` remain global actions. Text input screens are the exception: printable keys edit the value, Enter applies it in memory, and Esc cancels back to the section. On the root config menu, `Esc` quits like `q`.
 
 ## Top-level sections
 
@@ -42,7 +42,7 @@ SSH
 Advanced
 ```
 
-Keep the menu stable and minimal. Avoid passive preview panes that change height as the highlight moves. Less-common settings belong in Advanced or manual YAML editing.
+Keep the menu stable and minimal. Avoid passive preview panes that change height as the highlight moves. Less-common settings belong in Advanced or manual YAML editing. Simple text values may open an in-TUI editor; complex list/runtime settings should remain manual YAML edits.
 
 ## Security presets
 
@@ -161,7 +161,9 @@ The UI shows the effective identity preview based on current precedence:
 3. host global Git config when git.inherit_host is true
 ```
 
-Current editable controls toggle `git.inherit_host`. `paths.workspace`, `git.user_name`, and `git.user_email` remain manual-YAML-only for now; selecting those rows points users to the config file instead of opening a text editor.
+Current editable controls toggle `git.inherit_host`. `paths.workspace`, `git.user_name`, and `git.user_email` open an in-TUI text editor. Press Enter to apply the typed value in memory, then press `s` to save it to disk. Leaving `git.user_name` or `git.user_email` blank clears that optional value; `paths.workspace` must not be blank.
+
+Package lists, toolchain version strings, and runtime configuration remain manual-YAML-only because they are deeper changes with more validation and rebuild implications.
 
 #### Output / color
 

@@ -8,7 +8,7 @@ use crate::{
 use super::{
     color_mode_name, enabled_name, preset_changes, purge_package_cache_paths,
     reset_defaults_changes, save_config_with_recovery_backup, ConfigSection, RowAction,
-    SecurityPreset, SECTIONS,
+    SecurityPreset, TextField, SECTIONS,
 };
 
 pub(super) struct ConfigUiState {
@@ -19,6 +19,7 @@ pub(super) struct ConfigUiState {
     pub(super) highlighted_row: usize,
     pub(super) dirty: bool,
     pub(super) last_message: Option<String>,
+    pub(super) input_buffer: String,
 }
 
 impl ConfigUiState {
@@ -31,6 +32,7 @@ impl ConfigUiState {
             highlighted_row: 0,
             dirty: false,
             last_message: None,
+            input_buffer: String::new(),
         }
     }
 
@@ -60,7 +62,8 @@ impl ConfigUiState {
             }
             ConfigScreen::PresetPreview(_)
             | ConfigScreen::ResetDefaultsPreview
-            | ConfigScreen::PurgePackageCachesPreview => {}
+            | ConfigScreen::PurgePackageCachesPreview
+            | ConfigScreen::TextInput(_) => {}
         }
         self.last_message = None;
     }
@@ -79,7 +82,8 @@ impl ConfigUiState {
             }
             ConfigScreen::PresetPreview(_)
             | ConfigScreen::ResetDefaultsPreview
-            | ConfigScreen::PurgePackageCachesPreview => {}
+            | ConfigScreen::PurgePackageCachesPreview
+            | ConfigScreen::TextInput(_) => {}
         }
         self.last_message = None;
     }
@@ -130,13 +134,7 @@ impl ConfigUiState {
                             self.screen = ConfigScreen::PurgePackageCachesPreview;
                             self.last_message = None;
                         }
-                        RowAction::ManualEdit => {
-                            self.last_message = Some(format!(
-                                "Edit {} manually in {}.",
-                                row.title,
-                                display_path(&self.state_paths.config_yaml)
-                            ));
-                        }
+                        RowAction::EditText(field) => self.start_text_input(field),
                         RowAction::Placeholder => {
                             self.last_message = Some(format!("{} is informational.", row.title));
                         }
@@ -148,6 +146,11 @@ impl ConfigUiState {
             ConfigScreen::PurgePackageCachesPreview => {
                 if let Err(error) = self.purge_package_caches() {
                     self.last_message = Some(format!("Package cache purge failed: {error:#}"));
+                }
+            }
+            ConfigScreen::TextInput(_) => {
+                if let Err(error) = self.apply_text_input() {
+                    self.last_message = Some(format!("Edit failed: {error:#}"));
                 }
             }
         }
@@ -175,7 +178,59 @@ impl ConfigUiState {
                 self.screen = ConfigScreen::Section(ConfigSection::Environment);
                 self.last_message = None;
             }
+            ConfigScreen::TextInput(_) => {
+                self.screen = ConfigScreen::Section(ConfigSection::Advanced);
+                self.input_buffer.clear();
+                self.last_message = Some("Edit canceled.".to_owned());
+            }
         }
+    }
+
+    fn start_text_input(&mut self, field: TextField) {
+        self.input_buffer = field.current_value(&self.config);
+        self.screen = ConfigScreen::TextInput(field);
+        self.last_message = None;
+    }
+
+    pub(super) fn push_input_char(&mut self, ch: char) {
+        self.input_buffer.push(ch);
+        self.last_message = None;
+    }
+
+    pub(super) fn pop_input_char(&mut self) {
+        self.input_buffer.pop();
+        self.last_message = None;
+    }
+
+    pub(super) fn apply_text_input(&mut self) -> Result<()> {
+        let ConfigScreen::TextInput(field) = self.screen else {
+            return Ok(());
+        };
+        let value = self.input_buffer.trim().to_owned();
+        let mut next_config = self.config.clone();
+
+        match field {
+            TextField::WorkspacePath => next_config.paths.workspace = value.clone(),
+            TextField::GitUserName => next_config.git.user_name = optional_text_value(&value),
+            TextField::GitUserEmail => next_config.git.user_email = optional_text_value(&value),
+        }
+
+        next_config.validate_semantics()?;
+        let changed = field.current_value(&self.config) != field.current_value(&next_config);
+        self.config = next_config;
+        self.dirty |= changed;
+        self.screen = ConfigScreen::Section(ConfigSection::Advanced);
+        self.input_buffer.clear();
+        self.last_message = Some(if changed {
+            format!("Updated {}. Press s to save.", field.config_path())
+        } else {
+            format!("{} unchanged.", field.config_path())
+        });
+        Ok(())
+    }
+
+    pub(super) fn cancel_text_input(&mut self) {
+        self.go_back();
     }
 
     pub(super) fn apply_preset(&mut self, preset: SecurityPreset) {
@@ -324,6 +379,14 @@ pub(super) enum ConfigUiAction {
     OpenSshConfigure,
 }
 
+fn optional_text_value(value: &str) -> Option<String> {
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_owned())
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum ConfigScreen {
     Sections,
@@ -331,4 +394,5 @@ pub(super) enum ConfigScreen {
     PresetPreview(SecurityPreset),
     ResetDefaultsPreview,
     PurgePackageCachesPreview,
+    TextInput(TextField),
 }
