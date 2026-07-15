@@ -21,10 +21,9 @@ mod state;
 mod values;
 
 #[cfg(test)]
-use crate::config::{RiskyMountPolicy, SshMode};
+use crate::config::{ColorMode, RiskyMountPolicy, SshMode};
 use crate::{
-    config::{ColorMode, Config},
-    docker,
+    config::Config,
     paths::{display_path, StatePaths},
     ssh,
 };
