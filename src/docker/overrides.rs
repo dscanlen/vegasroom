@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use crate::{config::Config, harness, paths::display_path};
+use crate::{atomic_write, config::Config, harness, paths::display_path};
 
 pub(super) fn prepare_read_only_rootfs(
     config: &Config,
@@ -35,7 +35,7 @@ pub(super) fn prepare_read_only_rootfs(
         service_name = harness::PI.service_name,
     );
 
-    fs::write(&override_path, contents).with_context(|| {
+    atomic_write::write_file(&override_path, contents).with_context(|| {
         format!(
             "failed to write read-only rootfs Compose override: {}",
             display_path(&override_path)

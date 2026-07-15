@@ -3,6 +3,7 @@ use std::{collections::BTreeSet, fs, path::PathBuf, process::Stdio};
 use anyhow::{bail, Context, Result};
 
 use crate::{
+    atomic_write,
     config::{
         normalized_apt_packages, normalized_rust_components, normalized_rust_toolchain,
         normalized_typescript_packages, Config,
@@ -154,12 +155,13 @@ fn write_dockerfile(
         })?;
     }
 
-    fs::write(&dockerfile_path, dockerfile_contents(config, descriptor)).with_context(|| {
-        format!(
-            "failed to write environment Dockerfile: {}",
-            display_path(&dockerfile_path)
-        )
-    })?;
+    atomic_write::write_file(&dockerfile_path, dockerfile_contents(config, descriptor))
+        .with_context(|| {
+            format!(
+                "failed to write environment Dockerfile: {}",
+                display_path(&dockerfile_path)
+            )
+        })?;
 
     Ok(dockerfile_path)
 }

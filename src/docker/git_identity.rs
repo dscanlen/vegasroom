@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result};
 
 use crate::{
-    alert,
+    alert, atomic_write,
     config::{Config, SelectedSshKey},
     harness,
     paths::display_path,
@@ -59,12 +59,14 @@ pub(super) fn prepare_override(
     })?;
 
     let gitconfig_path = runtime_dir.join("gitconfig");
-    fs::write(&gitconfig_path, gitconfig_contents(&identity)).with_context(|| {
-        format!(
-            "failed to write Git identity config: {}",
-            display_path(&gitconfig_path)
-        )
-    })?;
+    atomic_write::write_file(&gitconfig_path, gitconfig_contents(&identity)).with_context(
+        || {
+            format!(
+                "failed to write Git identity config: {}",
+                display_path(&gitconfig_path)
+            )
+        },
+    )?;
 
     let override_path = runtime_dir.join("git-identity.compose.yaml");
     let contents = format!(
@@ -88,7 +90,7 @@ pub(super) fn prepare_override(
         gitconfig_path = yaml_double_quoted_path(&gitconfig_path),
     );
 
-    fs::write(&override_path, contents).with_context(|| {
+    atomic_write::write_file(&override_path, contents).with_context(|| {
         format!(
             "failed to write Git identity Compose override: {}",
             display_path(&override_path)

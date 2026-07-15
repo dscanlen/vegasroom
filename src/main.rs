@@ -1,5 +1,6 @@
 mod alert;
 mod assets;
+mod atomic_write;
 mod cli;
 mod config;
 mod config_ui;
