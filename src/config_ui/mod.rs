@@ -18,6 +18,7 @@ mod presets;
 mod render;
 mod sections;
 mod state;
+mod values;
 
 #[cfg(test)]
 use crate::config::{RiskyMountPolicy, SshMode};
@@ -38,6 +39,7 @@ use render::{render, render_quit_prompt, TerminalSession};
 use render::{render_header, render_keys, render_section_screen, truncate_to_width, TuiStyles};
 use sections::{ConfigSection, RowAction, SectionRow, SECTIONS};
 use state::{ConfigScreen, ConfigUiAction, ConfigUiExit, ConfigUiState, QuitDecision};
+use values::{color_mode_name, git_identity_preview};
 
 pub fn run() -> Result<i32> {
     let mut config = Config::load_or_default()?;
@@ -138,28 +140,6 @@ fn confirm_quit() -> Result<QuitDecision> {
             }
             _ => {}
         }
-    }
-}
-
-fn color_mode_name(mode: ColorMode) -> &'static str {
-    match mode {
-        ColorMode::Auto => "auto",
-        ColorMode::Always => "always",
-        ColorMode::Never => "never",
-    }
-}
-
-fn git_identity_preview(config: &Config) -> Vec<String> {
-    match docker::effective_git_identity(config) {
-        Some(identity) => vec![
-            format!("Effective: {} <{}>", identity.name, identity.email),
-            format!("Source: {}", identity.source),
-        ],
-        None => vec![
-            "Effective: not configured".to_owned(),
-            "Set git.user_name/git.user_email, selected-key Git metadata, or enable host inheritance."
-                .to_owned(),
-        ],
     }
 }
 
