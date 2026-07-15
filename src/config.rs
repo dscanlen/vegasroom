@@ -316,17 +316,10 @@ impl Config {
     }
 
     pub fn resolved_compose_file(&self) -> Result<PathBuf> {
-        let configured = self.compose_file_path();
-        if configured.is_file() {
-            return configured.canonicalize().with_context(|| {
-                format!(
-                    "failed to canonicalize Compose file: {}",
-                    display_path(&configured)
-                )
-            });
-        }
+        self.resolved_compose_file_from_state(&StatePaths::default()?)
+    }
 
-        let state = StatePaths::default()?;
+    pub(crate) fn resolved_compose_file_from_state(&self, state: &StatePaths) -> Result<PathBuf> {
         if state.runtime_compose_yaml.is_file() {
             return state.runtime_compose_yaml.canonicalize().with_context(|| {
                 format!(
@@ -337,8 +330,8 @@ impl Config {
         }
 
         bail!(
-            "Compose runtime file was not found: {}\nRun `vr init` to write the managed runtime files.",
-            display_path(&configured)
+            "Managed Compose runtime file was not found: {}\nRun `vr init` to write the managed runtime files.",
+            display_path(&state.runtime_compose_yaml)
         );
     }
 
@@ -939,6 +932,39 @@ harness:
     }
 
     #[test]
+    fn resolved_compose_file_uses_managed_runtime_even_when_custom_file_exists() {
+        let root = unique_temp_dir("managed-compose");
+        let state = StatePaths::from_root(root.clone());
+        std::fs::create_dir_all(&state.runtime_root).unwrap();
+        std::fs::write(&state.runtime_compose_yaml, "managed\n").unwrap();
+        let custom = root.join("custom.compose.yaml");
+        std::fs::write(&custom, "custom\n").unwrap();
+
+        let mut config = Config::default();
+        config.docker.compose_file = custom.display().to_string();
+
+        let resolved = config.resolved_compose_file_from_state(&state).unwrap();
+
+        assert_eq!(resolved, state.runtime_compose_yaml.canonicalize().unwrap());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resolved_compose_file_reports_missing_managed_runtime() {
+        let root = unique_temp_dir("missing-managed-compose");
+        let state = StatePaths::from_root(root.clone());
+        let config = Config::default();
+
+        let err = config.resolved_compose_file_from_state(&state).unwrap_err();
+
+        assert!(err.to_string().contains("Managed Compose runtime file"));
+        assert!(err.to_string().contains("vr init"));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn config_round_trips_selected_key_metadata() {
         let mut config = Config::default();
         config.ssh.selected_keys.push(SelectedSshKey {
@@ -954,5 +980,16 @@ harness:
         let reparsed: Config = serde_yaml::from_str(&serialized).unwrap();
 
         assert_eq!(reparsed.ssh.selected_keys, config.ssh.selected_keys);
+    }
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "vegasroom-config-{name}-{}-{nanos}",
+            std::process::id()
+        ))
     }
 }
