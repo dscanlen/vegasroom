@@ -21,7 +21,8 @@ use self::{
     },
     output::print_checks,
     path_checks::{
-        check_dir_writable, check_known_hosts, check_path_dir, check_path_file, check_pi_auth_state,
+        check_dir_writable, check_known_hosts, check_path_dir, check_path_file,
+        check_pi_auth_state, check_private_dir_permissions, check_private_file_permissions,
     },
     runtime::check_compose_runtime_settings,
 };
@@ -117,6 +118,12 @@ pub fn run() -> Result<i32> {
     }
 
     checks.push(check_path_file("Config", &state.config_yaml));
+    for path in state.private_dirs() {
+        checks.push(check_private_dir_permissions(&path));
+    }
+    for path in state.private_files() {
+        checks.push(check_private_file_permissions(&path));
+    }
     checks.push(check_config_git_section(&state.config_yaml));
     checks.push(check_network_mode(&config));
     checks.push(check_workspace_risky_mount_policy(&config));
