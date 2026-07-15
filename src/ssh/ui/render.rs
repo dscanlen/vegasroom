@@ -36,13 +36,13 @@ pub(super) fn render_quit_prompt() -> Result<()> {
     let height = height.max(1);
 
     let lines = vec![
-        TuiLine::highlighted("╭─ unsaved SSH key changes"),
+        TuiLine::highlighted("╭─ Unsaved SSH Key Changes"),
         TuiLine::normal("│"),
-        TuiLine::normal("│  save changes before quitting?"),
+        TuiLine::normal("│  Save changes before quitting?"),
         TuiLine::normal("│"),
-        TuiLine::normal("│  y  save and quit"),
-        TuiLine::normal("│  n  quit without saving"),
-        TuiLine::normal("│  c  cancel"),
+        TuiLine::normal("│  y  Save and Quit"),
+        TuiLine::normal("│  n  Quit Without Saving"),
+        TuiLine::normal("│  c  Cancel"),
         TuiLine::normal("╰"),
     ];
 
@@ -107,28 +107,30 @@ impl TuiLine {
 }
 
 fn build_configure_ui_lines(state: &ConfigureUiState, width: u16, height: u16) -> Vec<TuiLine> {
-    let dirty = if state.is_dirty() { "unsaved" } else { "saved" };
+    let dirty = if state.is_dirty() { "Unsaved" } else { "Saved" };
     let selected_count = state.selected_count();
     let mut lines = vec![
-        TuiLine::highlighted(format!("╭─ ssh keys · {selected_count} selected · {dirty}")),
-        TuiLine::dim("│  select managed SSH keys for Vegasroom"),
+        TuiLine::highlighted(format!("╭─ SSH Keys · {selected_count} Selected · {dirty}")),
+        TuiLine::dim("│  Select Managed SSH Keys for Vegasroom"),
         TuiLine::normal("│"),
     ];
 
     let detail_rows = usize::from(!state.keys.is_empty()) * 5;
-    let message_rows = usize::from(state.last_message.is_some());
-    let fixed_rows = lines.len() + detail_rows + message_rows + 1;
+    let message_rows = usize::from(state.last_message.is_some()) * 2;
+    let fixed_rows = lines.len() + detail_rows + message_rows + 2;
     let key_rows = usize::from(height).saturating_sub(fixed_rows).max(1);
     append_key_list_lines(&mut lines, state, width, key_rows);
     append_highlighted_key_detail_lines(&mut lines, state, width);
 
     if let Some(message) = &state.last_message {
+        lines.push(TuiLine::normal("│"));
         lines.push(TuiLine::normal(truncate_to_width(
-            &format!("│  notice  {message}"),
+            &format!("│  Notice  {message}"),
             width,
         )));
     }
 
+    lines.push(TuiLine::normal("│"));
     lines.push(TuiLine::normal(
         "╰─ ↑↓/jk move  enter toggle  r rescan  s save  esc/q quit",
     ));
@@ -142,13 +144,13 @@ fn append_key_list_lines(
     list_rows: usize,
 ) {
     if state.keys.is_empty() {
-        lines.push(TuiLine::normal("│  no SSH private keys detected"));
+        lines.push(TuiLine::normal("│  No SSH Private Keys Detected"));
         return;
     }
 
     let (start, end) = visible_list_window(state.keys.len(), state.highlighted, list_rows);
     lines.push(TuiLine::dim(truncate_to_width(
-        &format!("│  keys {}-{} of {}", start + 1, end, state.keys.len()),
+        &format!("│  Keys {}-{} of {}", start + 1, end, state.keys.len()),
         width,
     )));
 
@@ -195,7 +197,7 @@ fn append_highlighted_key_detail_lines(
         .get(state.highlighted)
         .copied()
         .unwrap_or(false);
-    let selected_label = if selected { "selected" } else { "not selected" };
+    let selected_label = if selected { "Selected" } else { "Not Selected" };
     let key_type = key.key_type.as_deref().unwrap_or("unknown");
     let fingerprint = key.fingerprint.as_deref().unwrap_or("unknown fingerprint");
     let comment = key.comment.as_deref().unwrap_or("no comment");
@@ -208,19 +210,19 @@ fn append_highlighted_key_detail_lines(
 
     lines.push(TuiLine::normal("│"));
     lines.push(TuiLine::dim(truncate_to_width(
-        &format!("│  key  {selected_label} · {key_type} · public pair {public_pair}"),
+        &format!("│  Key  {selected_label} · {key_type} · Public Pair {public_pair}"),
         width,
     )));
     lines.push(TuiLine::dim(truncate_to_width(
-        &format!("│  fp   {fingerprint}"),
+        &format!("│  FP   {fingerprint}"),
         width,
     )));
     lines.push(TuiLine::dim(truncate_to_width(
-        &format!("│  note {comment}"),
+        &format!("│  Note {comment}"),
         width,
     )));
     lines.push(TuiLine::dim(truncate_to_width(
-        &format!("│  perms {permissions}"),
+        &format!("│  Permissions {permissions}"),
         width,
     )));
 }
@@ -345,5 +347,21 @@ mod tests {
         assert!(footer.contains("enter toggle"));
         assert!(footer.contains("esc/q quit"));
         assert!(!footer.contains("space"));
+    }
+
+    #[test]
+    fn menu_keeps_pipe_spacer_before_footer() {
+        let state = ConfigureUiState::new(
+            Vec::new(),
+            Vec::new(),
+            Config::default(),
+            vec![PathBuf::from("/tmp")],
+            false,
+        );
+
+        let lines = build_configure_ui_lines(&state, 100, 30);
+
+        assert_eq!(lines[lines.len() - 2].text, "│");
+        assert!(lines[0].text.contains("SSH Keys"));
     }
 }

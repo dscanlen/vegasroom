@@ -118,7 +118,7 @@ Purge package download caches
 
 The toolchain rows show current enabled/disabled state and toggle in memory with Enter. Users must press `s` to save, then run `vr init --build` when ready to rebuild the environment image. Toolchain version strings and package lists are intentionally not shown or edited in the TUI; edit YAML for those deeper changes.
 
-`Purge package download caches` opens a confirmation preview before deleting safe package download caches. It removes npm/pip download caches plus Cargo registry/git caches, while preserving workspaces, auth, SSH, Pi npm-global installs, and Cargo-installed binaries.
+`Purge package download caches` opens a confirmation preview before deleting safe package download caches. The preview shows estimated removable size totals and per-cache path estimates. It removes npm/pip download caches plus Cargo registry/git caches, while preserving workspaces, auth, SSH, Pi npm-global installs, and Cargo-installed binaries.
 
 ### SSH
 

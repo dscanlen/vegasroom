@@ -10,9 +10,9 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::{alert, config::Config, paths::display_path};
 
 use super::{
-    active_security_preset, package_cache_paths, preset_changes, reset_defaults_changes,
-    ConfigScreen, ConfigSection, ConfigUiState, RowAction, SectionRow, SecurityPreset, TextField,
-    SECTIONS,
+    active_security_preset, package_cache_estimates, preset_changes, reset_defaults_changes,
+    total_package_cache_bytes, ConfigScreen, ConfigSection, ConfigUiState, RowAction, SectionRow,
+    SecurityPreset, TextField, SECTIONS,
 };
 
 const RESET: &str = "\x1b[0m";
@@ -88,11 +88,11 @@ pub(super) fn render(state: &ConfigUiState) -> Result<()> {
     }
 
     if let Some(message) = &state.last_message {
-        writeln!(buffer)?;
-        writeln!(buffer, "notice  {message}")?;
+        writeln!(buffer, "│")?;
+        writeln!(buffer, "│  Notice  {message}")?;
     }
 
-    writeln!(buffer)?;
+    writeln!(buffer, "│")?;
     render_keys(&mut buffer, state)?;
 
     let lines = buffer_lines(&buffer);
@@ -108,11 +108,11 @@ pub(super) fn render_header(
     styles: TuiStyles,
 ) -> Result<()> {
     let status = if state.dirty {
-        styles.bold("unsaved")
+        styles.bold("Unsaved")
     } else {
-        styles.green("saved")
+        styles.green("Saved")
     };
-    writeln!(stdout, "╭─ {} · {status}", styles.bold("vegasroom config"))?;
+    writeln!(stdout, "╭─ {} · {status}", styles.bold("Vegasroom Config"))?;
     writeln!(
         stdout,
         "│  {}",
@@ -127,7 +127,7 @@ pub(super) fn render_sections_screen(
     state: &ConfigUiState,
     styles: TuiStyles,
 ) -> Result<()> {
-    writeln!(stdout, "│  {}", styles.dim("choose a section"))?;
+    writeln!(stdout, "│  {}", styles.dim("Choose a Section"))?;
     for (index, section) in SECTIONS.iter().enumerate() {
         let marker = if index == state.highlighted_section {
             "›"
@@ -217,13 +217,13 @@ fn styled_row_title(
 
 pub(super) fn render_quit_prompt() -> Result<()> {
     let lines = vec![
-        "╭─ unsaved config changes".to_owned(),
+        "╭─ Unsaved Config Changes".to_owned(),
         "│".to_owned(),
-        "│  save changes before quitting?".to_owned(),
+        "│  Save changes before quitting?".to_owned(),
         "│".to_owned(),
-        "│  y  save and quit".to_owned(),
-        "│  n  quit without saving".to_owned(),
-        "│  c  cancel".to_owned(),
+        "│  y  Save and Quit".to_owned(),
+        "│  n  Quit Without Saving".to_owned(),
+        "│  c  Cancel".to_owned(),
         "╰".to_owned(),
     ];
     let mut stdout = io::stdout();
@@ -237,57 +237,57 @@ fn render_preset_preview(
     state: &ConfigUiState,
     preset: SecurityPreset,
 ) -> Result<()> {
-    writeln!(stdout, "Security preset: {}", preset.title())?;
-    writeln!(stdout)?;
-    writeln!(stdout, "Changes to apply:")?;
+    writeln!(stdout, "│  Security Preset: {}", preset.title())?;
+    writeln!(stdout, "│")?;
+    writeln!(stdout, "│  Changes to Apply")?;
 
     let changes = preset_changes(&state.config, preset);
     if changes.is_empty() {
         writeln!(
             stdout,
-            "  No changes; this preset already matches current config."
+            "│    No changes; this preset already matches current config."
         )?;
     } else {
         for change in changes {
             writeln!(
                 stdout,
-                "  {}: {} -> {}",
+                "│    {}: {} -> {}",
                 change.field, change.before, change.after
             )?;
         }
     }
 
-    writeln!(stdout)?;
+    writeln!(stdout, "│")?;
     for line in preset.notes() {
-        writeln!(stdout, "  {line}")?;
+        writeln!(stdout, "│    {line}")?;
     }
 
     Ok(())
 }
 
 fn render_reset_defaults_preview(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
-    writeln!(stdout, "Reset all config to defaults")?;
-    writeln!(stdout)?;
-    writeln!(stdout, "Changes to apply:")?;
+    writeln!(stdout, "│  Reset All Config to Defaults")?;
+    writeln!(stdout, "│")?;
+    writeln!(stdout, "│  Changes to Apply")?;
 
     let changes = reset_defaults_changes(&state.config);
     if changes.is_empty() {
-        writeln!(stdout, "  No changes; config already matches defaults.")?;
+        writeln!(stdout, "│    No changes; config already matches defaults.")?;
     } else {
         for change in changes {
             writeln!(
                 stdout,
-                "  {}: {} -> {}",
+                "│    {}: {} -> {}",
                 change.field, change.before, change.after
             )?;
         }
     }
 
-    writeln!(stdout)?;
-    writeln!(stdout, "  This resets all config fields in memory.")?;
+    writeln!(stdout, "│")?;
+    writeln!(stdout, "│    This resets all config fields in memory.")?;
     writeln!(
         stdout,
-        "  Press s after applying to save the reset to disk."
+        "│    Press s after applying to save the reset to disk."
     )?;
     Ok(())
 }
@@ -304,33 +304,63 @@ pub(super) fn render_text_input(
     writeln!(stdout, "│  Field: {}", field.config_path())?;
     writeln!(stdout, "│  {}", field.help())?;
     writeln!(stdout, "│")?;
-    writeln!(stdout, "│  Value:")?;
+    writeln!(stdout, "│  Value")?;
     writeln!(stdout, "│  › {}{}", state.input_buffer, styles.dim("_"))?;
     Ok(())
 }
 
-fn render_purge_package_caches_preview(
+pub(super) fn render_purge_package_caches_preview(
     stdout: &mut impl Write,
     state: &ConfigUiState,
 ) -> Result<()> {
-    writeln!(stdout, "Purge package download caches")?;
-    writeln!(stdout)?;
-    writeln!(stdout, "This removes safe package download caches only:")?;
-    for path in package_cache_paths(&state.state_paths) {
-        writeln!(stdout, "  {}", display_path(&path))?;
+    let estimates = package_cache_estimates(&state.state_paths);
+    let total_bytes = total_package_cache_bytes(&estimates);
+
+    writeln!(stdout, "│  Purge Package Download Caches")?;
+    writeln!(stdout, "│")?;
+    writeln!(
+        stdout,
+        "│  Estimated removable cache: {}",
+        format_bytes(total_bytes)
+    )?;
+    writeln!(stdout, "│")?;
+    writeln!(stdout, "│  This removes safe package download caches only:")?;
+    for estimate in estimates {
+        writeln!(
+            stdout,
+            "│    {}  {}",
+            format_bytes(estimate.bytes),
+            display_path(&estimate.path)
+        )?;
     }
-    writeln!(stdout)?;
+    writeln!(stdout, "│")?;
     writeln!(
         stdout,
-        "It preserves toolchain settings, auth, SSH, workspaces,"
+        "│  Preserves toolchain settings, auth, SSH, workspaces,"
     )?;
     writeln!(
         stdout,
-        "Pi npm-global installs, and Cargo-installed binaries."
+        "│  Pi npm-global installs, and Cargo-installed binaries."
     )?;
-    writeln!(stdout)?;
-    writeln!(stdout, "Press Enter to purge, or Esc to cancel.")?;
+    writeln!(stdout, "│")?;
+    writeln!(stdout, "│  Press Enter to purge, or Esc to cancel.")?;
     Ok(())
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = KIB * 1024;
+    const GIB: u64 = MIB * 1024;
+
+    if bytes >= GIB {
+        format!("{:.1} GiB", bytes as f64 / GIB as f64)
+    } else if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
 }
 
 pub(super) fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {

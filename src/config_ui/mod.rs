@@ -28,7 +28,7 @@ use crate::{
     ssh,
 };
 
-use cache::{package_cache_paths, purge_package_cache_paths};
+use cache::{package_cache_estimates, purge_package_cache_paths, total_package_cache_bytes};
 use persistence::save_config_with_recovery_backup;
 use presets::{
     active_security_preset, enabled_name, preset_changes, reset_defaults_changes, SecurityPreset,
@@ -36,8 +36,8 @@ use presets::{
 use render::{render, render_quit_prompt, TerminalSession};
 #[cfg(test)]
 use render::{
-    render_header, render_keys, render_section_screen, render_text_input, truncate_to_width,
-    TuiStyles,
+    render_header, render_keys, render_purge_package_caches_preview, render_section_screen,
+    render_text_input, truncate_to_width, TuiStyles,
 };
 use sections::{ConfigSection, RowAction, SectionRow, TextField, SECTIONS};
 use state::{ConfigScreen, ConfigUiAction, ConfigUiExit, ConfigUiState, QuitDecision};
@@ -224,7 +224,7 @@ mod tests {
         let header = String::from_utf8(output).unwrap();
 
         assert!(!header.contains("\x1b["));
-        assert!(header.contains("vegasroom config"));
+        assert!(header.contains("Vegasroom Config"));
     }
 
     #[test]
@@ -288,6 +288,26 @@ mod tests {
         assert!(!output.contains("packages: typescript, tsx"));
         assert!(output.contains("Removes npm/pip download caches"));
         assert!(output.contains("Preserves workspaces, auth, SSH, Pi npm-global, and Cargo bin"));
+    }
+
+    #[test]
+    fn purge_cache_preview_includes_size_estimates() {
+        let dir = unique_temp_dir("purge-cache-preview");
+        let paths = StatePaths::from_root(dir.clone());
+        fs::create_dir_all(paths.cache.join("npm")).unwrap();
+        fs::write(paths.cache.join("npm/blob"), vec![0_u8; 1536]).unwrap();
+        let state = ConfigUiState::new(Config::default(), paths);
+        let mut output = Vec::new();
+
+        render_purge_package_caches_preview(&mut output, &state).unwrap();
+        let output = String::from_utf8(output).unwrap();
+
+        assert!(output.contains("Estimated removable cache: 1.5 KiB"));
+        assert!(output.contains("1.5 KiB"));
+        assert!(output.contains("Purge Package Download Caches"));
+        assert!(output.contains("│  Press Enter to purge, or Esc to cancel."));
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
