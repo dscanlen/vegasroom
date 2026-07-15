@@ -112,6 +112,8 @@ Vegasroom uses:
 ~/.vegasroom
 ```
 
+On Unix hosts, `vr init` and launch-time state repair set private permissions on sensitive Vegasroom-managed state directories and files. Run `vr doctor` to report permission drift.
+
 Default layout:
 
 ```text

@@ -7,6 +7,7 @@ Vegasroom MVP is functional containment, not a hardened sandbox.
 - Runs Pi inside an ephemeral Docker container.
 - Removes the container after exit with `compose run --rm`.
 - Persists only explicit bind mounts, with `/workspace` resolved by the `vr` wrapper.
+- Sets private Unix permissions on sensitive Vegasroom-managed state directories and files when `vr init` or launch repair state.
 - Does not mount host `~/.ssh`.
 - Does not copy SSH private keys into the container.
 - Forwards an SSH agent socket only when available.
@@ -102,6 +103,8 @@ When a Git identity is configured or inherited, Vegasroom writes a generated git
 `environment.apt.packages` installs extra Debian packages into a derived Docker image. `environment.rust` installs Rust through rustup into that same derived image. `environment.python` installs Debian's Python, pip, and venv packages into the derived image. `environment.go` installs Debian's Go toolchain into the derived image. `environment.typescript` installs configured npm packages into the derived image. Cargo cache/install state persists under `~/.vegasroom/environment/cargo`, and pip/Go/npm download caches use the existing Vegasroom cache mount. Names are validated conservatively before generating the Dockerfile, but installed packages/toolchains are still code that becomes available inside future rooms. Only add packages and toolchains you trust from their configured upstreams.
 
 ### Pi auth and package state
+
+Vegasroom sets private Unix permissions on its managed state root, Pi harness state, SSH state, cache/runtime override directories, config file, known_hosts file, and managed runtime files where supported. Run `vr init` to repair permissions and `vr doctor` to report any broad managed-state permissions.
 
 Pi login state may persist under:
 
