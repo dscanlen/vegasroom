@@ -4,6 +4,7 @@ pub struct HarnessDescriptor {
     pub display_name: &'static str,
     pub service_name: &'static str,
     pub default_image: &'static str,
+    pub versioned_image: &'static str,
     pub default_command: &'static str,
     pub dockerfile_path: &'static str,
     pub container_home: &'static str,
@@ -32,6 +33,10 @@ impl HarnessDescriptor {
     }
 }
 
+pub const VEGASROOM_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const PI_DEFAULT_IMAGE: &str = "vegasroom/pi:latest";
+pub const PI_VERSIONED_IMAGE: &str = concat!("vegasroom/pi:", env!("CARGO_PKG_VERSION"));
+
 pub const PI_CONFIG_DIR: &str = "config";
 pub const PI_EXTENSIONS_DIR: &str = "extensions";
 pub const PI_SKILLS_DIR: &str = "skills";
@@ -42,7 +47,8 @@ pub const PI: HarnessDescriptor = HarnessDescriptor {
     id: "pi",
     display_name: "Pi",
     service_name: "pi",
-    default_image: "vegasroom/pi:local",
+    default_image: PI_DEFAULT_IMAGE,
+    versioned_image: PI_VERSIONED_IMAGE,
     default_command: "pi",
     dockerfile_path: "harness/pi/Dockerfile",
     container_home: "/home/agent",
@@ -79,7 +85,12 @@ mod tests {
     fn pi_descriptor_contains_current_runtime_contract() {
         assert_eq!(PI.id, "pi");
         assert_eq!(PI.service_name, "pi");
-        assert_eq!(PI.default_image, "vegasroom/pi:local");
+        assert_eq!(VEGASROOM_VERSION, env!("CARGO_PKG_VERSION"));
+        assert_eq!(PI.default_image, "vegasroom/pi:latest");
+        assert_eq!(
+            PI.versioned_image,
+            concat!("vegasroom/pi:", env!("CARGO_PKG_VERSION"))
+        );
         assert_eq!(PI.default_command, "pi");
         assert_eq!(PI.dockerfile_path, "harness/pi/Dockerfile");
         assert_eq!(PI.container_home, "/home/agent");

@@ -116,12 +116,49 @@ fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor)
         .context("failed to start Docker build command")?;
 
     if status.success() {
-        Ok(())
+        tag_standard_harness_images(config, descriptor)
     } else {
         Err(anyhow!(
             "Docker Compose build failed with status: {}",
             status
         ))
+    }
+}
+
+fn tag_standard_harness_images(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+) -> Result<()> {
+    let image = harness_image(config, descriptor);
+    for tag in standard_harness_image_tags(image, descriptor) {
+        let status = base_docker(config)
+            .args(["image", "tag", image, tag])
+            .stdin(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .with_context(|| format!("failed to start Docker image tag command for {tag}"))?;
+
+        if !status.success() {
+            return Err(anyhow!(
+                "Docker image tag failed for {image} -> {tag} with status: {status}"
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn standard_harness_image_tags<'a>(
+    image: &'a str,
+    descriptor: &'a harness::HarnessDescriptor,
+) -> Vec<&'a str> {
+    if image == descriptor.default_image {
+        vec![descriptor.versioned_image]
+    } else if image == descriptor.versioned_image {
+        vec![descriptor.default_image]
+    } else {
+        Vec::new()
     }
 }
 
@@ -467,6 +504,19 @@ mod tests {
         assert!(envs.contains(&("VR_PI_NETWORK_MODE".to_owned(), Some("bridge".to_owned()),)));
         assert!(envs.contains(&("VR_PI_BUILD_NETWORK".to_owned(), Some("host".to_owned()),)));
         assert!(envs.contains(&("VR_WORKSPACE_READ_ONLY".to_owned(), Some("true".to_owned()),)));
+    }
+
+    #[test]
+    fn standard_harness_tags_link_latest_and_versioned_images() {
+        assert_eq!(
+            standard_harness_image_tags(harness::PI.default_image, &harness::PI),
+            vec![harness::PI.versioned_image]
+        );
+        assert_eq!(
+            standard_harness_image_tags(harness::PI.versioned_image, &harness::PI),
+            vec![harness::PI.default_image]
+        );
+        assert!(standard_harness_image_tags("example/pi:custom", &harness::PI).is_empty());
     }
 
     #[test]

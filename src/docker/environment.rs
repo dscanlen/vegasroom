@@ -522,8 +522,8 @@ mod tests {
     #[test]
     fn derived_image_tag_appends_env_to_existing_tag() {
         assert_eq!(
-            derived_image_tag("vegasroom/pi:local"),
-            "vegasroom/pi:local-env"
+            derived_image_tag("vegasroom/pi:latest"),
+            "vegasroom/pi:latest-env"
         );
         assert_eq!(derived_image_tag("vegasroom/pi"), "vegasroom/pi:env");
     }
