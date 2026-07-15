@@ -280,6 +280,8 @@ mod tests {
 
         let output = render_section_to_string(&state, ConfigSection::Advanced);
 
+        assert!(output.contains("Workspace path"));
+        assert!(output.contains("Edit paths.workspace manually in the config YAML."));
         assert!(output.contains("Current: false"));
         assert!(output.contains("Current: Configured User"));
         assert!(output.contains("Current: configured@example.com"));
@@ -396,6 +398,28 @@ mod tests {
             .last_message
             .as_deref()
             .is_some_and(|message| message.contains("Press s to save")));
+    }
+
+    #[test]
+    fn manual_edit_rows_point_to_config_yaml() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths.clone());
+        state.screen = ConfigScreen::Section(ConfigSection::Advanced);
+        state.highlighted_row = ConfigSection::Advanced
+            .rows(&state.config, &state.state_paths)
+            .iter()
+            .position(|row| row.title == "Git: configured user.name")
+            .unwrap();
+
+        let action = state.open_highlighted();
+
+        assert!(matches!(action, ConfigUiAction::Continue));
+        assert!(!state.dirty);
+        assert!(state.last_message.as_deref().is_some_and(|message| {
+            message.contains("Edit Git: configured user.name manually")
+                && message.contains(&display_path(&paths.config_yaml))
+        }));
     }
 
     #[test]

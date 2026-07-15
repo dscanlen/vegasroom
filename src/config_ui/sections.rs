@@ -122,6 +122,13 @@ and no host Git inheritance."
             ],
             Self::Ssh => Vec::new(),
             Self::Advanced => vec![
+                SectionRow::manual_edit(
+                    "Workspace path",
+                    vec![
+                        format!("Current: {}", config.paths.workspace),
+                        "Edit paths.workspace manually in the config YAML.".to_owned(),
+                    ],
+                ),
                 SectionRow::action(
                     "Git: inherit host identity",
                     vec![
@@ -130,19 +137,25 @@ and no host Git inheritance."
                     ],
                     RowAction::ToggleGitInheritHost,
                 ),
-                SectionRow::new(
+                SectionRow::manual_edit(
                     "Git: configured user.name",
-                    vec![format!(
-                        "Current: {}",
-                        config.git.user_name.as_deref().unwrap_or("not set")
-                    )],
+                    vec![
+                        format!(
+                            "Current: {}",
+                            config.git.user_name.as_deref().unwrap_or("not set")
+                        ),
+                        "Edit git.user_name manually in the config YAML.".to_owned(),
+                    ],
                 ),
-                SectionRow::new(
+                SectionRow::manual_edit(
                     "Git: configured user.email",
-                    vec![format!(
-                        "Current: {}",
-                        config.git.user_email.as_deref().unwrap_or("not set")
-                    )],
+                    vec![
+                        format!(
+                            "Current: {}",
+                            config.git.user_email.as_deref().unwrap_or("not set")
+                        ),
+                        "Edit git.user_email manually in the config YAML.".to_owned(),
+                    ],
                 ),
                 SectionRow::new("Git: effective identity", git_identity_preview(config)),
                 SectionRow::action(
@@ -201,6 +214,14 @@ impl SectionRow {
         }
     }
 
+    pub(super) fn manual_edit(title: impl Into<String>, details: Vec<String>) -> Self {
+        Self {
+            title: title.into(),
+            details,
+            action: RowAction::ManualEdit,
+        }
+    }
+
     pub(super) fn action(
         title: impl Into<String>,
         details: Vec<String>,
@@ -224,6 +245,7 @@ impl SectionRow {
 #[derive(Clone, Copy)]
 pub(super) enum RowAction {
     Placeholder,
+    ManualEdit,
     PreviewPreset(SecurityPreset),
     CycleColorMode,
     ToggleGitInheritHost,

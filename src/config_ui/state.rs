@@ -130,11 +130,15 @@ impl ConfigUiState {
                             self.screen = ConfigScreen::PurgePackageCachesPreview;
                             self.last_message = None;
                         }
-                        RowAction::Placeholder => {
+                        RowAction::ManualEdit => {
                             self.last_message = Some(format!(
-                                "{} editing will be added in an upcoming slice.",
-                                row.title
+                                "Edit {} manually in {}.",
+                                row.title,
+                                display_path(&self.state_paths.config_yaml)
                             ));
+                        }
+                        RowAction::Placeholder => {
+                            self.last_message = Some(format!("{} is informational.", row.title));
                         }
                     }
                 }
