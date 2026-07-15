@@ -29,7 +29,7 @@ Save, discard, and exit should not be top-level menu entries. They are actions/k
 Save changes before quitting? y/n/c
 ```
 
-Nested submenus use `Esc` or Backspace to return to the previous screen, while `s` and `q` remain global actions.
+Nested submenus use `Esc` to return to the previous screen, while `s` and `q` remain global actions. On the root config menu, `Esc` quits like `q`.
 
 ## Top-level sections
 

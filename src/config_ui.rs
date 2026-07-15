@@ -15,7 +15,7 @@ use crossterm::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
-    atomic_write,
+    alert, atomic_write,
     config::{ColorMode, Config, RiskyMountPolicy, SshMode},
     docker,
     paths::{display_path, StatePaths},
@@ -26,6 +26,54 @@ const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
 const GREEN: &str = "\x1b[32m";
 const DIM: &str = "\x1b[2m";
+
+#[derive(Clone, Copy)]
+struct TuiStyles {
+    enabled: bool,
+}
+
+impl TuiStyles {
+    fn for_config(config: &Config) -> Self {
+        Self {
+            enabled: alert::colors_enabled_for_config(config, io::stdout().is_terminal()),
+        }
+    }
+
+    #[cfg(test)]
+    fn plain() -> Self {
+        Self { enabled: false }
+    }
+
+    fn code(self, code: &'static str) -> &'static str {
+        if self.enabled {
+            code
+        } else {
+            ""
+        }
+    }
+
+    fn bold(self, text: &str) -> String {
+        format!("{}{}{}", self.code(BOLD), text, self.code(RESET))
+    }
+
+    fn green(self, text: &str) -> String {
+        format!("{}{}{}", self.code(GREEN), text, self.code(RESET))
+    }
+
+    fn green_bold(self, text: &str) -> String {
+        format!(
+            "{}{}{}{}",
+            self.code(GREEN),
+            self.code(BOLD),
+            text,
+            self.code(RESET)
+        )
+    }
+
+    fn dim(self, text: &str) -> String {
+        format!("{}{}{}", self.code(DIM), text, self.code(RESET))
+    }
+}
 
 const SECTIONS: &[ConfigSection] = &[
     ConfigSection::SecurityPreset,
@@ -79,22 +127,19 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<ConfigUiExit> {
                 ConfigUiAction::Continue => {}
                 ConfigUiAction::OpenSshConfigure => return Ok(ConfigUiExit::OpenSshConfigure),
             },
-            KeyCode::Esc | KeyCode::Backspace => state.go_back(),
+            KeyCode::Esc => {
+                if matches!(state.screen, ConfigScreen::Sections) {
+                    if let Some(exit) = confirm_config_quit_if_needed(&mut state)? {
+                        return Ok(exit);
+                    }
+                } else {
+                    state.go_back();
+                }
+            }
             KeyCode::Char('s') => state.save()?,
             KeyCode::Char('q') => {
-                if !state.dirty {
-                    return Ok(ConfigUiExit::Quit(0));
-                }
-
-                match confirm_quit()? {
-                    QuitDecision::Save => {
-                        state.save()?;
-                        return Ok(ConfigUiExit::Quit(0));
-                    }
-                    QuitDecision::Discard => return Ok(ConfigUiExit::Quit(0)),
-                    QuitDecision::Cancel => {
-                        state.last_message = Some("Quit canceled.".to_owned());
-                    }
+                if let Some(exit) = confirm_config_quit_if_needed(&mut state)? {
+                    return Ok(exit);
                 }
             }
             _ => {}
@@ -104,12 +149,15 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<ConfigUiExit> {
 
 fn render(state: &ConfigUiState) -> Result<()> {
     let mut buffer = Vec::new();
+    let styles = TuiStyles::for_config(&state.config);
 
-    render_header(&mut buffer, state)?;
+    render_header(&mut buffer, state, styles)?;
 
     match state.screen {
-        ConfigScreen::Sections => render_sections_screen(&mut buffer, state)?,
-        ConfigScreen::Section(section) => render_section_screen(&mut buffer, state, section)?,
+        ConfigScreen::Sections => render_sections_screen(&mut buffer, state, styles)?,
+        ConfigScreen::Section(section) => {
+            render_section_screen(&mut buffer, state, section, styles)?
+        }
         ConfigScreen::PresetPreview(preset) => render_preset_preview(&mut buffer, state, preset)?,
         ConfigScreen::ResetDefaultsPreview => render_reset_defaults_preview(&mut buffer, state)?,
         ConfigScreen::PurgePackageCachesPreview => {
@@ -132,24 +180,28 @@ fn render(state: &ConfigUiState) -> Result<()> {
     Ok(())
 }
 
-fn render_header(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
+fn render_header(stdout: &mut impl Write, state: &ConfigUiState, styles: TuiStyles) -> Result<()> {
     let status = if state.dirty {
-        format!("{BOLD}unsaved{RESET}")
+        styles.bold("unsaved")
     } else {
-        format!("{GREEN}saved{RESET}")
+        styles.green("saved")
     };
-    writeln!(stdout, "╭─ {BOLD}vegasroom config{RESET} · {status}")?;
+    writeln!(stdout, "╭─ {} · {status}", styles.bold("vegasroom config"))?;
     writeln!(
         stdout,
-        "│  {DIM}{}{RESET}",
-        display_path(&state.state_paths.config_yaml)
+        "│  {}",
+        styles.dim(&display_path(&state.state_paths.config_yaml))
     )?;
     writeln!(stdout, "│")?;
     Ok(())
 }
 
-fn render_sections_screen(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
-    writeln!(stdout, "│  {DIM}choose a section{RESET}")?;
+fn render_sections_screen(
+    stdout: &mut impl Write,
+    state: &ConfigUiState,
+    styles: TuiStyles,
+) -> Result<()> {
+    writeln!(stdout, "│  {}", styles.dim("choose a section"))?;
     for (index, section) in SECTIONS.iter().enumerate() {
         let marker = if index == state.highlighted_section {
             "›"
@@ -157,7 +209,7 @@ fn render_sections_screen(stdout: &mut impl Write, state: &ConfigUiState) -> Res
             " "
         };
         let title = if index == state.highlighted_section {
-            format!("{BOLD}{}{RESET}", section.title())
+            styles.bold(section.title())
         } else {
             section.title().to_owned()
         };
@@ -171,8 +223,9 @@ fn render_section_screen(
     stdout: &mut impl Write,
     state: &ConfigUiState,
     section: ConfigSection,
+    styles: TuiStyles,
 ) -> Result<()> {
-    writeln!(stdout, "│  {DIM}{}{RESET}", section.title())?;
+    writeln!(stdout, "│  {}", styles.dim(section.title()))?;
     let rows = section.rows(&state.config, &state.state_paths);
     for (index, row) in rows.iter().enumerate() {
         let marker = if index == state.highlighted_row {
@@ -180,10 +233,16 @@ fn render_section_screen(
         } else {
             " "
         };
-        let title = styled_row_title(section, row, &state.config, index == state.highlighted_row);
+        let title = styled_row_title(
+            section,
+            row,
+            &state.config,
+            index == state.highlighted_row,
+            styles,
+        );
         writeln!(stdout, "│  {marker} {title}")?;
         for detail in &row.details {
-            writeln!(stdout, "│      {DIM}{detail}{RESET}")?;
+            writeln!(stdout, "│      {}", styles.dim(detail))?;
         }
     }
 
@@ -195,37 +254,56 @@ fn styled_row_title(
     row: &SectionRow,
     config: &Config,
     highlighted: bool,
+    styles: TuiStyles,
 ) -> String {
     if matches!(section, ConfigSection::SecurityPreset)
         && row
             .security_preset()
             .is_some_and(|preset| Some(preset) == active_security_preset(config))
     {
-        return format!("{GREEN}{BOLD}✓ {}{RESET}", row.title);
+        return styles.green_bold(&format!("✓ {}", row.title));
     }
 
     if matches!(section, ConfigSection::Environment) {
         match row.action {
             RowAction::ToggleRustToolchain if config.environment.rust.enabled => {
-                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+                return styles.green_bold(&row.title);
             }
             RowAction::TogglePythonToolchain if config.environment.python.enabled => {
-                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+                return styles.green_bold(&row.title);
             }
             RowAction::ToggleGoToolchain if config.environment.go.enabled => {
-                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+                return styles.green_bold(&row.title);
             }
             RowAction::ToggleTypeScriptToolchain if config.environment.typescript.enabled => {
-                return format!("{GREEN}{BOLD}{}{RESET}", row.title);
+                return styles.green_bold(&row.title);
             }
             _ => {}
         }
     }
 
     if highlighted {
-        format!("{BOLD}{}{RESET}", row.title)
+        styles.bold(&row.title)
     } else {
         row.title.clone()
+    }
+}
+
+fn confirm_config_quit_if_needed(state: &mut ConfigUiState) -> Result<Option<ConfigUiExit>> {
+    if !state.dirty {
+        return Ok(Some(ConfigUiExit::Quit(0)));
+    }
+
+    match confirm_quit()? {
+        QuitDecision::Save => {
+            state.save()?;
+            Ok(Some(ConfigUiExit::Quit(0)))
+        }
+        QuitDecision::Discard => Ok(Some(ConfigUiExit::Quit(0))),
+        QuitDecision::Cancel => {
+            state.last_message = Some("Quit canceled.".to_owned());
+            Ok(None)
+        }
     }
 }
 
@@ -345,29 +423,28 @@ fn render_purge_package_caches_preview(
         "Pi npm-global installs, and Cargo-installed binaries."
     )?;
     writeln!(stdout)?;
-    writeln!(stdout, "Press Enter to purge, or Esc/Backspace to cancel.")?;
+    writeln!(stdout, "Press Enter to purge, or Esc to cancel.")?;
     Ok(())
 }
 
 fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Result<()> {
     match state.screen {
-        ConfigScreen::Sections => writeln!(stdout, "╰─ ↑↓/jk move  enter open  s save  q quit")?,
+        ConfigScreen::Sections => {
+            writeln!(stdout, "╰─ ↑↓/jk move  enter open  s save  esc/q quit")?
+        }
         ConfigScreen::Section(_) => writeln!(
             stdout,
-            "╰─ ↑↓/jk move  enter edit  esc/back back  s save  q quit"
+            "╰─ ↑↓/jk move  enter activate  esc back  s save  q quit"
         )?,
-        ConfigScreen::PresetPreview(_) => writeln!(
-            stdout,
-            "╰─ enter apply preset  esc/back back  s save  q quit"
-        )?,
-        ConfigScreen::ResetDefaultsPreview => writeln!(
-            stdout,
-            "╰─ enter reset defaults  esc/back back  s save  q quit"
-        )?,
-        ConfigScreen::PurgePackageCachesPreview => writeln!(
-            stdout,
-            "╰─ enter purge caches  esc/back cancel  s save  q quit"
-        )?,
+        ConfigScreen::PresetPreview(_) => {
+            writeln!(stdout, "╰─ enter apply preset  esc back  s save  q quit")?
+        }
+        ConfigScreen::ResetDefaultsPreview => {
+            writeln!(stdout, "╰─ enter reset defaults  esc back  s save  q quit")?
+        }
+        ConfigScreen::PurgePackageCachesPreview => {
+            writeln!(stdout, "╰─ enter purge caches  esc cancel  s save  q quit")?
+        }
     }
 
     Ok(())
@@ -1445,6 +1522,42 @@ mod tests {
     }
 
     #[test]
+    fn key_help_uses_enter_for_activation_and_escape_for_back_or_quit() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+        let mut output = Vec::new();
+
+        render_keys(&mut output, &state).unwrap();
+        let root_help = String::from_utf8(output).unwrap();
+        assert!(root_help.contains("enter open"));
+        assert!(root_help.contains("esc/q quit"));
+
+        state.screen = ConfigScreen::Section(ConfigSection::Advanced);
+        let mut output = Vec::new();
+        render_keys(&mut output, &state).unwrap();
+        let section_help = String::from_utf8(output).unwrap();
+        assert!(section_help.contains("enter activate"));
+        assert!(section_help.contains("esc back"));
+        assert!(!section_help.contains("space"));
+        assert!(!section_help.contains("backspace"));
+    }
+
+    #[test]
+    fn plain_tui_styles_omit_ansi_sequences() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let state = ConfigUiState::new(config, paths);
+        let mut output = Vec::new();
+
+        render_header(&mut output, &state, TuiStyles::plain()).unwrap();
+        let header = String::from_utf8(output).unwrap();
+
+        assert!(!header.contains("\x1b["));
+        assert!(header.contains("vegasroom config"));
+    }
+
+    #[test]
     fn safer_preset_is_detected() {
         let mut config = Config::default();
         config.workspace.risky_mount_policy = RiskyMountPolicy::Deny;
@@ -1790,7 +1903,7 @@ mod tests {
 
     fn render_section_to_string(state: &ConfigUiState, section: ConfigSection) -> String {
         let mut output = Vec::new();
-        render_section_screen(&mut output, state, section).unwrap();
+        render_section_screen(&mut output, state, section, TuiStyles::plain()).unwrap();
         String::from_utf8(output).unwrap()
     }
 

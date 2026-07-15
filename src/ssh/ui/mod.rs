@@ -82,41 +82,45 @@ fn configure_tui(
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => state.move_up(),
             KeyCode::Down | KeyCode::Char('j') => state.move_down(),
-            KeyCode::Enter | KeyCode::Char(' ') => state.toggle_highlighted(),
+            KeyCode::Enter => state.toggle_highlighted(),
             KeyCode::Char('s') => {
                 state.save()?;
             }
             KeyCode::Char('r') => {
                 state.rescan()?;
             }
-            KeyCode::Char('q') => {
-                if !state.is_dirty() {
-                    return Ok(0);
-                }
+            KeyCode::Char('q') | KeyCode::Esc if confirm_quit_if_needed(&mut state)? => {
+                return Ok(0);
+            }
+            KeyCode::Char('q') | KeyCode::Esc => {}
+            _ => {}
+        }
+    }
+}
 
-                render_quit_prompt()?;
-                loop {
-                    let Event::Key(confirm) =
-                        event::read().context("failed to read terminal key event")?
-                    else {
-                        continue;
-                    };
+fn confirm_quit_if_needed(state: &mut ConfigureUiState) -> Result<bool> {
+    if !state.is_dirty() {
+        return Ok(true);
+    }
 
-                    match confirm.code {
-                        KeyCode::Char('y') | KeyCode::Char('Y') => {
-                            state.save()?;
-                            return Ok(0);
-                        }
-                        KeyCode::Char('n') | KeyCode::Char('N') => {
-                            return Ok(0);
-                        }
-                        KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
-                            state.last_message = Some("Quit canceled.".to_owned());
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
+    render_quit_prompt()?;
+    loop {
+        let Event::Key(confirm) = event::read().context("failed to read terminal key event")?
+        else {
+            continue;
+        };
+
+        match confirm.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                state.save()?;
+                return Ok(true);
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') => {
+                return Ok(true);
+            }
+            KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
+                state.last_message = Some("Quit canceled.".to_owned());
+                return Ok(false);
             }
             _ => {}
         }
