@@ -45,6 +45,8 @@ pub fn run() -> Result<i32> {
     let state = StatePaths::default()?;
     let mut checks = Vec::new();
 
+    checks.push(check_config_semantics(&config));
+
     checks.push(check_bool(
         Status::Fail,
         "Docker binary",
@@ -374,6 +376,21 @@ fn check_environment_image_freshness(config: &Config) -> Check {
             status: Status::Warn,
             name: "Environment image freshness",
             detail: format!("could not check environment image freshness: {err:#}"),
+        },
+    }
+}
+
+fn check_config_semantics(config: &Config) -> Check {
+    match config.validate_semantics() {
+        Ok(()) => Check {
+            status: Status::Pass,
+            name: "Config semantic validation",
+            detail: "configuration values are semantically valid".to_owned(),
+        },
+        Err(err) => Check {
+            status: Status::Fail,
+            name: "Config semantic validation",
+            detail: format!("{err:#}"),
         },
     }
 }

@@ -12,6 +12,7 @@ pub(super) fn init(build: bool) -> Result<i32> {
 
     if build {
         let config = Config::load_or_default()?;
+        config.validate_semantics()?;
         println!("Building Pi image: {}", config.harness.pi.image);
         docker::build_pi_image(&config)?;
     }
@@ -36,6 +37,7 @@ pub(super) fn launch_pi(workspace_arg: Option<&str>, pi_args: Vec<String>) -> Re
     state.show_disclaimer_once()?;
 
     let config = Config::load_or_default()?;
+    config.validate_semantics()?;
     let workspace = workspace::resolve_workspace(workspace_arg, &config)?;
     print_workspace_messages(&workspace, &config);
     print_environment_image_warning(&config)?;
@@ -51,6 +53,7 @@ pub(super) fn launch_shell(workspace_arg: Option<&str>) -> Result<i32> {
     repair_managed_runtime_config()?;
 
     let config = Config::load_or_default()?;
+    config.validate_semantics()?;
     let workspace = workspace::resolve_workspace(workspace_arg, &config)?;
     print_workspace_messages(&workspace, &config);
     print_environment_image_warning(&config)?;
