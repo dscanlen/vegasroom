@@ -14,6 +14,8 @@ use crossterm::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+mod cache;
+
 use crate::{
     alert, atomic_write,
     config::{ColorMode, Config, RiskyMountPolicy, SshMode},
@@ -21,6 +23,8 @@ use crate::{
     paths::{display_path, StatePaths},
     ssh,
 };
+
+use cache::{package_cache_paths, purge_package_cache_paths};
 
 const RESET: &str = "\x1b[0m";
 const BOLD: &str = "\x1b[1m";
@@ -1370,29 +1374,6 @@ fn toolchain_row_title(name: &str, enabled: bool) -> String {
     } else {
         name.to_owned()
     }
-}
-
-fn package_cache_paths(state: &StatePaths) -> Vec<PathBuf> {
-    vec![
-        state.cache.join("npm"),
-        state.cache.join("pip"),
-        state.cache.join("go-build"),
-        state.cache.join("go-mod"),
-        state.cargo_home.join("registry"),
-        state.cargo_home.join("git"),
-    ]
-}
-
-fn purge_package_cache_paths(state: &StatePaths) -> Result<usize> {
-    let mut purged = 0;
-    for path in package_cache_paths(state) {
-        if path.exists() {
-            fs::remove_dir_all(&path)
-                .with_context(|| format!("failed to remove cache path: {}", display_path(&path)))?;
-            purged += 1;
-        }
-    }
-    Ok(purged)
 }
 
 fn push_change(
