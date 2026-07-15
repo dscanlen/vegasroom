@@ -131,6 +131,7 @@ SSH-specific public commands are not part of the CLI. Use `vr config` for SSH ke
 Advanced contains less-common config/status actions and fields:
 
 ```text
+Workspace path
 Git: inherit host identity
 Git: configured user.name
 Git: configured user.email
@@ -160,7 +161,7 @@ The UI shows the effective identity preview based on current precedence:
 3. host global Git config when git.inherit_host is true
 ```
 
-Current editable controls toggle `git.inherit_host`. Editing `git.user_name` and `git.user_email` should use a later text-input flow or manual YAML editing.
+Current editable controls toggle `git.inherit_host`. `paths.workspace`, `git.user_name`, and `git.user_email` remain manual-YAML-only for now; selecting those rows points users to the config file instead of opening a text editor.
 
 #### Output / color
 
