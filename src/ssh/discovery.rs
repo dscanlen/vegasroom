@@ -15,7 +15,7 @@ use crate::{
 
 use super::DiscoveredSshKey;
 
-pub(super) fn discovery_roots(paths: &[String]) -> Result<Vec<PathBuf>> {
+pub(crate) fn discovery_roots(paths: &[String]) -> Result<Vec<PathBuf>> {
     if paths.is_empty() {
         let home = directories::BaseDirs::new()
             .context("could not determine home directory")?
@@ -27,7 +27,7 @@ pub(super) fn discovery_roots(paths: &[String]) -> Result<Vec<PathBuf>> {
     Ok(paths.iter().map(|path| expand_tilde(path)).collect())
 }
 
-pub(super) fn discover_keys(
+pub(crate) fn discover_keys(
     roots: &[PathBuf],
     follow_symlinks: bool,
 ) -> Result<Vec<DiscoveredSshKey>> {
@@ -200,7 +200,7 @@ pub(super) fn parse_ssh_keygen_fingerprint(line: &str) -> KeyMetadata {
     metadata
 }
 
-pub(super) fn initial_selection(
+pub(crate) fn initial_selection(
     discovered: &[DiscoveredSshKey],
     selected: &[SelectedSshKey],
 ) -> Vec<bool> {

@@ -25,7 +25,6 @@ use crate::config::{ColorMode, RiskyMountPolicy, SshMode};
 use crate::{
     config::Config,
     paths::{display_path, StatePaths},
-    ssh,
 };
 
 use cache::{package_cache_estimates, purge_package_cache_paths, total_package_cache_bytes};
@@ -40,11 +39,11 @@ use render::{
 };
 use render::{render, render_quit_prompt, TerminalSession};
 use sections::{ConfigSection, RowAction, SectionRow, TextField, SECTIONS};
-use state::{ConfigScreen, ConfigUiAction, ConfigUiExit, ConfigUiState, QuitDecision};
+use state::{ConfigScreen, ConfigUiExit, ConfigUiState, QuitDecision};
 use values::{color_mode_name, git_identity_preview};
 
 pub fn run() -> Result<i32> {
-    let mut config = Config::load_or_default()?;
+    let config = Config::load_or_default()?;
     let state_paths = StatePaths::default()?;
 
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
@@ -56,17 +55,8 @@ pub fn run() -> Result<i32> {
         return Ok(0);
     }
 
-    loop {
-        match run_tui(config, state_paths.clone())? {
-            ConfigUiExit::Quit(code) => return Ok(code),
-            ConfigUiExit::OpenSshConfigure => {
-                let code = ssh::configure(&[], false)?;
-                if code != 0 {
-                    return Ok(code);
-                }
-                config = Config::load_or_default()?;
-            }
-        }
+    match run_tui(config, state_paths.clone())? {
+        ConfigUiExit::Quit(code) => Ok(code),
     }
 }
 
@@ -89,10 +79,12 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<ConfigUiExit> {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => state.move_up(),
             KeyCode::Down | KeyCode::Char('j') => state.move_down(),
-            KeyCode::Enter => match state.open_highlighted() {
-                ConfigUiAction::Continue => {}
-                ConfigUiAction::OpenSshConfigure => return Ok(ConfigUiExit::OpenSshConfigure),
-            },
+            KeyCode::Enter => state.open_highlighted(),
+            KeyCode::Char('r')
+                if matches!(state.screen, ConfigScreen::Section(ConfigSection::Ssh)) =>
+            {
+                state.rescan_ssh_keys();
+            }
             KeyCode::Esc => {
                 if matches!(state.screen, ConfigScreen::Sections) {
                     if let Some(exit) = confirm_config_quit_if_needed(&mut state)? {
@@ -405,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn ssh_key_configuration_is_blocked_when_dirty() {
+    fn ssh_key_configuration_opens_integrated_section_when_dirty() {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
         let mut state = ConfigUiState::new(config, paths);
@@ -415,28 +407,37 @@ mod tests {
             .unwrap();
         state.dirty = true;
 
-        let action = state.open_highlighted();
+        state.open_highlighted();
 
-        assert!(matches!(action, ConfigUiAction::Continue));
-        assert!(state
-            .last_message
-            .as_deref()
-            .is_some_and(|message| message.contains("Save or discard")));
+        assert!(state.dirty);
+        assert!(matches!(
+            state.screen,
+            ConfigScreen::Section(ConfigSection::Ssh)
+        ));
     }
 
     #[test]
-    fn ssh_key_configuration_launches_existing_flow_when_clean() {
+    fn ssh_key_selection_updates_config_in_memory() {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
         let mut state = ConfigUiState::new(config, paths);
-        state.highlighted_section = SECTIONS
-            .iter()
-            .position(|section| matches!(section, ConfigSection::Ssh))
-            .unwrap();
+        state.screen = ConfigScreen::Section(ConfigSection::Ssh);
+        state.ssh_keys = vec![crate::ssh::DiscoveredSshKey {
+            path: PathBuf::from("/tmp/current-key"),
+            display_path: "/tmp/current-key".to_owned(),
+            fingerprint: Some("SHA256:abc123".to_owned()),
+            comment: None,
+            key_type: Some("ED25519".to_owned()),
+            has_public_pair: false,
+            permissions_ok: None,
+        }];
+        state.ssh_selected = vec![false];
 
-        let action = state.open_highlighted();
+        state.open_highlighted();
 
-        assert!(matches!(action, ConfigUiAction::OpenSshConfigure));
+        assert!(state.dirty);
+        assert_eq!(state.config.ssh.selected_keys.len(), 1);
+        assert_eq!(state.config.ssh.selected_keys[0].path, "/tmp/current-key");
     }
 
     #[test]
@@ -468,9 +469,8 @@ mod tests {
             .position(|row| row.title == "Git: configured user.name")
             .unwrap();
 
-        let action = state.open_highlighted();
+        state.open_highlighted();
 
-        assert!(matches!(action, ConfigUiAction::Continue));
         assert!(!state.dirty);
         assert!(matches!(
             state.screen,

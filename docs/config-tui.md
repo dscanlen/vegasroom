@@ -128,7 +128,7 @@ The toolchain rows show current enabled/disabled state and toggle in memory with
 
 ### SSH
 
-The SSH menu item opens the managed SSH key picker directly. It reuses the same bottom-aligned visual language as the config menu and keeps compact metadata for the highlighted key.
+The SSH section contains the managed SSH key picker inside the main config TUI flow. It uses the same navigation, save, quit, color, and bottom-panel behavior as every other config section. Press Enter to toggle the highlighted key, `r` to rescan, `Esc` to return to the main config menu, and `s` to save selected keys with the rest of the config.
 
 SSH-specific public commands are not part of the CLI. Use `vr config` for SSH key selection and `vr doctor` for SSH readiness/status checks.
 

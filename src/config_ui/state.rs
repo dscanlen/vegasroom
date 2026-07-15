@@ -1,8 +1,11 @@
 use anyhow::{Context, Result};
 
+use std::path::PathBuf;
+
 use crate::{
-    config::{ColorMode, Config},
-    paths::{display_path, StatePaths},
+    config::{ColorMode, Config, SelectedSshKey, SshMode},
+    paths::{display_path, expand_tilde, StatePaths},
+    ssh::{self, DiscoveredSshKey},
 };
 
 use super::{
@@ -20,6 +23,10 @@ pub(super) struct ConfigUiState {
     pub(super) dirty: bool,
     pub(super) last_message: Option<String>,
     pub(super) input_buffer: String,
+    pub(super) ssh_keys: Vec<DiscoveredSshKey>,
+    pub(super) ssh_selected: Vec<bool>,
+    pub(super) ssh_roots: Vec<PathBuf>,
+    pub(super) ssh_follow_symlinks: bool,
 }
 
 impl ConfigUiState {
@@ -33,6 +40,10 @@ impl ConfigUiState {
             dirty: false,
             last_message: None,
             input_buffer: String::new(),
+            ssh_keys: Vec::new(),
+            ssh_selected: Vec::new(),
+            ssh_roots: Vec::new(),
+            ssh_follow_symlinks: false,
         }
     }
 
@@ -47,6 +58,16 @@ impl ConfigUiState {
                     self.highlighted_section = SECTIONS.len() - 1;
                 } else {
                     self.highlighted_section -= 1;
+                }
+            }
+            ConfigScreen::Section(ConfigSection::Ssh) => {
+                if self.ssh_keys.is_empty() {
+                    return;
+                }
+                if self.highlighted_row == 0 {
+                    self.highlighted_row = self.ssh_keys.len() - 1;
+                } else {
+                    self.highlighted_row -= 1;
                 }
             }
             ConfigScreen::Section(section) => {
@@ -73,6 +94,12 @@ impl ConfigUiState {
             ConfigScreen::Sections => {
                 self.highlighted_section = (self.highlighted_section + 1) % SECTIONS.len();
             }
+            ConfigScreen::Section(ConfigSection::Ssh) => {
+                if self.ssh_keys.is_empty() {
+                    return;
+                }
+                self.highlighted_row = (self.highlighted_row + 1) % self.ssh_keys.len();
+            }
             ConfigScreen::Section(section) => {
                 let len = section.rows(&self.config, &self.state_paths).len();
                 if len == 0 {
@@ -88,24 +115,18 @@ impl ConfigUiState {
         self.last_message = None;
     }
 
-    pub(super) fn open_highlighted(&mut self) -> ConfigUiAction {
+    pub(super) fn open_highlighted(&mut self) {
         match self.screen {
             ConfigScreen::Sections => {
-                if matches!(self.highlighted_section(), ConfigSection::Ssh) {
-                    if self.dirty {
-                        self.last_message = Some(
-                            "Save or discard pending config changes before opening SSH key configuration."
-                                .to_owned(),
-                        );
-                    } else {
-                        return ConfigUiAction::OpenSshConfigure;
-                    }
-                } else {
-                    self.screen = ConfigScreen::Section(self.highlighted_section());
-                    self.highlighted_row = 0;
-                    self.last_message = None;
+                let section = self.highlighted_section();
+                self.screen = ConfigScreen::Section(section);
+                self.highlighted_row = 0;
+                self.last_message = None;
+                if matches!(section, ConfigSection::Ssh) {
+                    self.load_ssh_keys();
                 }
             }
+            ConfigScreen::Section(ConfigSection::Ssh) => self.toggle_highlighted_ssh_key(),
             ConfigScreen::Section(section) => {
                 let rows = section.rows(&self.config, &self.state_paths);
                 if let Some(row) = rows.get(self.highlighted_row) {
@@ -154,8 +175,6 @@ impl ConfigUiState {
                 }
             }
         }
-
-        ConfigUiAction::Continue
     }
 
     pub(super) fn go_back(&mut self) {
@@ -231,6 +250,76 @@ impl ConfigUiState {
 
     pub(super) fn cancel_text_input(&mut self) {
         self.go_back();
+    }
+
+    pub(super) fn load_ssh_keys(&mut self) {
+        let roots = match ssh::discovery_roots(&[]) {
+            Ok(roots) => roots,
+            Err(error) => {
+                self.ssh_keys.clear();
+                self.ssh_selected.clear();
+                self.last_message = Some(format!("SSH key scan failed: {error:#}"));
+                return;
+            }
+        };
+
+        self.ssh_roots = roots;
+        self.rescan_ssh_keys();
+    }
+
+    pub(super) fn rescan_ssh_keys(&mut self) {
+        if self.ssh_roots.is_empty() {
+            match ssh::discovery_roots(&[]) {
+                Ok(roots) => self.ssh_roots = roots,
+                Err(error) => {
+                    self.last_message = Some(format!("SSH key scan failed: {error:#}"));
+                    return;
+                }
+            }
+        }
+
+        match ssh::discover_keys(&self.ssh_roots, self.ssh_follow_symlinks) {
+            Ok(mut keys) => {
+                keys.sort_by(|a, b| a.display_path.cmp(&b.display_path));
+                self.ssh_selected = ssh::initial_selection(&keys, &self.config.ssh.selected_keys);
+                self.ssh_keys = keys;
+                self.highlighted_row = self
+                    .highlighted_row
+                    .min(self.ssh_keys.len().saturating_sub(1));
+                self.last_message = Some(if self.ssh_keys.is_empty() {
+                    "No SSH private keys were detected.".to_owned()
+                } else {
+                    format!("Scanned {} SSH key(s).", self.ssh_keys.len())
+                });
+            }
+            Err(error) => {
+                self.last_message = Some(format!("SSH key scan failed: {error:#}"));
+            }
+        }
+    }
+
+    fn toggle_highlighted_ssh_key(&mut self) {
+        if let Some(slot) = self.ssh_selected.get_mut(self.highlighted_row) {
+            *slot = !*slot;
+            self.config.ssh.mode = SshMode::Auto;
+            self.config.ssh.selected_keys = selected_ssh_keys_from(
+                &self.ssh_keys,
+                &self.ssh_selected,
+                &self.config.ssh.selected_keys,
+            );
+            self.dirty = true;
+            self.last_message = Some(format!(
+                "{} SSH key(s) selected. Press s to save.",
+                self.config.ssh.selected_keys.len()
+            ));
+        }
+    }
+
+    pub(super) fn selected_ssh_key_count(&self) -> usize {
+        self.ssh_selected
+            .iter()
+            .filter(|selected| **selected)
+            .count()
     }
 
     pub(super) fn apply_preset(&mut self, preset: SecurityPreset) {
@@ -371,12 +460,6 @@ pub(super) enum QuitDecision {
 
 pub(super) enum ConfigUiExit {
     Quit(i32),
-    OpenSshConfigure,
-}
-
-pub(super) enum ConfigUiAction {
-    Continue,
-    OpenSshConfigure,
 }
 
 fn optional_text_value(value: &str) -> Option<String> {
@@ -385,6 +468,56 @@ fn optional_text_value(value: &str) -> Option<String> {
     } else {
         Some(value.to_owned())
     }
+}
+
+fn selected_ssh_keys_from(
+    keys: &[DiscoveredSshKey],
+    selected: &[bool],
+    existing: &[SelectedSshKey],
+) -> Vec<SelectedSshKey> {
+    keys.iter()
+        .zip(selected.iter())
+        .filter(|(_, is_selected)| **is_selected)
+        .map(|(key, _)| {
+            let mut selected_key = SelectedSshKey {
+                path: key.display_path.clone(),
+                fingerprint: key.fingerprint.clone(),
+                comment: key.comment.clone(),
+                key_type: key.key_type.clone(),
+                git_user_name: None,
+                git_user_email: None,
+            };
+            if let Some(existing_key) = matching_existing_ssh_key(key, existing) {
+                selected_key.git_user_name = existing_key.git_user_name.clone();
+                selected_key.git_user_email = existing_key.git_user_email.clone();
+            }
+            selected_key
+        })
+        .collect()
+}
+
+fn matching_existing_ssh_key<'a>(
+    key: &DiscoveredSshKey,
+    existing: &'a [SelectedSshKey],
+) -> Option<&'a SelectedSshKey> {
+    if let Some(fingerprint) = &key.fingerprint {
+        if let Some(found) = existing
+            .iter()
+            .find(|selected| selected.fingerprint.as_ref() == Some(fingerprint))
+        {
+            return Some(found);
+        }
+    }
+
+    existing.iter().find(|selected| {
+        let selected_path = expand_tilde(&selected.path);
+        selected.path == key.display_path
+            || selected_path == key.path
+            || selected_path
+                .canonicalize()
+                .map(|path| path == key.path)
+                .unwrap_or(false)
+    })
 }
 
 #[derive(Clone, Copy)]

@@ -151,6 +151,10 @@ pub(super) fn render_section_screen(
     section: ConfigSection,
     styles: TuiStyles,
 ) -> Result<()> {
+    if matches!(section, ConfigSection::Ssh) {
+        return render_ssh_key_section(stdout, state, styles);
+    }
+
     writeln!(stdout, "│  {}", styles.dim(section.title()))?;
     let rows = section.rows(&state.config, &state.state_paths);
     for (index, row) in rows.iter().enumerate() {
@@ -173,6 +177,118 @@ pub(super) fn render_section_screen(
     }
 
     Ok(())
+}
+
+fn render_ssh_key_section(
+    stdout: &mut impl Write,
+    state: &ConfigUiState,
+    styles: TuiStyles,
+) -> Result<()> {
+    writeln!(
+        stdout,
+        "│  {}",
+        styles.dim(&format!(
+            "SSH Keys · {} Selected",
+            state.selected_ssh_key_count()
+        ))
+    )?;
+
+    if state.ssh_keys.is_empty() {
+        writeln!(stdout, "│  No SSH private keys detected.")?;
+        writeln!(stdout, "│      {}", styles.dim("Press r to rescan."))?;
+        return Ok(());
+    }
+
+    let (_, height) = terminal::size().unwrap_or((100, 30));
+    let list_rows = usize::from(height).saturating_sub(16).max(4);
+    let (start, end) = visible_list_window(state.ssh_keys.len(), state.highlighted_row, list_rows);
+    writeln!(
+        stdout,
+        "│  {}",
+        styles.dim(&format!(
+            "Keys {}-{} of {}",
+            start + 1,
+            end,
+            state.ssh_keys.len()
+        ))
+    )?;
+
+    if start > 0 {
+        writeln!(stdout, "│      {}", styles.dim("↑ more"))?;
+    }
+
+    for index in start..end {
+        let key = &state.ssh_keys[index];
+        let selected = state.ssh_selected.get(index).copied().unwrap_or(false);
+        let highlighted = index == state.highlighted_row;
+        let marker = if highlighted { "›" } else { " " };
+        let checkbox = if selected { "✓" } else { "○" };
+        let title = format!("{checkbox} {}", key.display_path);
+        let title = match (selected, highlighted) {
+            (true, true) => styles.green_bold(&title),
+            (true, false) => styles.green(&title),
+            (false, true) => styles.bold(&title),
+            (false, false) => title,
+        };
+        writeln!(stdout, "│  {marker} {title}")?;
+    }
+
+    if end < state.ssh_keys.len() {
+        writeln!(stdout, "│      {}", styles.dim("↓ more"))?;
+    }
+
+    if let Some(key) = state.ssh_keys.get(state.highlighted_row) {
+        let selected = state
+            .ssh_selected
+            .get(state.highlighted_row)
+            .copied()
+            .unwrap_or(false);
+        let selected_label = if selected { "Selected" } else { "Not Selected" };
+        let key_type = key.key_type.as_deref().unwrap_or("unknown");
+        let fingerprint = key.fingerprint.as_deref().unwrap_or("unknown fingerprint");
+        let comment = key.comment.as_deref().unwrap_or("no comment");
+        let public_pair = if key.has_public_pair { "yes" } else { "no" };
+        let permissions = match key.permissions_ok {
+            Some(true) => "ok",
+            Some(false) => "broad",
+            None => "unknown",
+        };
+
+        writeln!(stdout, "│")?;
+        writeln!(
+            stdout,
+            "│  {}",
+            styles.dim(&format!(
+                "Key  {selected_label} · {key_type} · Public Pair {public_pair}"
+            ))
+        )?;
+        writeln!(stdout, "│  {}", styles.dim(&format!("FP   {fingerprint}")))?;
+        writeln!(stdout, "│  {}", styles.dim(&format!("Note {comment}")))?;
+        writeln!(
+            stdout,
+            "│  {}",
+            styles.dim(&format!("Permissions {permissions}"))
+        )?;
+    }
+
+    Ok(())
+}
+
+fn visible_list_window(total: usize, highlighted: usize, max_rows: usize) -> (usize, usize) {
+    if total == 0 {
+        return (0, 0);
+    }
+
+    let row_budget = max_rows.saturating_sub(3).max(1).min(total);
+    let highlighted = highlighted.min(total - 1);
+    let half = row_budget / 2;
+
+    let mut start = highlighted.saturating_sub(half);
+    if start + row_budget > total {
+        start = total.saturating_sub(row_budget);
+    }
+    let end = (start + row_budget).min(total);
+    (start, end)
 }
 
 fn styled_row_title(
@@ -384,6 +500,10 @@ pub(super) fn render_keys(stdout: &mut impl Write, state: &ConfigUiState) -> Res
         ConfigScreen::Sections => {
             writeln!(stdout, "╰─ ↑↓/jk move  enter open  s save  esc/q quit")?
         }
+        ConfigScreen::Section(ConfigSection::Ssh) => writeln!(
+            stdout,
+            "╰─ ↑↓/jk move  enter toggle  r rescan  esc back  s save  q quit"
+        )?,
         ConfigScreen::Section(_) => writeln!(
             stdout,
             "╰─ ↑↓/jk move  enter activate  esc back  s save  q quit"
