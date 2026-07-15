@@ -377,7 +377,7 @@ Opens the interactive Vegasroom configuration TUI.
 vr config
 ```
 
-Manual YAML editing remains supported at `~/.vegasroom/config.yaml`. See `docs/config-tui.md` for the TUI design.
+Manual YAML editing remains supported at `~/.vegasroom/config.yaml`. Vegasroom validates config semantics before TUI saves, launch/build use, and doctor reporting. See `docs/config-tui.md` for the TUI design.
 
 ### `vr pi` and `vr`
 

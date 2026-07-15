@@ -292,9 +292,23 @@ impl Config {
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<()> {
+        self.validate_semantics()?;
         let contents = serde_yaml::to_string(self).context("failed to serialize config")?;
         fs::write(path, contents)
             .with_context(|| format!("failed to write config: {}", display_path(path)))
+    }
+
+    pub fn validate_semantics(&self) -> Result<()> {
+        validate_non_empty("paths.workspace", &self.paths.workspace)?;
+        validate_non_empty("docker.context", &self.docker.context)?;
+        validate_non_empty("docker.compose_file", &self.docker.compose_file)?;
+        validate_docker_reference("harness.pi.image", &self.harness.pi.image)?;
+        validate_non_empty("harness.pi.command", &self.harness.pi.command)?;
+        validate_shell_free_value("harness.pi.command", &self.harness.pi.command)?;
+        validate_docker_network("harness.pi.network", &self.harness.pi.network)?;
+        validate_docker_network("harness.pi.build_network", &self.harness.pi.build_network)?;
+        validate_environment_config(&self.environment)?;
+        Ok(())
     }
 
     pub fn compose_file_path(&self) -> PathBuf {
@@ -461,6 +475,145 @@ impl Default for TypeScriptEnvironmentConfig {
             packages: default_typescript_packages(),
         }
     }
+}
+
+fn validate_environment_config(environment: &EnvironmentConfig) -> Result<()> {
+    for package in normalized_apt_packages(environment) {
+        if !is_safe_apt_package_name(&package) {
+            bail!(
+                "invalid apt package name in environment.apt.packages: {package}\nPackage names may contain only ASCII letters, digits, '.', '+', '-', ':', and '_'"
+            );
+        }
+    }
+
+    if environment.rust.enabled {
+        let toolchain = normalized_rust_toolchain(environment);
+        if !is_safe_rust_toolchain(&toolchain) {
+            bail!(
+                "invalid Rust toolchain in environment.rust.toolchain: {toolchain}\nToolchains may contain only ASCII letters, digits, '.', '-', and '_'"
+            );
+        }
+
+        for component in normalized_rust_components(environment) {
+            if !is_safe_rust_component(&component) {
+                bail!(
+                    "invalid Rust component in environment.rust.components: {component}\nComponents may contain only ASCII letters, digits, '-', and '_'"
+                );
+            }
+        }
+    }
+
+    if environment.typescript.enabled {
+        let packages = normalized_typescript_packages(environment);
+        if packages.is_empty() {
+            bail!("environment.typescript.enabled is true but no npm packages are configured");
+        }
+
+        for package in packages {
+            if !is_safe_npm_package_name(&package) {
+                bail!(
+                    "invalid npm package in environment.typescript.packages: {package}\nPackage names may contain only ASCII letters, digits, '.', '+', '-', '_', '/', and one leading '@' for scoped packages"
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub(crate) fn normalized_apt_packages(environment: &EnvironmentConfig) -> Vec<String> {
+    normalized_unique(&environment.apt.packages)
+}
+
+pub(crate) fn normalized_rust_toolchain(environment: &EnvironmentConfig) -> String {
+    let toolchain = environment.rust.toolchain.trim();
+    if toolchain.is_empty() {
+        default_rust_toolchain()
+    } else {
+        toolchain.to_owned()
+    }
+}
+
+pub(crate) fn normalized_rust_components(environment: &EnvironmentConfig) -> Vec<String> {
+    normalized_unique(&environment.rust.components)
+}
+
+pub(crate) fn normalized_typescript_packages(environment: &EnvironmentConfig) -> Vec<String> {
+    normalized_unique(&environment.typescript.packages)
+}
+
+fn normalized_unique(values: &[String]) -> Vec<String> {
+    let mut values = values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    values.sort();
+    values.dedup();
+    values
+}
+
+fn validate_non_empty(field: &str, value: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        bail!("{field} must not be empty");
+    }
+    Ok(())
+}
+
+fn validate_docker_reference(field: &str, value: &str) -> Result<()> {
+    validate_non_empty(field, value)?;
+    validate_shell_free_value(field, value)
+}
+
+fn validate_docker_network(field: &str, value: &str) -> Result<()> {
+    validate_non_empty(field, value)?;
+    validate_shell_free_value(field, value)
+}
+
+fn validate_shell_free_value(field: &str, value: &str) -> Result<()> {
+    if value.chars().any(char::is_whitespace) || value.chars().any(char::is_control) {
+        bail!("{field} must not contain whitespace or control characters: {value:?}");
+    }
+    Ok(())
+}
+
+fn is_safe_apt_package_name(package: &str) -> bool {
+    !package.is_empty()
+        && package.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'-' | b':' | b'_')
+        })
+}
+
+fn is_safe_rust_toolchain(toolchain: &str) -> bool {
+    !toolchain.is_empty()
+        && toolchain
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+}
+
+fn is_safe_rust_component(component: &str) -> bool {
+    !component.is_empty()
+        && component
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+fn is_safe_npm_package_name(package: &str) -> bool {
+    if package.is_empty() || package.contains("//") {
+        return false;
+    }
+
+    let at_count = package.bytes().filter(|byte| *byte == b'@').count();
+    if at_count > 1 || at_count == 1 && !package.starts_with('@') {
+        return false;
+    }
+
+    package.bytes().all(|byte| {
+        byte.is_ascii_alphanumeric()
+            || matches!(byte, b'.' | b'+' | b'-' | b'_' | b'/')
+            || byte == b'@'
+    })
 }
 
 #[cfg(test)]
@@ -699,6 +852,90 @@ harness:
         .unwrap();
 
         assert_eq!(config.ui.color, ColorMode::Never);
+    }
+
+    #[test]
+    fn semantic_validation_accepts_default_config() {
+        Config::default().validate_semantics().unwrap();
+    }
+
+    #[test]
+    fn semantic_validation_rejects_invalid_package_names() {
+        let mut config = Config::default();
+        config.environment.apt.packages = vec!["bad;package".to_owned()];
+
+        let err = config.validate_semantics().unwrap_err();
+
+        assert!(err.to_string().contains("invalid apt package name"));
+    }
+
+    #[test]
+    fn semantic_validation_rejects_invalid_rust_values() {
+        let mut config = Config::default();
+        config.environment.rust.enabled = true;
+        config.environment.rust.toolchain = "bad toolchain".to_owned();
+
+        let err = config.validate_semantics().unwrap_err();
+
+        assert!(err.to_string().contains("invalid Rust toolchain"));
+
+        config.environment.rust.toolchain = "stable".to_owned();
+        config.environment.rust.components = vec!["bad;component".to_owned()];
+
+        let err = config.validate_semantics().unwrap_err();
+
+        assert!(err.to_string().contains("invalid Rust component"));
+    }
+
+    #[test]
+    fn semantic_validation_rejects_invalid_npm_package_names() {
+        let mut config = Config::default();
+        config.environment.typescript.enabled = true;
+        config.environment.typescript.packages = vec!["bad;package".to_owned()];
+
+        let err = config.validate_semantics().unwrap_err();
+
+        assert!(err.to_string().contains("invalid npm package"));
+    }
+
+    #[test]
+    fn semantic_validation_rejects_empty_typescript_package_set() {
+        let mut config = Config::default();
+        config.environment.typescript.enabled = true;
+        config.environment.typescript.packages.clear();
+
+        let err = config.validate_semantics().unwrap_err();
+
+        assert!(err.to_string().contains("no npm packages"));
+    }
+
+    #[test]
+    fn semantic_validation_rejects_whitespace_in_docker_values() {
+        let mut config = Config::default();
+        config.harness.pi.image = "bad image".to_owned();
+
+        let err = config.validate_semantics().unwrap_err();
+
+        assert!(err.to_string().contains("harness.pi.image"));
+    }
+
+    #[test]
+    fn save_rejects_semantically_invalid_config() {
+        let path = std::env::temp_dir().join(format!(
+            "vegasroom-invalid-config-{}-{}.yaml",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut config = Config::default();
+        config.docker.context = "".to_owned();
+
+        let err = config.save_to_path(&path).unwrap_err();
+
+        assert!(err.to_string().contains("docker.context"));
+        assert!(!path.exists());
     }
 
     #[test]

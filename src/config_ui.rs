@@ -643,8 +643,9 @@ impl ConfigUiState {
     fn validate_config(&mut self) -> Result<()> {
         let serialized =
             serde_yaml::to_string(&self.config).context("failed to serialize config")?;
-        let _: Config =
+        let reparsed: Config =
             serde_yaml::from_str(&serialized).context("failed to reload serialized config")?;
+        reparsed.validate_semantics()?;
         self.last_message = Some("Current in-memory config validates successfully.".to_owned());
         Ok(())
     }
