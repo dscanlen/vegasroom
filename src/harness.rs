@@ -33,7 +33,6 @@ impl HarnessDescriptor {
     }
 }
 
-pub const VEGASROOM_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const PI_DEFAULT_IMAGE: &str = "vegasroom/pi:latest";
 pub const PI_VERSIONED_IMAGE: &str = concat!("vegasroom/pi:", env!("CARGO_PKG_VERSION"));
 
@@ -85,7 +84,6 @@ mod tests {
     fn pi_descriptor_contains_current_runtime_contract() {
         assert_eq!(PI.id, "pi");
         assert_eq!(PI.service_name, "pi");
-        assert_eq!(VEGASROOM_VERSION, env!("CARGO_PKG_VERSION"));
         assert_eq!(PI.default_image, "vegasroom/pi:latest");
         assert_eq!(
             PI.versioned_image,
