@@ -310,9 +310,9 @@ never   disable ANSI color
 
 A non-empty `NO_COLOR` environment variable overrides this setting and disables ANSI labels.
 
-## Interactive config TUI direction
+## Interactive config TUI
 
-`vr config` is planned as the single interactive configuration TUI entry point. See [Config TUI design](config-tui.md) for the intended UX, sections, presets, save behavior, and implementation slices.
+`vr config` is the single interactive configuration TUI entry point. See [Config TUI design](config-tui.md) for the current UX, sections, presets, and save behavior.
 
 ## Git identity
 
