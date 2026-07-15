@@ -1,16 +1,13 @@
 mod discovery;
 mod runtime;
-mod ui;
 
 use std::{env, fs, path::PathBuf};
 
-use crate::config::SelectedSshKey;
-
+pub(crate) use discovery::{discover_keys, discovery_roots, initial_selection};
 pub use runtime::{
     managed_keys_configured, planned_ssh_available, prepare_agent_override, selected_key_checks,
     SelectedKeyCheckStatus, SshRuntime, SshRuntimeMode,
 };
-pub use ui::configure;
 
 pub const CONTAINER_SSH_AUTH_SOCK: &str = "/run/vegasroom-ssh-agent.sock";
 
@@ -64,19 +61,6 @@ pub struct DiscoveredSshKey {
     pub key_type: Option<String>,
     pub has_public_pair: bool,
     pub permissions_ok: Option<bool>,
-}
-
-impl DiscoveredSshKey {
-    pub(super) fn to_selected(&self) -> SelectedSshKey {
-        SelectedSshKey {
-            path: self.display_path.clone(),
-            fingerprint: self.fingerprint.clone(),
-            comment: self.comment.clone(),
-            key_type: self.key_type.clone(),
-            git_user_name: None,
-            git_user_email: None,
-        }
-    }
 }
 
 pub fn detect_host_agent() -> HostSshAgent {

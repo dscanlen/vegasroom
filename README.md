@@ -295,7 +295,7 @@ Configure managed SSH keys interactively through the config TUI:
 vr config
 ```
 
-The SSH section opens the managed key picker. `vr doctor` reports the saved SSH configuration and next-launch behavior.
+The SSH section contains the managed key picker inside the main config TUI. `vr doctor` reports the saved SSH configuration and next-launch behavior.
 
 At launch, the container receives:
 

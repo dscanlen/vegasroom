@@ -25,26 +25,25 @@ use crate::config::{ColorMode, RiskyMountPolicy, SshMode};
 use crate::{
     config::Config,
     paths::{display_path, StatePaths},
-    ssh,
 };
 
-use cache::{package_cache_paths, purge_package_cache_paths};
+use cache::{package_cache_estimates, purge_package_cache_paths, total_package_cache_bytes};
 use persistence::save_config_with_recovery_backup;
 use presets::{
     active_security_preset, enabled_name, preset_changes, reset_defaults_changes, SecurityPreset,
 };
-use render::{render, render_quit_prompt, TerminalSession};
 #[cfg(test)]
 use render::{
-    render_header, render_keys, render_section_screen, render_text_input, truncate_to_width,
-    TuiStyles,
+    quit_prompt_lines, render_header, render_keys, render_purge_package_caches_preview,
+    render_section_screen, render_text_input, truncate_to_width, TuiStyles,
 };
+use render::{render, render_quit_prompt, TerminalSession};
 use sections::{ConfigSection, RowAction, SectionRow, TextField, SECTIONS};
-use state::{ConfigScreen, ConfigUiAction, ConfigUiExit, ConfigUiState, QuitDecision};
+use state::{ConfigScreen, ConfigUiExit, ConfigUiState, QuitDecision};
 use values::{color_mode_name, git_identity_preview};
 
 pub fn run() -> Result<i32> {
-    let mut config = Config::load_or_default()?;
+    let config = Config::load_or_default()?;
     let state_paths = StatePaths::default()?;
 
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
@@ -56,17 +55,8 @@ pub fn run() -> Result<i32> {
         return Ok(0);
     }
 
-    loop {
-        match run_tui(config, state_paths.clone())? {
-            ConfigUiExit::Quit(code) => return Ok(code),
-            ConfigUiExit::OpenSshConfigure => {
-                let code = ssh::configure(&[], false)?;
-                if code != 0 {
-                    return Ok(code);
-                }
-                config = Config::load_or_default()?;
-            }
-        }
+    match run_tui(config, state_paths.clone())? {
+        ConfigUiExit::Quit(code) => Ok(code),
     }
 }
 
@@ -89,10 +79,12 @@ fn run_tui(config: Config, state_paths: StatePaths) -> Result<ConfigUiExit> {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => state.move_up(),
             KeyCode::Down | KeyCode::Char('j') => state.move_down(),
-            KeyCode::Enter => match state.open_highlighted() {
-                ConfigUiAction::Continue => {}
-                ConfigUiAction::OpenSshConfigure => return Ok(ConfigUiExit::OpenSshConfigure),
-            },
+            KeyCode::Enter => state.open_highlighted(),
+            KeyCode::Char('r')
+                if matches!(state.screen, ConfigScreen::Section(ConfigSection::Ssh)) =>
+            {
+                state.rescan_ssh_keys();
+            }
             KeyCode::Esc => {
                 if matches!(state.screen, ConfigScreen::Sections) {
                     if let Some(exit) = confirm_config_quit_if_needed(&mut state)? {
@@ -126,16 +118,12 @@ fn handle_text_input_key(state: &mut ConfigUiState, code: KeyCode) -> Result<()>
 }
 
 fn confirm_config_quit_if_needed(state: &mut ConfigUiState) -> Result<Option<ConfigUiExit>> {
-    if !state.dirty {
-        return Ok(Some(ConfigUiExit::Quit(0)));
-    }
-
-    match confirm_quit()? {
+    match confirm_quit(state.dirty)? {
         QuitDecision::Save => {
             state.save()?;
             Ok(Some(ConfigUiExit::Quit(0)))
         }
-        QuitDecision::Discard => Ok(Some(ConfigUiExit::Quit(0))),
+        QuitDecision::Quit => Ok(Some(ConfigUiExit::Quit(0))),
         QuitDecision::Cancel => {
             state.last_message = Some("Quit canceled.".to_owned());
             Ok(None)
@@ -143,8 +131,8 @@ fn confirm_config_quit_if_needed(state: &mut ConfigUiState) -> Result<Option<Con
     }
 }
 
-fn confirm_quit() -> Result<QuitDecision> {
-    render_quit_prompt()?;
+fn confirm_quit(dirty: bool) -> Result<QuitDecision> {
+    render_quit_prompt(dirty)?;
 
     loop {
         let Event::Key(key) = event::read().context("failed to read terminal key event")? else {
@@ -152,8 +140,10 @@ fn confirm_quit() -> Result<QuitDecision> {
         };
 
         match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => return Ok(QuitDecision::Save),
-            KeyCode::Char('n') | KeyCode::Char('N') => return Ok(QuitDecision::Discard),
+            KeyCode::Char('y') | KeyCode::Char('Y') if dirty => return Ok(QuitDecision::Save),
+            KeyCode::Char('y') | KeyCode::Char('Y') => return Ok(QuitDecision::Quit),
+            KeyCode::Char('n') | KeyCode::Char('N') if dirty => return Ok(QuitDecision::Quit),
+            KeyCode::Char('n') | KeyCode::Char('N') => return Ok(QuitDecision::Cancel),
             KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
                 return Ok(QuitDecision::Cancel);
             }
@@ -214,6 +204,21 @@ mod tests {
     }
 
     #[test]
+    fn quit_prompt_lines_cover_clean_and_dirty_states() {
+        let clean = quit_prompt_lines(false).join("\n");
+        assert!(clean.contains("No unsaved changes. Quit?"));
+        assert!(clean.contains("y  Quit"));
+        assert!(clean.contains("n  Cancel"));
+        assert!(!clean.contains("Save and Quit"));
+
+        let dirty = quit_prompt_lines(true).join("\n");
+        assert!(dirty.contains("Save changes before quitting?"));
+        assert!(dirty.contains("y  Save and Quit"));
+        assert!(dirty.contains("n  Quit Without Saving"));
+        assert!(dirty.contains("c  Cancel"));
+    }
+
+    #[test]
     fn plain_tui_styles_omit_ansi_sequences() {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
@@ -224,7 +229,7 @@ mod tests {
         let header = String::from_utf8(output).unwrap();
 
         assert!(!header.contains("\x1b["));
-        assert!(header.contains("vegasroom config"));
+        assert!(header.contains("Vegasroom Config"));
     }
 
     #[test]
@@ -288,6 +293,26 @@ mod tests {
         assert!(!output.contains("packages: typescript, tsx"));
         assert!(output.contains("Removes npm/pip download caches"));
         assert!(output.contains("Preserves workspaces, auth, SSH, Pi npm-global, and Cargo bin"));
+    }
+
+    #[test]
+    fn purge_cache_preview_includes_size_estimates() {
+        let dir = unique_temp_dir("purge-cache-preview");
+        let paths = StatePaths::from_root(dir.clone());
+        fs::create_dir_all(paths.cache.join("npm")).unwrap();
+        fs::write(paths.cache.join("npm/blob"), vec![0_u8; 1536]).unwrap();
+        let state = ConfigUiState::new(Config::default(), paths);
+        let mut output = Vec::new();
+
+        render_purge_package_caches_preview(&mut output, &state).unwrap();
+        let output = String::from_utf8(output).unwrap();
+
+        assert!(output.contains("Estimated removable cache: 1.5 KiB"));
+        assert!(output.contains("1.5 KiB"));
+        assert!(output.contains("Purge Package Download Caches"));
+        assert!(output.contains("│  Press Enter to purge, or Esc to cancel."));
+
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -372,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn ssh_key_configuration_is_blocked_when_dirty() {
+    fn ssh_key_configuration_opens_integrated_section_when_dirty() {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
         let mut state = ConfigUiState::new(config, paths);
@@ -382,28 +407,37 @@ mod tests {
             .unwrap();
         state.dirty = true;
 
-        let action = state.open_highlighted();
+        state.open_highlighted();
 
-        assert!(matches!(action, ConfigUiAction::Continue));
-        assert!(state
-            .last_message
-            .as_deref()
-            .is_some_and(|message| message.contains("Save or discard")));
+        assert!(state.dirty);
+        assert!(matches!(
+            state.screen,
+            ConfigScreen::Section(ConfigSection::Ssh)
+        ));
     }
 
     #[test]
-    fn ssh_key_configuration_launches_existing_flow_when_clean() {
+    fn ssh_key_selection_updates_config_in_memory() {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
         let mut state = ConfigUiState::new(config, paths);
-        state.highlighted_section = SECTIONS
-            .iter()
-            .position(|section| matches!(section, ConfigSection::Ssh))
-            .unwrap();
+        state.screen = ConfigScreen::Section(ConfigSection::Ssh);
+        state.ssh_keys = vec![crate::ssh::DiscoveredSshKey {
+            path: PathBuf::from("/tmp/current-key"),
+            display_path: "/tmp/current-key".to_owned(),
+            fingerprint: Some("SHA256:abc123".to_owned()),
+            comment: None,
+            key_type: Some("ED25519".to_owned()),
+            has_public_pair: false,
+            permissions_ok: None,
+        }];
+        state.ssh_selected = vec![false];
 
-        let action = state.open_highlighted();
+        state.open_highlighted();
 
-        assert!(matches!(action, ConfigUiAction::OpenSshConfigure));
+        assert!(state.dirty);
+        assert_eq!(state.config.ssh.selected_keys.len(), 1);
+        assert_eq!(state.config.ssh.selected_keys[0].path, "/tmp/current-key");
     }
 
     #[test]
@@ -435,9 +469,8 @@ mod tests {
             .position(|row| row.title == "Git: configured user.name")
             .unwrap();
 
-        let action = state.open_highlighted();
+        state.open_highlighted();
 
-        assert!(matches!(action, ConfigUiAction::Continue));
         assert!(!state.dirty);
         assert!(matches!(
             state.screen,

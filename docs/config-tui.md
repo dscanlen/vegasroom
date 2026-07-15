@@ -23,10 +23,16 @@ s           save changes
 q           quit
 ```
 
-Save, discard, and exit should not be top-level menu entries. They are actions/keybindings. If there are unsaved changes and the user quits, show a dirty-state prompt:
+Save, discard, and exit should not be top-level menu entries. They are actions/keybindings. Quitting always opens a confirmation prompt. If there are unsaved changes, ask whether to save before quitting:
 
 ```text
 Save changes before quitting? y/n/c
+```
+
+If there are no unsaved changes, ask for confirmation before exiting:
+
+```text
+No unsaved changes. Quit? y/n
 ```
 
 Nested config screens use `Esc` to return to the previous screen, while `s` and `q` remain global actions. Text input screens are the exception: printable keys edit the value, Enter applies it in memory, and Esc cancels back to the section. On the root config menu, `Esc` quits like `q`.
@@ -118,11 +124,11 @@ Purge package download caches
 
 The toolchain rows show current enabled/disabled state and toggle in memory with Enter. Users must press `s` to save, then run `vr init --build` when ready to rebuild the environment image. Toolchain version strings and package lists are intentionally not shown or edited in the TUI; edit YAML for those deeper changes.
 
-`Purge package download caches` opens a confirmation preview before deleting safe package download caches. It removes npm/pip download caches plus Cargo registry/git caches, while preserving workspaces, auth, SSH, Pi npm-global installs, and Cargo-installed binaries.
+`Purge package download caches` opens a confirmation preview before deleting safe package download caches. The preview shows estimated removable size totals and per-cache path estimates. It removes npm/pip download caches plus Cargo registry/git caches, while preserving workspaces, auth, SSH, Pi npm-global installs, and Cargo-installed binaries.
 
 ### SSH
 
-The SSH menu item opens the managed SSH key picker directly. It reuses the same bottom-aligned visual language as the config menu and keeps compact metadata for the highlighted key.
+The SSH section contains the managed SSH key picker inside the main config TUI flow. It uses the same navigation, save, quit, color, and bottom-panel behavior as every other config section. Press Enter to toggle the highlighted key, `r` to rescan, `Esc` to return to the main config menu, and `s` to save selected keys with the rest of the config.
 
 SSH-specific public commands are not part of the CLI. Use `vr config` for SSH key selection and `vr doctor` for SSH readiness/status checks.
 
