@@ -275,15 +275,17 @@ mod tests {
     fn environment_section_render_includes_toolchain_state_and_cache_details() {
         let mut config = Config::default();
         config.environment.rust.enabled = true;
+        config.environment.rust.toolchain = "nightly".to_owned();
         config.environment.typescript.packages = vec!["typescript".to_owned(), "tsx".to_owned()];
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
         let state = ConfigUiState::new(config, paths);
 
         let output = render_section_to_string(&state, ConfigSection::Environment);
 
-        assert!(output.contains("Current: enabled (stable)"));
+        assert!(output.contains("Current: enabled"));
         assert!(output.contains("Current: disabled"));
-        assert!(output.contains("Current: disabled; packages: typescript, tsx"));
+        assert!(!output.contains("nightly"));
+        assert!(!output.contains("packages: typescript, tsx"));
         assert!(output.contains("Removes npm/pip download caches"));
         assert!(output.contains("Preserves workspaces, auth, SSH, Pi npm-global, and Cargo bin"));
     }

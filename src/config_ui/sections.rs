@@ -63,11 +63,7 @@ and no host Git inheritance."
                 SectionRow::action(
                     toolchain_row_title("Rust", config.environment.rust.enabled),
                     vec![
-                        format!(
-                            "Current: {} ({})",
-                            enabled_name(config.environment.rust.enabled),
-                            config.environment.rust.toolchain
-                        ),
+                        format!("Current: {}", enabled_name(config.environment.rust.enabled)),
                         "Press Enter to toggle. Press s to save.".to_owned(),
                         "Run `vr init --build` when ready to rebuild the environment image."
                             .to_owned(),
@@ -101,9 +97,8 @@ and no host Git inheritance."
                     toolchain_row_title("TypeScript", config.environment.typescript.enabled),
                     vec![
                         format!(
-                            "Current: {}; packages: {}",
-                            enabled_name(config.environment.typescript.enabled),
-                            config.environment.typescript.packages.join(", ")
+                            "Current: {}",
+                            enabled_name(config.environment.typescript.enabled)
                         ),
                         "Press Enter to toggle. Press s to save.".to_owned(),
                         "Run `vr init --build` when ready to rebuild the environment image."
