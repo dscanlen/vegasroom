@@ -1,6 +1,6 @@
 # Config TUI design
 
-`vr config` is intended to be the single interactive configuration entry point for Vegasroom.
+`vr config` is the single interactive configuration entry point for Vegasroom.
 
 ## Command surface
 
@@ -10,7 +10,7 @@ vr config
 
 `vr config` opens an interactive TUI shell when stdin/stdout are terminals. It should not grow a large `vr config <subcommand>` tree. Configuration discovery, presets, submenus, save prompts, and advanced actions live inside the TUI.
 
-If `vr config` is run without an interactive terminal, it should explain that configuration is interactive and point users to manual YAML editing at `~/.vegasroom/config.yaml`.
+If `vr config` is run without an interactive terminal, it explains that configuration is interactive and points users to manual YAML editing at `~/.vegasroom/config.yaml`.
 
 ## Navigation model
 
@@ -29,40 +29,31 @@ Save, discard, and exit should not be top-level menu entries. They are actions/k
 Save changes before quitting? y/n/c
 ```
 
-Nested submenus use `Esc` to return to the previous screen, while `s` and `q` remain global actions. On the root config menu, `Esc` quits like `q`.
+Nested config screens use `Esc` to return to the previous screen, while `s` and `q` remain global actions. On the root config menu, `Esc` quits like `q`.
 
 ## Top-level sections
 
-The top-level TUI is intentionally small:
+The current top-level TUI sections are:
 
 ```text
 Security
+Environment
 SSH
 Advanced
 ```
 
-Keep the menu stable and minimal. Avoid passive preview panes that change height as the highlight moves. Deeper or less-common settings belong in Advanced or manual YAML editing.
+Keep the menu stable and minimal. Avoid passive preview panes that change height as the highlight moves. Less-common settings belong in Advanced or manual YAML editing.
 
 ## Security presets
 
 Security preset rows open a change preview first. Press Enter on the preview to apply the preset to the in-memory config, then press `s` to save it to disk.
 
-User-facing preset names should prioritize clarity:
+Current preset rows:
 
 ```text
 Default / Compatible
 Safer
 Strict
-Custom
-```
-
-Internal/documentation aliases may map to:
-
-```text
-lowsec
-sec
-highsec
-custom
 ```
 
 ### Default / Compatible
@@ -111,15 +102,45 @@ Do not move presets to bridge networking yet. Bridge remains experimental becaus
 
 ## Section scope
 
+### Environment
+
+Environment is currently a top-level section because toolchain enablement and cache cleanup are common enough to expose directly.
+
+Current rows:
+
+```text
+Rust
+Python
+Go
+TypeScript
+Purge package download caches
+```
+
+The toolchain rows show current enabled/disabled state and toggle in memory with Enter. Users must press `s` to save, then run `vr init --build` when ready to rebuild the environment image.
+
+`Purge package download caches` opens a confirmation preview before deleting safe package download caches. It removes npm/pip download caches plus Cargo registry/git caches, while preserving workspaces, auth, SSH, Pi npm-global installs, and Cargo-installed binaries.
+
 ### SSH
 
-The SSH menu item opens the managed SSH key picker directly. It reuses the same bottom-aligned visual language as the config menu and keeps the compact metadata for the highlighted key.
+The SSH menu item opens the managed SSH key picker directly. It reuses the same bottom-aligned visual language as the config menu and keeps compact metadata for the highlighted key.
 
 SSH-specific public commands are not part of the CLI. Use `vr config` for SSH key selection and `vr doctor` for SSH readiness/status checks.
 
 ### Advanced
 
-Advanced contains less-common config/status actions and fields, including Git identity, color mode, config path, validation, backup information, and reset-to-defaults preview.
+Advanced contains less-common config/status actions and fields:
+
+```text
+Git: inherit host identity
+Git: configured user.name
+Git: configured user.email
+Git: effective identity
+Color mode
+Config path
+Validate current config
+Recovery backup during save
+Reset all to defaults
+```
 
 #### Git identity
 
@@ -139,7 +160,7 @@ The UI shows the effective identity preview based on current precedence:
 3. host global Git config when git.inherit_host is true
 ```
 
-Initial editable controls toggle `git.inherit_host`. Editing `git.user_name` and `git.user_email` should use a later text-input flow.
+Current editable controls toggle `git.inherit_host`. Editing `git.user_name` and `git.user_email` should use a later text-input flow or manual YAML editing.
 
 #### Output / color
 
@@ -157,35 +178,24 @@ always  force ANSI color
 never   disable ANSI color
 ```
 
-The Output / color section cycles `ui.color` through `auto`, `always`, and `never`. A non-empty `NO_COLOR` environment variable remains an override that disables colored PASS/WARN/FAIL labels.
-
-#### Other advanced actions
-
-Expose non-everyday actions inside the TUI:
-
-```text
-config path
-manual YAML editing instructions
-validate current config
-temporary recovery backup details
-reset all to defaults with preview
-```
+The Color mode row cycles `ui.color` through `auto`, `always`, and `never`. A non-empty `NO_COLOR` environment variable remains an override that disables ANSI color in TUI and line-mode output.
 
 ## Save behavior
 
-Before writing changes:
+Current save behavior is immediate when the user presses `s`; there is no changed-field summary screen yet.
 
-1. Show a summary of changed fields.
-2. Create a temporary timestamped recovery backup of `config.yaml`.
-3. Save the new config.
-4. Reload/validate the saved config.
-5. Delete the recovery backup after the save is confirmed valid.
-6. Show the save result.
+When saving dirty config:
 
-Recovery backups are not retained after successful saves. They are only left behind if saving or validation fails before the primary config is known-good.
+1. If `config.yaml` already exists, create a temporary timestamped recovery backup beside it.
+2. Validate and atomically save the new config.
+3. Reload/validate the saved config.
+4. Delete the recovery backup after the save is confirmed valid.
+5. Show the save result.
 
-Manual YAML editing remains supported and should be mentioned in the Advanced section.
+Recovery backups are not retained after successful saves. They are only left behind if saving, validation, or cleanup fails before the primary config is known-good.
+
+Manual YAML editing remains supported at `~/.vegasroom/config.yaml`.
 
 ## Implementation history
 
-The first full Config TUI implementation exposed many sections. The modernized direction intentionally reduces the visible menu surface to Security, SSH, and Advanced while preserving the underlying config behavior and manual YAML editing support.
+The first full Config TUI implementation exposed many sections. The current interface keeps the top-level surface focused on Security, Environment, SSH, and Advanced while preserving the underlying config behavior and manual YAML editing support.
