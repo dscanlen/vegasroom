@@ -40,6 +40,12 @@ pub struct EnsureReport {
     existing: Vec<PathBuf>,
 }
 
+#[cfg(unix)]
+pub const PRIVATE_DIR_MODE: u32 = 0o700;
+
+#[cfg(unix)]
+pub const PRIVATE_FILE_MODE: u32 = 0o600;
+
 impl StatePaths {
     pub fn default() -> Result<Self> {
         let base_dirs = BaseDirs::new().context("could not determine home directory")?;
@@ -115,6 +121,7 @@ impl StatePaths {
             assets::MANAGED_PI_DOCKERFILE,
             &mut report,
         )?;
+        self.apply_private_permissions()?;
 
         Ok(report)
     }
@@ -138,6 +145,51 @@ impl StatePaths {
             self.ssh_dir.clone(),
             self.cache.clone(),
         ]
+    }
+
+    pub fn private_dirs(&self) -> Vec<PathBuf> {
+        vec![
+            self.root.clone(),
+            self.harness_root.clone(),
+            self.pi_root.clone(),
+            self.pi_config.clone(),
+            self.pi_extensions.clone(),
+            self.pi_skills.clone(),
+            self.pi_sessions.clone(),
+            self.pi_npm_global.clone(),
+            self.environment_root.clone(),
+            self.cargo_home.clone(),
+            self.runtime_root.clone(),
+            self.runtime_harness_root.clone(),
+            self.runtime_pi_root.clone(),
+            self.ssh_dir.clone(),
+            self.cache.clone(),
+        ]
+    }
+
+    pub fn private_files(&self) -> Vec<PathBuf> {
+        vec![
+            self.config_yaml.clone(),
+            self.known_hosts.clone(),
+            self.runtime_compose_yaml.clone(),
+            self.runtime_pi_dockerfile.clone(),
+        ]
+    }
+
+    pub fn apply_private_permissions(&self) -> Result<()> {
+        for dir in self.private_dirs() {
+            if dir.exists() {
+                set_private_dir_permissions(&dir)?;
+            }
+        }
+
+        for file in self.private_files() {
+            if file.exists() {
+                set_private_file_permissions(&file)?;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn show_disclaimer_once(&self) -> Result<()> {
@@ -260,6 +312,50 @@ fn ensure_file(path: &Path, contents: &str, report: &mut EnsureReport) -> Result
     Ok(())
 }
 
+#[cfg(unix)]
+fn set_private_dir_permissions(path: &Path) -> Result<()> {
+    set_permissions_mode(path, PRIVATE_DIR_MODE, "directory")
+}
+
+#[cfg(not(unix))]
+fn set_private_dir_permissions(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_file_permissions(path: &Path) -> Result<()> {
+    set_permissions_mode(path, PRIVATE_FILE_MODE, "file")
+}
+
+#[cfg(not(unix))]
+fn set_private_file_permissions(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn set_permissions_mode(path: &Path, mode: u32, kind: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = fs::metadata(path).with_context(|| {
+        format!(
+            "failed to read permissions for private {kind}: {}",
+            display_path(path)
+        )
+    })?;
+    let mut permissions = metadata.permissions();
+    if permissions.mode() & 0o777 == mode {
+        return Ok(());
+    }
+
+    permissions.set_mode(mode);
+    fs::set_permissions(path, permissions).with_context(|| {
+        format!(
+            "failed to set private permissions on {kind}: {}",
+            display_path(path)
+        )
+    })
+}
+
 fn write_managed_file(path: &Path, contents: &str, report: &mut EnsureReport) -> Result<()> {
     if let Some(parent) = path.parent() {
         ensure_dir(parent, report)?;
@@ -293,4 +389,63 @@ fn write_managed_file(path: &Path, contents: &str, report: &mut EnsureReport) ->
     })?;
     report.created.push(path.to_path_buf());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_state(name: &str) -> StatePaths {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        StatePaths::from_root(std::env::temp_dir().join(format!(
+            "vegasroom-paths-{name}-{}-{nanos}",
+            std::process::id()
+        )))
+    }
+
+    #[test]
+    fn private_dirs_exclude_workspace() {
+        let state = temp_state("private-dirs");
+
+        assert!(state.private_dirs().contains(&state.root));
+        assert!(state.private_dirs().contains(&state.pi_config));
+        assert!(state.private_dirs().contains(&state.ssh_dir));
+        assert!(!state.private_dirs().contains(&state.workspace));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_applies_private_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let state = temp_state("private-permissions");
+        state.ensure().unwrap();
+
+        assert_eq!(
+            fs::metadata(&state.root).unwrap().permissions().mode() & 0o777,
+            PRIVATE_DIR_MODE
+        );
+        assert_eq!(
+            fs::metadata(&state.config_yaml)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            PRIVATE_FILE_MODE
+        );
+        assert_eq!(
+            fs::metadata(&state.runtime_compose_yaml)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            PRIVATE_FILE_MODE
+        );
+
+        let _ = fs::remove_dir_all(state.root);
+    }
 }
