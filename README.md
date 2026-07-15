@@ -137,7 +137,7 @@ Default layout:
 The runtime is intentionally the proven M1-M4 model:
 
 - Docker Compose service `pi` materialized under `~/.vegasroom/runtime`
-- default image `vegasroom/pi:local` from `harness.pi.image`
+- default image `vegasroom/pi:latest` from `harness.pi.image`; `vr init --build` also tags the standard Pi harness image as `vegasroom/pi:<vr-version>`
 - `docker --context rootless compose run --rm pi`
 - ephemeral container removed after exit
 - `/workspace` mounted from the resolved host workspace, defaulting to `~/.vegasroom/workspace`
@@ -239,7 +239,7 @@ environment:
       - ts-node
 ```
 
-When packages or toolchains are configured, `vr init --build` builds a derived runtime image such as `vegasroom/pi:local-env` from the base Pi image. If you add one package or enable/disable a toolchain later, `vr pi`, `vr shell`, and `vr doctor` warn when the derived image is stale; run `vr init --build` when you are ready to rebuild it. Cargo cache/install state persists under `~/.vegasroom/environment/cargo`; pip, Go build, Go module, and npm download caches use the persisted room cache at `~/.vegasroom/cache/...`.
+When packages or toolchains are configured, `vr init --build` builds a derived runtime image such as `vegasroom/pi:latest-env` from the base Pi image. If you add one package or enable/disable a toolchain later, `vr pi`, `vr shell`, and `vr doctor` warn when the derived image is stale; run `vr init --build` when you are ready to rebuild it. Cargo cache/install state persists under `~/.vegasroom/environment/cargo`; pip, Go build, Go module, and npm download caches use the persisted room cache at `~/.vegasroom/cache/...`.
 
 Pi-specific arguments can be passed through after the workspace, after an explicit separator, or at top level when the first token is a flag other than Vegasroom help/version flags:
 

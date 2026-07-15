@@ -54,7 +54,7 @@ environment:
 
 harness:
   pi:
-    image: vegasroom/pi:local
+    image: vegasroom/pi:latest
     command: pi
     network: host
     build_network: host
@@ -498,7 +498,7 @@ mod tests {
             config.environment.typescript.packages,
             vec!["typescript".to_owned(), "ts-node".to_owned()]
         );
-        assert_eq!(config.harness.pi.image, "vegasroom/pi:local");
+        assert_eq!(config.harness.pi.image, "vegasroom/pi:latest");
         assert_eq!(config.harness.pi.command, "pi");
         assert_eq!(config.harness.pi.network, "host");
         assert_eq!(config.harness.pi.build_network, "host");

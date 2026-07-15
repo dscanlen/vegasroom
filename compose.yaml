@@ -7,7 +7,7 @@ services:
       # to the default bridge network on hosts where veth is unsupported.
       # `vr` sets VR_PI_BUILD_NETWORK from harness.pi.build_network in config.
       network: ${VR_PI_BUILD_NETWORK:-host}
-    image: ${VR_PI_IMAGE:-vegasroom/pi:local}
+    image: ${VR_PI_IMAGE:-vegasroom/pi:latest}
     # M1 rootless-Docker bind-mount compatibility: run as container root.
     # With rootless Docker this is still unprivileged on the host.
     user: "0:0"
