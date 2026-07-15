@@ -8,6 +8,8 @@ Vegasroom config lives at:
 
 `vr init` creates this file if it is missing. Existing config is not overwritten silently.
 
+Vegasroom validates config semantics before saving from the TUI, before launch/build commands use the config, and during `vr doctor`. This catches empty required fields, unsafe package/toolchain names, invalid TypeScript package selections, and Docker image/network values with whitespace or control characters.
+
 ## Default config
 
 ```yaml
@@ -241,7 +243,7 @@ TypeScript installs the configured npm packages globally into the derived image 
 
 When no environment packages or toolchains are enabled, Vegasroom uses `harness.pi.image` directly. The standard default Pi harness image is `vegasroom/pi:latest`; `vr init --build` also tags it as `vegasroom/pi:<vr-version>`. When environment customizations are present, Vegasroom builds a derived image tag by appending `-env` to the configured image tag, for example `vegasroom/pi:latest-env`. The derived image is rebuilt by `vr init --build`. If the current package/toolchain config differs from the generated environment Dockerfile, `vr pi`, `vr shell`, and `vr doctor` warn that the environment image is stale so you can rebuild when ready.
 
-Package/toolchain names are validated conservatively before generating the Dockerfile.
+Package/toolchain names are validated conservatively before saving, launching, running doctor checks, or generating the Dockerfile.
 
 ## Pi harness runtime fields
 
