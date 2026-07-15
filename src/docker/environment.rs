@@ -448,17 +448,33 @@ fn base_image<'a>(config: &'a Config, descriptor: &'a harness::HarnessDescriptor
 }
 
 fn derived_image_tag(base: &str) -> String {
-    if base.contains('@') {
-        return format!("{}:env", harness::PI.default_image);
+    if let Some((image, _digest)) = base.split_once('@') {
+        return format!("{}:env", image_repository_without_tag(image));
     }
 
-    let last_slash = base.rfind('/');
-    let last_colon = base.rfind(':');
-    if last_colon.is_some_and(|colon| last_slash.map(|slash| colon > slash).unwrap_or(true)) {
+    if has_tag(base) {
         format!("{base}-env")
     } else {
         format!("{base}:env")
     }
+}
+
+fn image_repository_without_tag(image: &str) -> &str {
+    if let Some(colon) = tag_colon(image) {
+        &image[..colon]
+    } else {
+        image
+    }
+}
+
+fn has_tag(image: &str) -> bool {
+    tag_colon(image).is_some()
+}
+
+fn tag_colon(image: &str) -> Option<usize> {
+    let last_slash = image.rfind('/');
+    let last_colon = image.rfind(':');
+    last_colon.filter(|colon| last_slash.map(|slash| *colon > slash).unwrap_or(true))
 }
 
 fn is_safe_apt_package_name(package: &str) -> bool {
@@ -510,6 +526,22 @@ mod tests {
             "vegasroom/pi:local-env"
         );
         assert_eq!(derived_image_tag("vegasroom/pi"), "vegasroom/pi:env");
+    }
+
+    #[test]
+    fn derived_image_tag_handles_digest_base_images() {
+        assert_eq!(
+            derived_image_tag("vegasroom/pi@sha256:abc123"),
+            "vegasroom/pi:env"
+        );
+        assert_eq!(
+            derived_image_tag("vegasroom/pi:latest@sha256:abc123"),
+            "vegasroom/pi:env"
+        );
+        assert_eq!(
+            derived_image_tag("localhost:5000/vegasroom/pi@sha256:abc123"),
+            "localhost:5000/vegasroom/pi:env"
+        );
     }
 
     #[test]
