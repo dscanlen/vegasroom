@@ -15,6 +15,7 @@ use crossterm::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{
+    atomic_write,
     config::{ColorMode, Config, RiskyMountPolicy, SshMode},
     docker,
     paths::{display_path, StatePaths},
@@ -728,34 +729,23 @@ impl ConfigUiState {
             return Ok(());
         }
 
-        let outcome = save_config_with_backup(&self.config, &self.state_paths.config_yaml)?;
+        save_config_with_recovery_backup(&self.config, &self.state_paths.config_yaml)?;
         self.config = Config::load_from_path(self.state_paths.config_yaml.clone())?;
         self.dirty = false;
-        self.last_message = Some(match outcome.backup_path {
-            Some(path) => format!(
-                "Saved config to {}. Backup: {}",
-                display_path(&self.state_paths.config_yaml),
-                display_path(&path)
-            ),
-            None => format!(
-                "Saved config to {}.",
-                display_path(&self.state_paths.config_yaml)
-            ),
-        });
+        self.last_message = Some(format!(
+            "Saved config to {}.",
+            display_path(&self.state_paths.config_yaml)
+        ));
         Ok(())
     }
 }
 
-struct SaveOutcome {
-    backup_path: Option<PathBuf>,
-}
-
-fn save_config_with_backup(config: &Config, config_path: &Path) -> Result<SaveOutcome> {
+fn save_config_with_recovery_backup(config: &Config, config_path: &Path) -> Result<()> {
     let backup_path = if config_path.exists() {
         let backup_path = next_backup_path(config_path)?;
-        fs::copy(config_path, &backup_path).with_context(|| {
+        atomic_write::copy_file(config_path, &backup_path).with_context(|| {
             format!(
-                "failed to back up config from {} to {}",
+                "failed to create recovery backup from {} to {}",
                 display_path(config_path),
                 display_path(&backup_path)
             )
@@ -768,7 +758,16 @@ fn save_config_with_backup(config: &Config, config_path: &Path) -> Result<SaveOu
     config.save_to_path(config_path)?;
     Config::load_from_path(config_path.to_path_buf())?;
 
-    Ok(SaveOutcome { backup_path })
+    if let Some(backup_path) = backup_path {
+        fs::remove_file(&backup_path).with_context(|| {
+            format!(
+                "saved config but failed to remove recovery backup: {}",
+                display_path(&backup_path)
+            )
+        })?;
+    }
+
+    Ok(())
 }
 
 fn next_backup_path(config_path: &Path) -> Result<PathBuf> {
@@ -970,9 +969,11 @@ and no host Git inheritance."
                     RowAction::ValidateConfig,
                 ),
                 SectionRow::new(
-                    "Backups before save",
+                    "Recovery backup during save",
                     vec![
-                        "Saving over an existing config creates a timestamped backup first."
+                        "Saving over an existing config creates a temporary recovery backup."
+                            .to_owned(),
+                        "The backup is removed after the new config is saved and validated."
                             .to_owned(),
                     ],
                 ),
@@ -1658,7 +1659,9 @@ mod tests {
         assert!(rows
             .iter()
             .any(|row| row.title == "Validate current config"));
-        assert!(rows.iter().any(|row| row.title == "Backups before save"));
+        assert!(rows
+            .iter()
+            .any(|row| row.title == "Recovery backup during save"));
         assert!(rows.iter().any(|row| row.title == "Reset all to defaults"));
     }
 
@@ -1710,25 +1713,46 @@ mod tests {
     }
 
     #[test]
-    fn save_config_writes_backup_and_validates_saved_config() {
+    fn save_config_removes_recovery_backup_after_validated_save() {
         let dir = unique_temp_dir("save-config-backup");
+        fs::create_dir_all(&dir).unwrap();
+        let config_path = dir.join("config.yaml");
+
+        Config::default().save_to_path(&config_path).unwrap();
+
+        let mut changed = Config::default();
+        changed.paths.workspace = "/tmp/changed-workspace".to_owned();
+
+        save_config_with_recovery_backup(&changed, &config_path).unwrap();
+
+        assert_eq!(
+            Config::load_from_path(config_path).unwrap().paths.workspace,
+            "/tmp/changed-workspace"
+        );
+        assert!(backup_files(&dir).is_empty());
+
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn save_config_keeps_recovery_backup_when_save_fails() {
+        let dir = unique_temp_dir("save-config-failed-backup");
         fs::create_dir_all(&dir).unwrap();
         let config_path = dir.join("config.yaml");
 
         Config::default().save_to_path(&config_path).unwrap();
         let original = fs::read_to_string(&config_path).unwrap();
 
-        let mut changed = Config::default();
-        changed.paths.workspace = "/tmp/changed-workspace".to_owned();
+        let mut invalid = Config::default();
+        invalid.paths.workspace = "".to_owned();
 
-        let outcome = save_config_with_backup(&changed, &config_path).unwrap();
-        let backup_path = outcome.backup_path.unwrap();
+        let err = save_config_with_recovery_backup(&invalid, &config_path).unwrap_err();
+        let backups = backup_files(&dir);
 
-        assert_eq!(fs::read_to_string(&backup_path).unwrap(), original);
-        assert_eq!(
-            Config::load_from_path(config_path).unwrap().paths.workspace,
-            "/tmp/changed-workspace"
-        );
+        assert!(err.to_string().contains("paths.workspace"));
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
+        assert_eq!(backups.len(), 1);
+        assert_eq!(fs::read_to_string(&backups[0]).unwrap(), original);
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -1758,7 +1782,8 @@ mod tests {
         assert!(state
             .last_message
             .as_deref()
-            .is_some_and(|message| message.contains("Backup:")));
+            .is_some_and(|message| message.starts_with("Saved config to ")));
+        assert!(backup_files(&dir).is_empty());
 
         let _ = fs::remove_dir_all(dir);
     }
@@ -1767,6 +1792,18 @@ mod tests {
         let mut output = Vec::new();
         render_section_screen(&mut output, state, section).unwrap();
         String::from_utf8(output).unwrap()
+    }
+
+    fn backup_files(dir: &Path) -> Vec<PathBuf> {
+        fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.contains(".backup-"))
+            })
+            .collect()
     }
 
     fn unique_temp_dir(name: &str) -> PathBuf {

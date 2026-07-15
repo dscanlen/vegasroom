@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    harness,
+    atomic_write, harness,
     paths::{display_path, expand_tilde, StatePaths},
 };
 
@@ -294,7 +294,7 @@ impl Config {
     pub fn save_to_path(&self, path: &Path) -> Result<()> {
         self.validate_semantics()?;
         let contents = serde_yaml::to_string(self).context("failed to serialize config")?;
-        fs::write(path, contents)
+        atomic_write::write_file(path, contents)
             .with_context(|| format!("failed to write config: {}", display_path(path)))
     }
 

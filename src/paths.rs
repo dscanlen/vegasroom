@@ -6,7 +6,7 @@ use std::{
 use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
 
-use crate::{assets, config::DEFAULT_CONFIG_YAML, harness};
+use crate::{assets, atomic_write, config::DEFAULT_CONFIG_YAML, harness};
 
 #[derive(Debug, Clone)]
 pub struct StatePaths {
@@ -210,7 +210,7 @@ impl StatePaths {
             harness::PI.display_name
         );
 
-        fs::write(&self.disclaimer_ack, "acknowledged\n").with_context(|| {
+        atomic_write::write_file(&self.disclaimer_ack, "acknowledged\n").with_context(|| {
             format!(
                 "failed to write disclaimer acknowledgement: {}",
                 self.disclaimer_ack.display()
@@ -306,7 +306,7 @@ fn ensure_file(path: &Path, contents: &str, report: &mut EnsureReport) -> Result
         })?;
     }
 
-    fs::write(path, contents)
+    atomic_write::write_file(path, contents)
         .with_context(|| format!("failed to create file: {}", display_path(path)))?;
     report.created.push(path.to_path_buf());
     Ok(())
@@ -381,7 +381,7 @@ fn write_managed_file(path: &Path, contents: &str, report: &mut EnsureReport) ->
         }
     }
 
-    fs::write(path, contents).with_context(|| {
+    atomic_write::write_file(path, contents).with_context(|| {
         format!(
             "failed to write managed runtime file: {}",
             display_path(path)

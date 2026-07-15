@@ -167,7 +167,7 @@ Expose non-everyday actions inside the TUI:
 config path
 manual YAML editing instructions
 validate current config
-backup details
+temporary recovery backup details
 reset all to defaults with preview
 ```
 
@@ -176,10 +176,13 @@ reset all to defaults with preview
 Before writing changes:
 
 1. Show a summary of changed fields.
-2. Create a timestamped backup of `config.yaml`.
+2. Create a temporary timestamped recovery backup of `config.yaml`.
 3. Save the new config.
 4. Reload/validate the saved config.
-5. Show the backup path and save result.
+5. Delete the recovery backup after the save is confirmed valid.
+6. Show the save result.
+
+Recovery backups are not retained after successful saves. They are only left behind if saving or validation fails before the primary config is known-good.
 
 Manual YAML editing remains supported and should be mentioned in the Advanced section.
 

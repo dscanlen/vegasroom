@@ -8,7 +8,7 @@ use std::{
 use anyhow::{anyhow, bail, Context, Result};
 
 use crate::{
-    alert,
+    alert, atomic_write,
     config::{Config, SelectedSshKey, SshMode},
     harness,
     paths::{display_path, expand_tilde},
@@ -243,7 +243,7 @@ fn write_agent_compose_override_for_socket(
         host_sock = yaml_double_quoted(host_sock),
     );
 
-    fs::write(&override_path, contents).with_context(|| {
+    atomic_write::write_file(&override_path, contents).with_context(|| {
         format!(
             "failed to write SSH agent Compose override: {}",
             display_path(&override_path)
