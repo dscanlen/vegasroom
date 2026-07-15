@@ -357,6 +357,7 @@ fn yaml_double_quoted(path: &Path) -> String {
         .to_string()
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
+        .replace(['\r', '\n'], " ")
 }
 
 #[cfg(unix)]
@@ -382,5 +383,38 @@ mod tests {
         let escaped = yaml_double_quoted(Path::new(r#"/tmp/agent "quoted"/sock"#));
 
         assert_eq!(escaped, r#"/tmp/agent \"quoted\"/sock"#);
+    }
+
+    #[test]
+    fn ssh_agent_socket_path_replaces_newlines_before_yaml_write() {
+        let escaped = yaml_double_quoted(Path::new(
+            "/tmp/agent.sock\n        target: /evil\r# comment",
+        ));
+
+        assert_eq!(escaped, "/tmp/agent.sock         target: /evil # comment");
+    }
+
+    #[test]
+    fn ssh_agent_override_sanitizes_host_socket_newlines() {
+        let runtime_dir = unique_test_dir("ssh-agent-override-newlines");
+        let hostile_sock = Path::new("/tmp/agent.sock\n        target: /evil\r# comment");
+
+        let override_path =
+            write_agent_compose_override_for_socket(&runtime_dir, hostile_sock).unwrap();
+        let contents = fs::read_to_string(&override_path).unwrap();
+
+        assert!(contents.contains("source: \"/tmp/agent.sock         target: /evil # comment\""));
+        assert!(!contents.contains("source: \"/tmp/agent.sock\n"));
+        assert!(!contents.contains("target: /evil\r"));
+
+        let _ = fs::remove_dir_all(runtime_dir);
+    }
+
+    fn unique_test_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        env::temp_dir().join(format!("vegasroom-{name}-{}-{nanos}", std::process::id()))
     }
 }
