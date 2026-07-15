@@ -71,7 +71,6 @@ Currently active:
 - `paths.workspace`
 - `workspace.risky_mount_policy`
 - `docker.context`
-- `docker.compose_file`
 - `harness.pi.image`
 - `harness.pi.command`
 - `harness.pi.network`
@@ -141,7 +140,7 @@ The installed `vr` binary embeds the MVP Compose file and Pi Dockerfile at compi
 
 Docker Compose is then invoked with `--project-directory ~/.vegasroom/runtime`, so installed `vr` commands work from any current directory and do not require the original git checkout to remain on disk.
 
-`docker.compose_file` controls the Compose file passed to Docker. The default is the Vegasroom-managed runtime file.
+`docker.compose_file` is a managed/internal compatibility field. Vegasroom does not support custom user Compose files: `vr init`, `vr pi`, and `vr shell` repair this value back to the Vegasroom-managed runtime file, and Docker/doctor paths resolve to that managed file. Users may manually edit generated runtime files for local experiments, but that behavior is unsupported and may be overwritten by `vr init` or future releases.
 
 ## State directories
 
