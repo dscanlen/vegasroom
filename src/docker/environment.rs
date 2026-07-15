@@ -3,7 +3,10 @@ use std::{collections::BTreeSet, fs, path::PathBuf, process::Stdio};
 use anyhow::{bail, Context, Result};
 
 use crate::{
-    config::Config,
+    config::{
+        normalized_apt_packages, normalized_rust_components, normalized_rust_toolchain,
+        normalized_typescript_packages, Config,
+    },
     harness,
     paths::{display_path, StatePaths},
 };
@@ -11,17 +14,7 @@ use crate::{
 use super::{base_docker, harness_image_exists};
 
 pub(super) fn packages(config: &Config) -> Vec<String> {
-    config
-        .environment
-        .apt
-        .packages
-        .iter()
-        .map(|package| package.trim())
-        .filter(|package| !package.is_empty())
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+    normalized_apt_packages(&config.environment)
 }
 
 pub(super) fn rust_enabled(config: &Config) -> bool {
@@ -29,26 +22,11 @@ pub(super) fn rust_enabled(config: &Config) -> bool {
 }
 
 pub(super) fn rust_toolchain(config: &Config) -> String {
-    let toolchain = config.environment.rust.toolchain.trim();
-    if toolchain.is_empty() {
-        "stable".to_owned()
-    } else {
-        toolchain.to_owned()
-    }
+    normalized_rust_toolchain(&config.environment)
 }
 
 pub(super) fn rust_components(config: &Config) -> Vec<String> {
-    config
-        .environment
-        .rust
-        .components
-        .iter()
-        .map(|component| component.trim())
-        .filter(|component| !component.is_empty())
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+    normalized_rust_components(&config.environment)
 }
 
 pub(super) fn python_enabled(config: &Config) -> bool {
@@ -64,17 +42,7 @@ pub(super) fn typescript_enabled(config: &Config) -> bool {
 }
 
 pub(super) fn typescript_packages(config: &Config) -> Vec<String> {
-    config
-        .environment
-        .typescript
-        .packages
-        .iter()
-        .map(|package| package.trim())
-        .filter(|package| !package.is_empty())
-        .map(str::to_owned)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+    normalized_typescript_packages(&config.environment)
 }
 
 pub(super) fn has_customization(config: &Config) -> bool {
@@ -157,64 +125,7 @@ pub(super) fn image_exists(
 }
 
 fn validate_environment(config: &Config) -> Result<()> {
-    validate_packages(config)?;
-    validate_rust(config)?;
-    validate_typescript(config)
-}
-
-pub(super) fn validate_packages(config: &Config) -> Result<()> {
-    for package in packages(config) {
-        if !is_safe_apt_package_name(&package) {
-            bail!(
-                "invalid apt package name in environment.apt.packages: {package}\nPackage names may contain only ASCII letters, digits, '.', '+', '-', ':', and '_'"
-            );
-        }
-    }
-    Ok(())
-}
-
-fn validate_rust(config: &Config) -> Result<()> {
-    if !rust_enabled(config) {
-        return Ok(());
-    }
-
-    let toolchain = rust_toolchain(config);
-    if !is_safe_rust_toolchain(&toolchain) {
-        bail!(
-            "invalid Rust toolchain in environment.rust.toolchain: {toolchain}\nToolchains may contain only ASCII letters, digits, '.', '-', and '_'"
-        );
-    }
-
-    for component in rust_components(config) {
-        if !is_safe_rust_component(&component) {
-            bail!(
-                "invalid Rust component in environment.rust.components: {component}\nComponents may contain only ASCII letters, digits, '-', and '_'"
-            );
-        }
-    }
-
-    Ok(())
-}
-
-fn validate_typescript(config: &Config) -> Result<()> {
-    if !typescript_enabled(config) {
-        return Ok(());
-    }
-
-    let packages = typescript_packages(config);
-    if packages.is_empty() {
-        bail!("environment.typescript.enabled is true but no npm packages are configured");
-    }
-
-    for package in packages {
-        if !is_safe_npm_package_name(&package) {
-            bail!(
-                "invalid npm package in environment.typescript.packages: {package}\nPackage names may contain only ASCII letters, digits, '.', '+', '-', '_', '/', and one leading '@' for scoped packages"
-            );
-        }
-    }
-
-    Ok(())
+    config.validate_semantics()
 }
 
 pub(super) fn dockerfile_path(
@@ -477,44 +388,6 @@ fn tag_colon(image: &str) -> Option<usize> {
     last_colon.filter(|colon| last_slash.map(|slash| *colon > slash).unwrap_or(true))
 }
 
-fn is_safe_apt_package_name(package: &str) -> bool {
-    !package.is_empty()
-        && package.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b'-' | b':' | b'_')
-        })
-}
-
-fn is_safe_rust_toolchain(toolchain: &str) -> bool {
-    !toolchain.is_empty()
-        && toolchain
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
-}
-
-fn is_safe_rust_component(component: &str) -> bool {
-    !component.is_empty()
-        && component
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-}
-
-fn is_safe_npm_package_name(package: &str) -> bool {
-    if package.is_empty() || package.contains("//") {
-        return false;
-    }
-
-    let at_count = package.bytes().filter(|byte| *byte == b'@').count();
-    if at_count > 1 || at_count == 1 && !package.starts_with('@') {
-        return false;
-    }
-
-    package.bytes().all(|byte| {
-        byte.is_ascii_alphanumeric()
-            || matches!(byte, b'.' | b'+' | b'-' | b'_' | b'/')
-            || byte == b'@'
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -542,33 +415,5 @@ mod tests {
             derived_image_tag("localhost:5000/vegasroom/pi@sha256:abc123"),
             "localhost:5000/vegasroom/pi:env"
         );
-    }
-
-    #[test]
-    fn package_names_are_validated() {
-        assert!(is_safe_apt_package_name("build-essential"));
-        assert!(is_safe_apt_package_name("libssl-dev"));
-        assert!(!is_safe_apt_package_name("bad package"));
-        assert!(!is_safe_apt_package_name("bad;package"));
-    }
-
-    #[test]
-    fn rust_toolchains_and_components_are_validated() {
-        assert!(is_safe_rust_toolchain("stable"));
-        assert!(is_safe_rust_toolchain("nightly-2026-01-01"));
-        assert!(!is_safe_rust_toolchain("bad toolchain"));
-        assert!(is_safe_rust_component("rustfmt"));
-        assert!(is_safe_rust_component("clippy"));
-        assert!(!is_safe_rust_component("bad;component"));
-    }
-
-    #[test]
-    fn npm_package_names_are_validated() {
-        assert!(is_safe_npm_package_name("typescript"));
-        assert!(is_safe_npm_package_name("ts-node"));
-        assert!(is_safe_npm_package_name("@scope/package"));
-        assert!(!is_safe_npm_package_name("bad package"));
-        assert!(!is_safe_npm_package_name("bad;package"));
-        assert!(!is_safe_npm_package_name("scope/@bad"));
     }
 }

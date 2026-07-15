@@ -870,6 +870,35 @@ harness:
     }
 
     #[test]
+    fn semantic_validation_rejects_invalid_rust_values() {
+        let mut config = Config::default();
+        config.environment.rust.enabled = true;
+        config.environment.rust.toolchain = "bad toolchain".to_owned();
+
+        let err = config.validate_semantics().unwrap_err();
+
+        assert!(err.to_string().contains("invalid Rust toolchain"));
+
+        config.environment.rust.toolchain = "stable".to_owned();
+        config.environment.rust.components = vec!["bad;component".to_owned()];
+
+        let err = config.validate_semantics().unwrap_err();
+
+        assert!(err.to_string().contains("invalid Rust component"));
+    }
+
+    #[test]
+    fn semantic_validation_rejects_invalid_npm_package_names() {
+        let mut config = Config::default();
+        config.environment.typescript.enabled = true;
+        config.environment.typescript.packages = vec!["bad;package".to_owned()];
+
+        let err = config.validate_semantics().unwrap_err();
+
+        assert!(err.to_string().contains("invalid npm package"));
+    }
+
+    #[test]
     fn semantic_validation_rejects_empty_typescript_package_set() {
         let mut config = Config::default();
         config.environment.typescript.enabled = true;
