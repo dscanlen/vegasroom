@@ -181,6 +181,9 @@ fn render_section_screen(
         };
         let title = styled_row_title(section, row, &state.config, index == state.highlighted_row);
         writeln!(stdout, "│  {marker} {title}")?;
+        for detail in &row.details {
+            writeln!(stdout, "│      {DIM}{detail}{RESET}")?;
+        }
     }
 
     Ok(())
@@ -988,7 +991,7 @@ and no host Git inheritance."
 
 struct SectionRow {
     title: String,
-    _details: Vec<String>,
+    details: Vec<String>,
     action: RowAction,
 }
 
@@ -996,7 +999,7 @@ impl SectionRow {
     fn new(title: impl Into<String>, details: Vec<String>) -> Self {
         Self {
             title: title.into(),
-            _details: details,
+            details,
             action: RowAction::Placeholder,
         }
     }
@@ -1004,7 +1007,7 @@ impl SectionRow {
     fn preset(preset: SecurityPreset, details: Vec<String>) -> Self {
         Self {
             title: preset.title().to_owned(),
-            _details: details,
+            details,
             action: RowAction::PreviewPreset(preset),
         }
     }
@@ -1012,7 +1015,7 @@ impl SectionRow {
     fn action(title: impl Into<String>, details: Vec<String>, action: RowAction) -> Self {
         Self {
             title: title.into(),
-            _details: details,
+            details,
             action,
         }
     }
@@ -1485,6 +1488,56 @@ mod tests {
     }
 
     #[test]
+    fn environment_section_render_includes_toolchain_state_and_cache_details() {
+        let mut config = Config::default();
+        config.environment.rust.enabled = true;
+        config.environment.typescript.packages = vec!["typescript".to_owned(), "tsx".to_owned()];
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let state = ConfigUiState::new(config, paths);
+
+        let output = render_section_to_string(&state, ConfigSection::Environment);
+
+        assert!(output.contains("Current: enabled (stable)"));
+        assert!(output.contains("Current: disabled"));
+        assert!(output.contains("Current: disabled; packages: typescript, tsx"));
+        assert!(output.contains("Removes npm/pip download caches"));
+        assert!(output.contains("Preserves workspaces, auth, SSH, Pi npm-global, and Cargo bin"));
+    }
+
+    #[test]
+    fn advanced_section_render_includes_git_identity_and_color_values() {
+        let mut config = Config::default();
+        config.git.inherit_host = false;
+        config.git.user_name = Some("Configured User".to_owned());
+        config.git.user_email = Some("configured@example.com".to_owned());
+        config.ui.color = ColorMode::Never;
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let state = ConfigUiState::new(config, paths);
+
+        let output = render_section_to_string(&state, ConfigSection::Advanced);
+
+        assert!(output.contains("Current: false"));
+        assert!(output.contains("Current: Configured User"));
+        assert!(output.contains("Current: configured@example.com"));
+        assert!(output.contains("Effective: Configured User <configured@example.com>"));
+        assert!(output.contains("Current: never"));
+    }
+
+    #[test]
+    fn section_detail_rendering_keeps_line_count_stable_as_highlight_moves() {
+        let config = Config::default();
+        let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
+        let mut state = ConfigUiState::new(config, paths);
+
+        state.highlighted_row = 0;
+        let first_output = render_section_to_string(&state, ConfigSection::Advanced);
+        state.highlighted_row = 4;
+        let second_output = render_section_to_string(&state, ConfigSection::Advanced);
+
+        assert_eq!(first_output.lines().count(), second_output.lines().count());
+    }
+
+    #[test]
     fn applying_strict_preset_updates_config_and_marks_dirty() {
         let config = Config::default();
         let paths = StatePaths::from_root(std::path::PathBuf::from("/tmp/vegasroom-test"));
@@ -1708,6 +1761,12 @@ mod tests {
             .is_some_and(|message| message.contains("Backup:")));
 
         let _ = fs::remove_dir_all(dir);
+    }
+
+    fn render_section_to_string(state: &ConfigUiState, section: ConfigSection) -> String {
+        let mut output = Vec::new();
+        render_section_screen(&mut output, state, section).unwrap();
+        String::from_utf8(output).unwrap()
     }
 
     fn unique_temp_dir(name: &str) -> PathBuf {
