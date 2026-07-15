@@ -29,22 +29,13 @@ pub(super) fn render_configure_ui(state: &ConfigureUiState) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn render_quit_prompt() -> Result<()> {
+pub(super) fn render_quit_prompt(dirty: bool) -> Result<()> {
     let mut stdout = io::stdout();
     let (width, height) = terminal::size().unwrap_or((100, 30));
     let width = width.max(1);
     let height = height.max(1);
 
-    let lines = vec![
-        TuiLine::highlighted("╭─ Unsaved SSH Key Changes"),
-        TuiLine::normal("│"),
-        TuiLine::normal("│  Save changes before quitting?"),
-        TuiLine::normal("│"),
-        TuiLine::normal("│  y  Save and Quit"),
-        TuiLine::normal("│  n  Quit Without Saving"),
-        TuiLine::normal("│  c  Cancel"),
-        TuiLine::normal("╰"),
-    ];
+    let lines = quit_prompt_lines(dirty);
 
     let config = Config::load_or_default().unwrap_or_default();
     let colors_enabled = alert::colors_enabled_for_config(&config, io::stdout().is_terminal());
@@ -52,6 +43,31 @@ pub(super) fn render_quit_prompt() -> Result<()> {
         .context("failed to draw SSH configure quit prompt")?;
     stdout.flush()?;
     Ok(())
+}
+
+fn quit_prompt_lines(dirty: bool) -> Vec<TuiLine> {
+    if dirty {
+        vec![
+            TuiLine::highlighted("╭─ Unsaved SSH Key Changes"),
+            TuiLine::normal("│"),
+            TuiLine::normal("│  Save changes before quitting?"),
+            TuiLine::normal("│"),
+            TuiLine::normal("│  y  Save and Quit"),
+            TuiLine::normal("│  n  Quit Without Saving"),
+            TuiLine::normal("│  c  Cancel"),
+            TuiLine::normal("╰"),
+        ]
+    } else {
+        vec![
+            TuiLine::highlighted("╭─ Quit SSH Key Configuration"),
+            TuiLine::normal("│"),
+            TuiLine::normal("│  No unsaved changes. Quit?"),
+            TuiLine::normal("│"),
+            TuiLine::normal("│  y  Quit"),
+            TuiLine::normal("│  n  Cancel"),
+            TuiLine::normal("╰"),
+        ]
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -363,5 +379,28 @@ mod tests {
 
         assert_eq!(lines[lines.len() - 2].text, "│");
         assert!(lines[0].text.contains("SSH Keys"));
+    }
+
+    #[test]
+    fn quit_prompt_lines_cover_clean_and_dirty_states() {
+        let clean = quit_prompt_lines(false)
+            .into_iter()
+            .map(|line| line.text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(clean.contains("No unsaved changes. Quit?"));
+        assert!(clean.contains("y  Quit"));
+        assert!(clean.contains("n  Cancel"));
+        assert!(!clean.contains("Save and Quit"));
+
+        let dirty = quit_prompt_lines(true)
+            .into_iter()
+            .map(|line| line.text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(dirty.contains("Save changes before quitting?"));
+        assert!(dirty.contains("y  Save and Quit"));
+        assert!(dirty.contains("n  Quit Without Saving"));
+        assert!(dirty.contains("c  Cancel"));
     }
 }

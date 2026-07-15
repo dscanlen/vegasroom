@@ -215,21 +215,37 @@ fn styled_row_title(
     }
 }
 
-pub(super) fn render_quit_prompt() -> Result<()> {
-    let lines = vec![
-        "╭─ Unsaved Config Changes".to_owned(),
-        "│".to_owned(),
-        "│  Save changes before quitting?".to_owned(),
-        "│".to_owned(),
-        "│  y  Save and Quit".to_owned(),
-        "│  n  Quit Without Saving".to_owned(),
-        "│  c  Cancel".to_owned(),
-        "╰".to_owned(),
-    ];
+pub(super) fn render_quit_prompt(dirty: bool) -> Result<()> {
+    let lines = quit_prompt_lines(dirty);
     let mut stdout = io::stdout();
     draw_bottom_panel(&mut stdout, &lines).context("failed to render config quit prompt")?;
     stdout.flush()?;
     Ok(())
+}
+
+pub(super) fn quit_prompt_lines(dirty: bool) -> Vec<String> {
+    if dirty {
+        vec![
+            "╭─ Unsaved Config Changes".to_owned(),
+            "│".to_owned(),
+            "│  Save changes before quitting?".to_owned(),
+            "│".to_owned(),
+            "│  y  Save and Quit".to_owned(),
+            "│  n  Quit Without Saving".to_owned(),
+            "│  c  Cancel".to_owned(),
+            "╰".to_owned(),
+        ]
+    } else {
+        vec![
+            "╭─ Quit Config".to_owned(),
+            "│".to_owned(),
+            "│  No unsaved changes. Quit?".to_owned(),
+            "│".to_owned(),
+            "│  y  Quit".to_owned(),
+            "│  n  Cancel".to_owned(),
+            "╰".to_owned(),
+        ]
+    }
 }
 
 fn render_preset_preview(

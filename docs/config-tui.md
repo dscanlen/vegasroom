@@ -23,10 +23,16 @@ s           save changes
 q           quit
 ```
 
-Save, discard, and exit should not be top-level menu entries. They are actions/keybindings. If there are unsaved changes and the user quits, show a dirty-state prompt:
+Save, discard, and exit should not be top-level menu entries. They are actions/keybindings. Quitting always opens a confirmation prompt. If there are unsaved changes, ask whether to save before quitting:
 
 ```text
 Save changes before quitting? y/n/c
+```
+
+If there are no unsaved changes, ask for confirmation before exiting:
+
+```text
+No unsaved changes. Quit? y/n
 ```
 
 Nested config screens use `Esc` to return to the previous screen, while `s` and `q` remain global actions. Text input screens are the exception: printable keys edit the value, Enter applies it in memory, and Esc cancels back to the section. On the root config menu, `Esc` quits like `q`.

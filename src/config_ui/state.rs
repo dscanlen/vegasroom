@@ -365,7 +365,7 @@ impl ConfigUiState {
 #[derive(Clone, Copy)]
 pub(super) enum QuitDecision {
     Save,
-    Discard,
+    Quit,
     Cancel,
 }
 

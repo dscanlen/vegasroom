@@ -33,12 +33,12 @@ use persistence::save_config_with_recovery_backup;
 use presets::{
     active_security_preset, enabled_name, preset_changes, reset_defaults_changes, SecurityPreset,
 };
-use render::{render, render_quit_prompt, TerminalSession};
 #[cfg(test)]
 use render::{
-    render_header, render_keys, render_purge_package_caches_preview, render_section_screen,
-    render_text_input, truncate_to_width, TuiStyles,
+    quit_prompt_lines, render_header, render_keys, render_purge_package_caches_preview,
+    render_section_screen, render_text_input, truncate_to_width, TuiStyles,
 };
+use render::{render, render_quit_prompt, TerminalSession};
 use sections::{ConfigSection, RowAction, SectionRow, TextField, SECTIONS};
 use state::{ConfigScreen, ConfigUiAction, ConfigUiExit, ConfigUiState, QuitDecision};
 use values::{color_mode_name, git_identity_preview};
@@ -126,16 +126,12 @@ fn handle_text_input_key(state: &mut ConfigUiState, code: KeyCode) -> Result<()>
 }
 
 fn confirm_config_quit_if_needed(state: &mut ConfigUiState) -> Result<Option<ConfigUiExit>> {
-    if !state.dirty {
-        return Ok(Some(ConfigUiExit::Quit(0)));
-    }
-
-    match confirm_quit()? {
+    match confirm_quit(state.dirty)? {
         QuitDecision::Save => {
             state.save()?;
             Ok(Some(ConfigUiExit::Quit(0)))
         }
-        QuitDecision::Discard => Ok(Some(ConfigUiExit::Quit(0))),
+        QuitDecision::Quit => Ok(Some(ConfigUiExit::Quit(0))),
         QuitDecision::Cancel => {
             state.last_message = Some("Quit canceled.".to_owned());
             Ok(None)
@@ -143,8 +139,8 @@ fn confirm_config_quit_if_needed(state: &mut ConfigUiState) -> Result<Option<Con
     }
 }
 
-fn confirm_quit() -> Result<QuitDecision> {
-    render_quit_prompt()?;
+fn confirm_quit(dirty: bool) -> Result<QuitDecision> {
+    render_quit_prompt(dirty)?;
 
     loop {
         let Event::Key(key) = event::read().context("failed to read terminal key event")? else {
@@ -152,8 +148,10 @@ fn confirm_quit() -> Result<QuitDecision> {
         };
 
         match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => return Ok(QuitDecision::Save),
-            KeyCode::Char('n') | KeyCode::Char('N') => return Ok(QuitDecision::Discard),
+            KeyCode::Char('y') | KeyCode::Char('Y') if dirty => return Ok(QuitDecision::Save),
+            KeyCode::Char('y') | KeyCode::Char('Y') => return Ok(QuitDecision::Quit),
+            KeyCode::Char('n') | KeyCode::Char('N') if dirty => return Ok(QuitDecision::Quit),
+            KeyCode::Char('n') | KeyCode::Char('N') => return Ok(QuitDecision::Cancel),
             KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
                 return Ok(QuitDecision::Cancel);
             }
@@ -211,6 +209,21 @@ mod tests {
         assert!(section_help.contains("esc back"));
         assert!(!section_help.contains("space"));
         assert!(!section_help.contains("backspace"));
+    }
+
+    #[test]
+    fn quit_prompt_lines_cover_clean_and_dirty_states() {
+        let clean = quit_prompt_lines(false).join("\n");
+        assert!(clean.contains("No unsaved changes. Quit?"));
+        assert!(clean.contains("y  Quit"));
+        assert!(clean.contains("n  Cancel"));
+        assert!(!clean.contains("Save and Quit"));
+
+        let dirty = quit_prompt_lines(true).join("\n");
+        assert!(dirty.contains("Save changes before quitting?"));
+        assert!(dirty.contains("y  Save and Quit"));
+        assert!(dirty.contains("n  Quit Without Saving"));
+        assert!(dirty.contains("c  Cancel"));
     }
 
     #[test]

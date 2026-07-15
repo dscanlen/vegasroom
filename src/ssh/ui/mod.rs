@@ -99,11 +99,9 @@ fn configure_tui(
 }
 
 fn confirm_quit_if_needed(state: &mut ConfigureUiState) -> Result<bool> {
-    if !state.is_dirty() {
-        return Ok(true);
-    }
+    let dirty = state.is_dirty();
 
-    render_quit_prompt()?;
+    render_quit_prompt(dirty)?;
     loop {
         let Event::Key(confirm) = event::read().context("failed to read terminal key event")?
         else {
@@ -111,12 +109,15 @@ fn confirm_quit_if_needed(state: &mut ConfigureUiState) -> Result<bool> {
         };
 
         match confirm.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') => {
+            KeyCode::Char('y') | KeyCode::Char('Y') if dirty => {
                 state.save()?;
                 return Ok(true);
             }
+            KeyCode::Char('y') | KeyCode::Char('Y') => return Ok(true),
+            KeyCode::Char('n') | KeyCode::Char('N') if dirty => return Ok(true),
             KeyCode::Char('n') | KeyCode::Char('N') => {
-                return Ok(true);
+                state.last_message = Some("Quit canceled.".to_owned());
+                return Ok(false);
             }
             KeyCode::Char('c') | KeyCode::Char('C') | KeyCode::Esc => {
                 state.last_message = Some("Quit canceled.".to_owned());
