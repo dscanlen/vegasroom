@@ -52,7 +52,7 @@ MVP-preserved runtime decisions:
 
 - rootless Docker context named `rootless`
 - Docker Compose service `pi`
-- default local image `vegasroom/pi:local` from `harness.pi.image`
+- default image `vegasroom/pi:latest` from `harness.pi.image`, with standard builds also tagged as `vegasroom/pi:<vr-version>`
 - container-root runtime for now
 - `no-new-privileges:true`, `cap_drop: ALL`, and `init: true` runtime hardening
 - default `build.network=host` from `harness.pi.build_network`
@@ -61,7 +61,7 @@ MVP-preserved runtime decisions:
 - container root filesystem writable by default, with opt-in `harness.pi.read_only_rootfs`
 - Pi state mounted read-write
 - Pi npm-global prefix mounted read-write at `/home/agent/.npm-global`, with `/home/agent/.npm-global/bin` before `/usr/local/bin` on `PATH`, so in-room Pi npm updates persist across ephemeral containers while the pinned image-baked install remains a fallback
-- optional environment config, starting with `environment.apt.packages`, `environment.rust`, `environment.python`, `environment.go`, and `environment.typescript`, generates a derived image such as `vegasroom/pi:local-env`, which is rebuilt when the requested package/toolchain set changes
+- optional environment config, starting with `environment.apt.packages`, `environment.rust`, `environment.python`, `environment.go`, and `environment.typescript`, generates a derived image such as `vegasroom/pi:latest-env`, which is rebuilt when the requested package/toolchain set changes
 - Cargo cache/install state persists through `~/.vegasroom/environment/cargo` mounted at `/home/agent/.cargo`
 - Vegas-managed SSH directory mounted once at `/home/agent/.ssh`, not host `~/.ssh`
 - `/root/.ssh` provided as an image-level symlink to `/home/agent/.ssh` for root-run SSH/Git compatibility without a second bind mount

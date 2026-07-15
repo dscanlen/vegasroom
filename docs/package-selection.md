@@ -91,7 +91,7 @@ Open questions for later slices:
 Generate a derived Dockerfile from the managed harness image:
 
 ```dockerfile
-FROM vegasroom/pi:local
+FROM vegasroom/pi:latest
 RUN apt-get update && apt-get install -y --no-install-recommends ...
 RUN npm install -g ...
 RUN python3 -m pip install ...
@@ -155,7 +155,7 @@ Implementation:
 
 1. Add docs and schema for `environment.apt.packages`.
 2. Generate a derived Dockerfile under `~/.vegasroom/runtime/environment/pi/Dockerfile`.
-3. Build a derived image tag from `harness.pi.image`, for example `vegasroom/pi:local-env`.
+3. Build a derived image tag from `harness.pi.image`, for example `vegasroom/pi:latest-env`.
 4. Use the derived image only when environment packages are configured.
 5. Rebuild the derived image with `vr init --build`; room startup and doctor warn when the generated Dockerfile is stale relative to current config.
 6. Install Rust with rustup when `environment.rust.enabled` is true.

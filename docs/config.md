@@ -54,7 +54,7 @@ environment:
 
 harness:
   pi:
-    image: vegasroom/pi:local
+    image: vegasroom/pi:latest
     command: pi
     network: host
     build_network: host
@@ -106,17 +106,17 @@ The active config still only supports the Pi harness. Before adding Claude Code 
 ```yaml
 harness:
   pi:
-    image: vegasroom/pi:local
+    image: vegasroom/pi:latest
     command: pi
     network: host
     build_network: host
     read_only_workspace: false
     read_only_rootfs: false
   claude:
-    image: vegasroom/claude:local
+    image: vegasroom/claude:latest
     command: claude
   codex:
-    image: vegasroom/codex:local
+    image: vegasroom/codex:latest
     command: codex
 ```
 
@@ -239,7 +239,7 @@ environment:
 
 TypeScript installs the configured npm packages globally into the derived image under `/usr/local`. User in-room npm-global installs still use the persisted `/home/agent/.npm-global` prefix.
 
-When no environment packages or toolchains are enabled, Vegasroom uses `harness.pi.image` directly. When environment customizations are present, Vegasroom builds a derived image tag by appending `-env` to the configured image tag, for example `vegasroom/pi:local-env`. The derived image is rebuilt by `vr init --build`. If the current package/toolchain config differs from the generated environment Dockerfile, `vr pi`, `vr shell`, and `vr doctor` warn that the environment image is stale so you can rebuild when ready.
+When no environment packages or toolchains are enabled, Vegasroom uses `harness.pi.image` directly. The standard default Pi harness image is `vegasroom/pi:latest`; `vr init --build` also tags it as `vegasroom/pi:<vr-version>`. When environment customizations are present, Vegasroom builds a derived image tag by appending `-env` to the configured image tag, for example `vegasroom/pi:latest-env`. The derived image is rebuilt by `vr init --build`. If the current package/toolchain config differs from the generated environment Dockerfile, `vr pi`, `vr shell`, and `vr doctor` warn that the environment image is stale so you can rebuild when ready.
 
 Package/toolchain names are validated conservatively before generating the Dockerfile.
 
