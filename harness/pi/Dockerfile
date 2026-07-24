@@ -1,6 +1,6 @@
 FROM node:24-bookworm-slim
 
-ARG PI_CODING_AGENT_VERSION=0.80.10
+ARG PI_CODING_AGENT_VERSION=0.82.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/agent \
