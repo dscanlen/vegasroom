@@ -1,10 +1,6 @@
 FROM node:24-bookworm-slim
 
-<<<<<<< Updated upstream
-ARG PI_CODING_AGENT_VERSION=0.82.0
-=======
 ARG PI_CODING_AGENT_VERSION=0.82.1
->>>>>>> Stashed changes
 
 ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/agent \
