@@ -6,7 +6,10 @@ pub(super) enum ManualLaunch {
     PrintPiHelp,
     PrintShellHelp,
     Pi(PiInvocation),
-    Shell(Option<String>),
+    Shell {
+        workspace: Option<String>,
+        command: Vec<String>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -61,7 +64,15 @@ fn parse_explicit_shell(args: &[String]) -> Result<ManualLaunch> {
         return Ok(ManualLaunch::PrintShellHelp);
     }
 
-    parse_shell_workspace(args).map(ManualLaunch::Shell)
+    let (workspace_args, command) = match args.iter().position(|arg| arg == "--") {
+        Some(index) if index + 1 < args.len() => (&args[..index], args[index + 1..].to_vec()),
+        Some(_) => bail!("usage: vr shell [workspace] -- <command> [args...]"),
+        None => (args, Vec::new()),
+    };
+    Ok(ManualLaunch::Shell {
+        workspace: parse_shell_workspace(workspace_args)?,
+        command,
+    })
 }
 
 fn is_help_arg(arg: Option<&String>) -> bool {
@@ -182,16 +193,44 @@ mod tests {
     fn manual_parser_routes_explicit_shell() {
         assert_eq!(
             parse_manual_launch(&argv(&["shell"])).unwrap(),
-            ManualLaunch::Shell(None)
+            ManualLaunch::Shell {
+                workspace: None,
+                command: Vec::new(),
+            }
         );
         assert_eq!(
             parse_manual_launch(&argv(&["shell", "my-repo"])).unwrap(),
-            ManualLaunch::Shell(Some("my-repo".to_owned()))
+            ManualLaunch::Shell {
+                workspace: Some("my-repo".to_owned()),
+                command: Vec::new(),
+            }
         );
         assert_eq!(
             parse_manual_launch(&argv(&["shell", "--help"])).unwrap(),
             ManualLaunch::PrintShellHelp
         );
+    }
+
+    #[test]
+    fn manual_parser_passes_shell_command_without_reinterpreting_arguments() {
+        for workspace in [None, Some("my repo")] {
+            let mut values = vec!["shell"];
+            values.extend(workspace);
+            values.extend(["--", "sh", "-eu", "-c", "echo \"$1\"", "test", "a b", "--"]);
+            assert_eq!(
+                parse_manual_launch(&argv(&values)).unwrap(),
+                ManualLaunch::Shell {
+                    workspace: workspace.map(str::to_owned),
+                    command: args(&["sh", "-eu", "-c", "echo \"$1\"", "test", "a b", "--"]),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn manual_parser_rejects_empty_shell_command() {
+        assert!(parse_manual_launch(&argv(&["shell", "--"])).is_err());
+        assert!(parse_manual_launch(&argv(&["shell", ".", "--"])).is_err());
     }
 
     #[test]

@@ -37,8 +37,29 @@ pub fn run_pi(config: &Config, workspace: &ResolvedWorkspace, pi_args: &[String]
     )
 }
 
-pub fn run_shell(config: &Config, workspace: &ResolvedWorkspace) -> Result<i32> {
-    run_harness_command(config, &harness::PI, workspace, "sh", &[])
+pub fn run_shell(
+    config: &Config,
+    workspace: &ResolvedWorkspace,
+    command: &[String],
+) -> Result<i32> {
+    let ssh_mode = if command.is_empty() {
+        SshRuntimeMode::Interactive
+    } else {
+        SshRuntimeMode::NonInteractive
+    };
+    run_compose(config, workspace, &shell_compose_args(command), ssh_mode)
+}
+
+fn shell_compose_args(command: &[String]) -> Vec<String> {
+    match command.split_first() {
+        None => harness_compose_args(&harness::PI, "sh", &[]),
+        Some((program, args)) => {
+            let mut compose_args = harness_compose_args(&harness::PI, program, args);
+            // Explicit commands are suitable for scripts, with no pseudo-TTY.
+            compose_args.insert(2, "-T".to_owned());
+            compose_args
+        }
+    }
 }
 
 pub fn ensure_pi_image_exists(config: &Config) -> Result<()> {
@@ -173,7 +194,7 @@ fn run_harness_command(
         config,
         workspace,
         &harness_compose_args(descriptor, command, args),
-        true,
+        SshRuntimeMode::Interactive,
     )
 }
 
@@ -268,15 +289,9 @@ fn run_compose(
     config: &Config,
     workspace: &ResolvedWorkspace,
     compose_args: &[String],
-    warn_about_ssh: bool,
+    ssh_mode: SshRuntimeMode,
 ) -> Result<i32> {
-    let mut invocation = compose_base(
-        config,
-        Some(workspace),
-        true,
-        warn_about_ssh,
-        SshRuntimeMode::Interactive,
-    )?;
+    let mut invocation = compose_base(config, Some(workspace), true, true, ssh_mode)?;
     let status = invocation
         .command
         .args(compose_args)
@@ -458,6 +473,27 @@ mod tests {
             .map(|duration| duration.as_nanos())
             .unwrap_or_default();
         std::env::temp_dir().join(format!("vegasroom-{name}-{}-{nanos}", std::process::id()))
+    }
+
+    #[test]
+    fn shell_commands_disable_tty_and_preserve_argv() {
+        assert_eq!(
+            shell_compose_args(&strings(&["sh", "-eu", "-c", "echo hello world"])),
+            strings(&[
+                "run",
+                "--rm",
+                "-T",
+                "pi",
+                "sh",
+                "-eu",
+                "-c",
+                "echo hello world"
+            ])
+        );
+        assert_eq!(
+            shell_compose_args(&[]),
+            strings(&["run", "--rm", "pi", "sh"])
+        );
     }
 
     #[test]

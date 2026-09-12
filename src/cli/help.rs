@@ -78,9 +78,11 @@ fn shell_help_text() -> &'static str {
 
 Usage:
   vr shell [workspace]
+  vr shell [workspace] -- <command> [args...]
 
 Arguments:
   workspace       Optional host workspace to mount at /workspace
+  command         Optional command to run instead of an interactive shell
 
 Workspace resolution:
   no workspace     ~/.vegasroom/workspace
@@ -94,9 +96,11 @@ Examples:
   vr shell
   vr shell .
   vr shell my-git-repo
+  vr shell . -- sh -c 'node --version'
 
 Notes:
-  Shell does not accept pass-through command arguments."#
+  Commands after -- run without a pseudo-TTY and return their exit status.
+  Without a command, starts an interactive sh shell."#
 }
 
 #[cfg(test)]
@@ -124,6 +128,7 @@ mod tests {
         assert!(help.contains("Usage:\n  vr shell [workspace]"));
         assert!(help.contains("Arguments:\n  workspace"));
         assert!(help.contains("Notes:"));
-        assert!(!help.contains("shell [workspace] [args"));
+        assert!(help.contains("vr shell [workspace] -- <command> [args...]"));
+        assert!(help.contains("without a pseudo-TTY"));
     }
 }

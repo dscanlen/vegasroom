@@ -47,7 +47,7 @@ pub(super) fn launch_pi(workspace_arg: Option<&str>, pi_args: Vec<String>) -> Re
     docker::run_pi(&config, &workspace, &pi_args)
 }
 
-pub(super) fn launch_shell(workspace_arg: Option<&str>) -> Result<i32> {
+pub(super) fn launch_shell(workspace_arg: Option<&str>, command: Vec<String>) -> Result<i32> {
     let state = StatePaths::default()?;
     let _ = state.ensure()?;
     repair_managed_runtime_config()?;
@@ -60,7 +60,7 @@ pub(super) fn launch_shell(workspace_arg: Option<&str>) -> Result<i32> {
 
     docker::ensure_pi_image_exists(&config)
         .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
-    docker::run_shell(&config, &workspace)
+    docker::run_shell(&config, &workspace, &command)
 }
 
 fn print_environment_image_warning(config: &Config) -> Result<()> {

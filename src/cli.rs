@@ -64,7 +64,7 @@ pub fn run() -> Result<i32> {
         Commands::Doctor => commands::doctor(),
         Commands::Config => commands::config(),
         Commands::Pi => commands::launch_pi(None, Vec::new()),
-        Commands::Shell => commands::launch_shell(None),
+        Commands::Shell => commands::launch_shell(None, Vec::new()),
     }
 }
 
@@ -83,7 +83,9 @@ fn maybe_run_manual_launch(args: &[String]) -> Result<Option<i32>> {
             let PiInvocation { workspace, pi_args } = invocation;
             commands::launch_pi(workspace.as_deref(), pi_args).map(Some)
         }
-        ManualLaunch::Shell(workspace) => commands::launch_shell(workspace.as_deref()).map(Some),
+        ManualLaunch::Shell { workspace, command } => {
+            commands::launch_shell(workspace.as_deref(), command).map(Some)
+        }
     }
 }
 
