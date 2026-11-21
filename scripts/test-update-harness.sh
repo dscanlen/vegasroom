@@ -11,7 +11,7 @@ setup() {
   fixture="$(mktemp -d "${suite}/case.XXXXXX")"
   repo="${fixture}/repo with spaces"
   mkdir -p "${repo}/scripts" "${repo}/harness/pi" "${fixture}/bin"
-  cp "${repo_root}"/scripts/{update-harness.sh,update-pi-harness-version.sh,check.sh} "${repo}/scripts/"
+  cp "${repo_root}"/scripts/{update-harness.sh,check.sh} "${repo}/scripts/"
   # check.sh includes this suite; do not recurse inside the fixture.
   printf '#!/usr/bin/env bash\ntrue\n' > "${repo}/scripts/test-update-harness.sh"
   cp "${repo_root}/harness/pi/Dockerfile" "${repo}/harness/pi/Dockerfile"
@@ -197,10 +197,5 @@ if PATH="${fixture}/missing-docker" "${BASH}" "${repo}/scripts/update-harness.sh
 fi
 grep -q 'Missing required command: docker' "${fixture}/output" || fail "missing prerequisite diagnostic"
 assert_pin_unchanged
-
-setup
-(cd "${suite}" && PATH="${fixture}/bin:${PATH}" bash "${repo}/scripts/update-pi-harness-version.sh" 1.2.3) > "${fixture}/output" 2>&1 || fail "pin-only from outside repo failed"
-[[ "$(<"${fixture}/events")" == resolve ]] || fail "pin-only performed a full update"
-grep -qx 'ARG PI_CODING_AGENT_VERSION=1.2.3' "${repo}/harness/pi/Dockerfile" || fail "pin-only edited wrong file"
 
 echo "Harness update script tests passed."

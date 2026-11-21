@@ -1,6 +1,6 @@
 FROM node:24-bookworm-slim
 
-ARG PI_CODING_AGENT_VERSION=0.85.1
+ARG PI_CODING_AGENT_VERSION=1.6.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     HOME=/home/agent \
@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+      build-essential \
       ca-certificates \
       curl \
       fd-find \

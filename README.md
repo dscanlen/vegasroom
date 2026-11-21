@@ -66,12 +66,6 @@ The script installs `vr` into `${CARGO_INSTALL_ROOT:-${CARGO_HOME:-$HOME/.cargo}
 
 Failures stop the script immediately. Completed file, image, and package changes are not rolled back. Back up `~/.vegasroom` first if you need rollback, fix any reported error, then rerun. Review and commit the Dockerfile pin after a successful update. Start a new Pi session to load the updated packages.
 
-For a Dockerfile-only change without rebuilding or updating installed packages:
-
-```bash
-./scripts/update-pi-harness-version.sh latest
-```
-
 ## Use
 
 Launch Pi in the default managed workspace:
