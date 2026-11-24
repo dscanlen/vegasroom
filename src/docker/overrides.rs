@@ -9,9 +9,10 @@ use crate::{atomic_write, config::Config, harness, paths::display_path};
 
 pub(super) fn prepare_read_only_rootfs(
     config: &Config,
+    descriptor: &harness::HarnessDescriptor,
     runtime_dir: &Path,
 ) -> Result<Option<PathBuf>> {
-    if !config.harness.pi.read_only_rootfs {
+    if !config.harness.instance(descriptor).read_only_rootfs {
         return Ok(None);
     }
 
@@ -32,7 +33,7 @@ pub(super) fn prepare_read_only_rootfs(
       - /run
       - /var/tmp
 "#,
-        service_name = harness::PI.service_name,
+        service_name = descriptor.service_name,
     );
 
     atomic_write::write_file(&override_path, contents).with_context(|| {
@@ -56,10 +57,14 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let mut config = Config::default();
 
-        assert!(prepare_read_only_rootfs(&config, &root).unwrap().is_none());
+        assert!(prepare_read_only_rootfs(&config, &harness::PI, &root)
+            .unwrap()
+            .is_none());
 
         config.harness.pi.read_only_rootfs = true;
-        let override_path = prepare_read_only_rootfs(&config, &root).unwrap().unwrap();
+        let override_path = prepare_read_only_rootfs(&config, &harness::PI, &root)
+            .unwrap()
+            .unwrap();
         let contents = fs::read_to_string(&override_path).unwrap();
 
         assert!(contents.contains("  pi:"));

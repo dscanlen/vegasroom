@@ -46,7 +46,7 @@ pub(super) fn launch_harness(
     let config = Config::load_with(&state)?;
     config.validate_semantics()?;
     let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
-    print_workspace_messages(&workspace, &config);
+    print_workspace_messages(&workspace, &config, descriptor);
     print_environment_image_warning(&config)?;
 
     docker::ensure_harness_image_exists(descriptor, &config).with_context(|| {
@@ -66,7 +66,7 @@ pub(super) fn launch_shell(workspace_arg: Option<&str>, command: Vec<String>) ->
     let config = Config::load_with(&state)?;
     config.validate_semantics()?;
     let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
-    print_workspace_messages(&workspace, &config);
+    print_workspace_messages(&workspace, &config, &crate::harness::PI);
     print_environment_image_warning(&config)?;
 
     docker::ensure_harness_image_exists(&crate::harness::PI, &config)
@@ -84,12 +84,16 @@ fn print_environment_image_warning(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn print_workspace_messages(workspace: &workspace::ResolvedWorkspace, config: &Config) {
+fn print_workspace_messages(
+    workspace: &workspace::ResolvedWorkspace,
+    config: &Config,
+    descriptor: &HarnessDescriptor,
+) {
     if workspace.created {
         println!("Created workspace: {}", workspace.path.display());
     }
 
-    if config.harness.pi.read_only_workspace {
+    if config.harness.instance(descriptor).read_only_workspace {
         println!(
             "Workspace will be mounted read-only: {}",
             workspace.path.display()

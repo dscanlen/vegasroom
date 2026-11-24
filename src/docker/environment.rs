@@ -208,7 +208,7 @@ fn run_build_image(
     let status = base_docker(config)
         .arg("build")
         .arg("--network")
-        .arg(&config.harness.pi.build_network)
+        .arg(&config.harness.instance(descriptor).build_network)
         .arg("-f")
         .arg(&dockerfile)
         .arg("-t")

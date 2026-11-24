@@ -9,7 +9,6 @@ use anyhow::{Context, Result};
 use crate::{
     alert, atomic_write,
     config::{Config, SelectedSshKey},
-    harness,
     paths::display_path,
 };
 
@@ -38,6 +37,7 @@ pub fn effective_git_identity(config: &Config) -> Option<GitIdentity> {
 
 pub(super) fn prepare_override(
     config: &Config,
+    service_name: &str,
     runtime_dir: &Path,
     warn: bool,
 ) -> Result<Option<PathBuf>> {
@@ -84,7 +84,6 @@ pub(super) fn prepare_override(
         target: /run/vegasroom-gitconfig
         read_only: true
 "#,
-        service_name = harness::PI.service_name,
         name = yaml_double_quoted_str(&identity.name),
         email = yaml_double_quoted_str(&identity.email),
         gitconfig_path = yaml_double_quoted_path(&gitconfig_path),

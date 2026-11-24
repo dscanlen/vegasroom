@@ -25,7 +25,7 @@ use crate::{
 };
 
 pub fn write_runtime_compose_yaml(config: &Config, state: &StatePaths) -> Result<()> {
-    let content = compose_gen::generate(&harness::PI, config, state);
+    let content = compose_gen::generate(harness::HARNESSES, config, state);
     atomic_write::write_file(&state.runtime_compose_yaml, content).with_context(|| {
         format!(
             "failed to write managed Compose file: {}",
@@ -69,6 +69,7 @@ pub fn run_shell(
     };
     run_compose(
         config,
+        &harness::PI,
         workspace,
         &shell_compose_args(command),
         ssh_mode,
@@ -116,9 +117,9 @@ fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor)
     let project_dir = compose_project_dir(&compose_file)?;
 
     let mut command = base_docker(config);
-    apply_compose_config_env(&mut command, config);
+    apply_compose_config_env(&mut command, config, descriptor);
     command.env(
-        "VR_PI_IMAGE",
+        descriptor.compose_var("IMAGE"),
         config.harness_runtime_config(descriptor).image,
     );
     let status = command
@@ -191,6 +192,7 @@ fn run_harness_command(
 ) -> Result<i32> {
     run_compose(
         config,
+        descriptor,
         workspace,
         &harness_compose_args(descriptor, command, args),
         SshRuntimeMode::Interactive,
@@ -284,12 +286,21 @@ pub fn can_run_trivial_container(config: &Config) -> bool {
 
 fn run_compose(
     config: &Config,
+    descriptor: &harness::HarnessDescriptor,
     workspace: &ResolvedWorkspace,
     compose_args: &[String],
     ssh_mode: SshRuntimeMode,
     state: &StatePaths,
 ) -> Result<i32> {
-    let mut invocation = compose_base(config, Some(workspace), true, true, ssh_mode, state)?;
+    let mut invocation = compose_base(
+        config,
+        descriptor,
+        Some(workspace),
+        true,
+        true,
+        ssh_mode,
+        state,
+    )?;
     let status = invocation
         .command
         .args(compose_args)
@@ -319,6 +330,7 @@ fn compose_shell_output_with_ssh(
     let workspace = workspace::default_workspace_for_compose_with_state(config, &state)?;
     let mut invocation = compose_base(
         config,
+        &harness::PI,
         Some(&workspace),
         include_ssh_agent,
         false,
@@ -343,6 +355,7 @@ struct ComposeInvocation {
 
 fn compose_base(
     config: &Config,
+    descriptor: &harness::HarnessDescriptor,
     workspace: Option<&ResolvedWorkspace>,
     include_ssh_agent: bool,
     warn_about_ssh: bool,
@@ -354,7 +367,7 @@ fn compose_base(
     let runtime_files = RuntimeFiles::new(state)?;
 
     let mut command = base_docker(config);
-    apply_compose_config_env(&mut command, config);
+    apply_compose_config_env(&mut command, config, descriptor);
     command
         .arg("compose")
         .arg("-f")
@@ -367,8 +380,13 @@ fn compose_base(
     }
 
     let ssh_runtime = if include_ssh_agent {
-        let runtime =
-            ssh::prepare_agent_override(config, runtime_files.dir(), warn_about_ssh, ssh_mode)?;
+        let runtime = ssh::prepare_agent_override(
+            config,
+            descriptor.service_name,
+            runtime_files.dir(),
+            warn_about_ssh,
+            ssh_mode,
+        )?;
         if let Some(override_path) = runtime.override_path() {
             command.arg("-f").arg(override_path);
         }
@@ -377,14 +395,17 @@ fn compose_base(
         SshRuntime::empty()
     };
 
-    if let Some(git_override_path) =
-        git_identity::prepare_override(config, runtime_files.dir(), warn_about_ssh)?
-    {
+    if let Some(git_override_path) = git_identity::prepare_override(
+        config,
+        descriptor.service_name,
+        runtime_files.dir(),
+        warn_about_ssh,
+    )? {
         command.arg("-f").arg(git_override_path);
     }
 
     if let Some(read_only_rootfs_override_path) =
-        overrides::prepare_read_only_rootfs(config, runtime_files.dir())?
+        overrides::prepare_read_only_rootfs(config, descriptor, runtime_files.dir())?
     {
         command.arg("-f").arg(read_only_rootfs_override_path);
     }
@@ -426,18 +447,35 @@ fn harness_compose_args(
     compose_args
 }
 
-fn apply_compose_config_env(command: &mut Command, config: &Config) {
-    command
-        .env(
-            "VR_PI_IMAGE",
-            environment::runtime_image(config, &harness::PI),
-        )
-        .env("VR_PI_NETWORK_MODE", &config.harness.pi.network)
-        .env("VR_PI_BUILD_NETWORK", &config.harness.pi.build_network)
-        .env(
-            "VR_WORKSPACE_READ_ONLY",
-            config.harness.pi.read_only_workspace.to_string(),
-        );
+/// Set Compose interpolation variables for every registered harness service (the
+/// managed compose file defines all of them), plus per-launch values for the
+/// service actually being run.
+fn apply_compose_config_env(
+    command: &mut Command,
+    config: &Config,
+    launched: &harness::HarnessDescriptor,
+) {
+    for descriptor in harness::HARNESSES {
+        let instance = config.harness.instance(descriptor);
+        command
+            .env(
+                descriptor.compose_var("IMAGE"),
+                environment::runtime_image(config, descriptor),
+            )
+            .env(descriptor.compose_var("NETWORK_MODE"), &instance.network)
+            .env(
+                descriptor.compose_var("BUILD_NETWORK"),
+                &instance.build_network,
+            );
+    }
+    command.env(
+        "VR_WORKSPACE_READ_ONLY",
+        config
+            .harness
+            .instance(launched)
+            .read_only_workspace
+            .to_string(),
+    );
 }
 
 fn base_docker(config: &Config) -> Command {
@@ -506,7 +544,7 @@ mod tests {
         config.harness.pi.read_only_workspace = true;
         let mut command = Command::new("docker");
 
-        apply_compose_config_env(&mut command, &config);
+        apply_compose_config_env(&mut command, &config, &harness::PI);
 
         let envs = command
             .get_envs()

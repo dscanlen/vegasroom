@@ -1,36 +1,50 @@
-use crate::{config::Config, harness::HarnessDescriptor, paths::StatePaths};
+use crate::{
+    config::Config,
+    harness::{HarnessDescriptor, TOOLCHAIN_ENV},
+    paths::StatePaths,
+};
 
-/// Generate a Docker Compose YAML string for a single harness service.
+/// Generate a Docker Compose YAML string with one service per harness.
 ///
-/// The generated file uses environment variable substitution for values that
-/// can change with config (image, network) and resolves StatePaths directly
-/// for volume source paths.
+/// The generated file uses per-harness environment variable substitution
+/// (`VR_<ID>_IMAGE`, ...) for values that can change with config, and resolves
+/// StatePaths directly for volume source paths.
 pub(super) fn generate(
-    descriptor: &HarnessDescriptor,
+    harnesses: &[&HarnessDescriptor],
     config: &Config,
     state: &StatePaths,
 ) -> String {
-    let runtime_config = config.harness_runtime_config(descriptor);
+    let mut yaml = String::from("services:\n");
+    for descriptor in harnesses {
+        let image = config.harness_runtime_config(descriptor).image;
+        yaml.push_str(&service_yaml(descriptor, image, state));
+    }
+    yaml
+}
+
+/// Render a single harness service block (indented under `services:`).
+fn service_yaml(descriptor: &HarnessDescriptor, default_image: &str, state: &StatePaths) -> String {
     let service = descriptor.service_name;
     let container_home = descriptor.container_home;
-    let default_image = runtime_config.image;
     let dockerfile = descriptor.dockerfile_path;
+    let image_var = descriptor.compose_var("IMAGE");
+    let build_network_var = descriptor.compose_var("BUILD_NETWORK");
+    let network_mode_var = descriptor.compose_var("NETWORK_MODE");
 
     let mut yaml = format!(
-        "services:\n\
-         \x20 {service}:\n\
+        "\x20 {service}:\n\
          \x20   build:\n\
          \x20     context: .\n\
          \x20     dockerfile: {dockerfile}\n\
-         \x20     network: ${{VR_PI_BUILD_NETWORK:-host}}\n\
-         \x20   image: ${{VR_PI_IMAGE:-{default_image}}}\n\
+         \x20     network: ${{{build_network_var}:-host}}\n\
+         \x20   image: ${{{image_var}:-{default_image}}}\n\
          \x20   user: \"0:0\"\n\
          \x20   init: true\n\
          \x20   security_opt:\n\
          \x20     - no-new-privileges:true\n\
          \x20   cap_drop:\n\
          \x20     - ALL\n\
-         \x20   network_mode: ${{VR_PI_NETWORK_MODE:-host}}\n\
+         \x20   network_mode: ${{{network_mode_var}:-host}}\n\
          \x20   stdin_open: true\n\
          \x20   tty: true\n\
          \x20   working_dir: /workspace\n\
@@ -38,8 +52,12 @@ pub(super) fn generate(
          \x20     HOME: {container_home}\n",
     );
 
-    for (key, value) in descriptor.extra_env {
+    for (key, value) in TOOLCHAIN_ENV.iter().chain(descriptor.extra_env) {
         yaml.push_str(&format!("      {key}: {value}\n"));
+    }
+
+    for key in descriptor.passthrough_env {
+        yaml.push_str(&format!("      {key}:\n"));
     }
 
     yaml.push_str("    volumes:\n");
@@ -108,7 +126,7 @@ mod tests {
     fn generated_yaml_contains_pi_service_definition() {
         let config = Config::default();
         let state = test_state();
-        let yaml = generate(&harness::PI, &config, &state);
+        let yaml = generate(harness::HARNESSES, &config, &state);
 
         assert!(yaml.contains("services:"));
         assert!(yaml.contains("  pi:"));
@@ -122,7 +140,7 @@ mod tests {
     fn generated_yaml_includes_harness_state_dir_mounts() {
         let config = Config::default();
         let state = test_state();
-        let yaml = generate(&harness::PI, &config, &state);
+        let yaml = generate(harness::HARNESSES, &config, &state);
 
         // All Pi state dirs appear as bind mounts
         assert!(yaml.contains("target: /home/agent/.pi/agent"));
@@ -138,7 +156,7 @@ mod tests {
     fn generated_yaml_includes_pi_extra_env() {
         let config = Config::default();
         let state = test_state();
-        let yaml = generate(&harness::PI, &config, &state);
+        let yaml = generate(harness::HARNESSES, &config, &state);
 
         assert!(yaml.contains("PI_CODING_AGENT_SESSION_DIR: /home/agent/.pi/sessions"));
         assert!(yaml.contains("BROWSER: echo"));
@@ -149,7 +167,7 @@ mod tests {
     fn generated_yaml_uses_state_paths_for_volume_sources() {
         let config = Config::default();
         let state = test_state();
-        let yaml = generate(&harness::PI, &config, &state);
+        let yaml = generate(harness::HARNESSES, &config, &state);
 
         let ssh_dir = state.ssh_dir.display().to_string();
         let cache = state.cache.display().to_string();
@@ -162,9 +180,98 @@ mod tests {
         let mut config = Config::default();
         config.harness.pi.image = "example/pi:custom".to_owned();
         let state = test_state();
-        let yaml = generate(&harness::PI, &config, &state);
+        let yaml = generate(harness::HARNESSES, &config, &state);
 
         assert!(yaml.contains("image: ${VR_PI_IMAGE:-example/pi:custom}"));
         assert!(!yaml.contains("vegasroom/pi:latest"));
+    }
+
+    const ALT: HarnessDescriptor = HarnessDescriptor {
+        id: "alt-agent",
+        display_name: "Alt",
+        service_name: "alt",
+        default_image: "vegasroom/alt:latest",
+        versioned_image: "vegasroom/alt:0",
+        default_command: "alt",
+        dockerfile_path: "harness/alt/Dockerfile",
+        container_home: "/home/agent",
+        state_dirs: &[harness::HarnessStateDir {
+            name: "config",
+            container_path: "/home/agent/.alt",
+        }],
+        auth_state_relative_path: "config/creds.json",
+        extra_env: &[("ALT_CONFIG_DIR", "/home/agent/.alt")],
+        passthrough_env: &["ALT_API_KEY", "ALT_TOKEN"],
+    };
+
+    #[test]
+    fn generated_yaml_has_one_service_per_registered_harness() {
+        let config = Config::default();
+        let state = test_state();
+        let yaml = generate(harness::HARNESSES, &config, &state);
+
+        assert_eq!(yaml.matches("services:").count(), 1);
+        for descriptor in harness::HARNESSES {
+            assert!(yaml.contains(&format!("\n  {}:\n", descriptor.service_name)));
+            assert!(yaml.contains(&format!("${{{}:-", descriptor.compose_var("IMAGE"))));
+        }
+    }
+
+    #[test]
+    fn service_yaml_uses_per_harness_compose_vars() {
+        let state = test_state();
+        let yaml = service_yaml(&ALT, ALT.default_image, &state);
+
+        assert!(yaml.contains("  alt:\n"));
+        assert!(yaml.contains("image: ${VR_ALT_AGENT_IMAGE:-vegasroom/alt:latest}"));
+        assert!(yaml.contains("network: ${VR_ALT_AGENT_BUILD_NETWORK:-host}"));
+        assert!(yaml.contains("network_mode: ${VR_ALT_AGENT_NETWORK_MODE:-host}"));
+        assert!(!yaml.contains("VR_PI_"));
+        assert!(yaml.contains("target: /home/agent/.alt"));
+        assert!(yaml.contains(&format!(
+            "source: {}",
+            state
+                .harness_root
+                .join("alt-agent")
+                .join("config")
+                .display()
+        )));
+    }
+
+    #[test]
+    fn service_yaml_renders_shared_toolchain_env_then_extra_then_passthrough() {
+        let state = test_state();
+        let yaml = service_yaml(&ALT, ALT.default_image, &state);
+
+        let cargo = yaml.find("CARGO_HOME: /home/agent/.cargo").unwrap();
+        let extra = yaml.find("ALT_CONFIG_DIR: /home/agent/.alt").unwrap();
+        let passthrough = yaml.find("      ALT_API_KEY:\n").unwrap();
+        assert!(cargo < extra && extra < passthrough);
+        assert!(yaml.contains("      ALT_TOKEN:\n"));
+    }
+
+    #[test]
+    fn generated_yaml_parses_as_compose_document() {
+        let config = Config::default();
+        let state = test_state();
+        let yaml = generate(harness::HARNESSES, &config, &state);
+        let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+
+        let services = doc.get("services").and_then(|s| s.as_mapping()).unwrap();
+        assert_eq!(services.len(), harness::HARNESSES.len());
+    }
+
+    #[test]
+    fn passthrough_env_parses_as_null_values() {
+        let state = test_state();
+        let yaml = format!(
+            "services:\n{}",
+            service_yaml(&ALT, ALT.default_image, &state)
+        );
+        let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+
+        let env = &doc["services"]["alt"]["environment"];
+        assert!(env["ALT_API_KEY"].is_null());
+        assert_eq!(env["ALT_CONFIG_DIR"].as_str(), Some("/home/agent/.alt"));
     }
 }

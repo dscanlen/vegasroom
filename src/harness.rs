@@ -13,6 +13,10 @@ pub struct HarnessDescriptor {
     /// Extra environment variables to inject into the container at runtime.
     /// These are harness-specific and are written directly into the generated compose service.
     pub extra_env: &'static [(&'static str, &'static str)],
+    /// Host environment variable names forwarded into the container when set on the host.
+    /// Rendered as bare `KEY:` entries so Compose takes the value from the invoking shell
+    /// and leaves the variable unset in the container when the host has no value.
+    pub passthrough_env: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,11 +34,31 @@ impl HarnessDescriptor {
         self.state_dir(name).map(|dir| dir.container_path)
     }
 
+    /// Name of the Compose interpolation variable for this harness, e.g. `VR_PI_IMAGE`.
+    pub fn compose_var(&self, suffix: &str) -> String {
+        format!(
+            "VR_{}_{suffix}",
+            self.id.to_ascii_uppercase().replace('-', "_")
+        )
+    }
+
     pub fn required_state_dir_container_path(&self, name: &str) -> &'static str {
         self.state_dir_container_path(name)
             .expect("harness descriptor should define required state dir")
     }
 }
+
+/// Toolchain and cache environment shared by every harness container, so the
+/// environment image layering (rust/python/go/ts) behaves the same in each room.
+pub const TOOLCHAIN_ENV: &[(&str, &str)] = &[
+    ("NPM_CONFIG_CACHE", "/home/agent/.cache/npm"),
+    ("npm_config_cache", "/home/agent/.cache/npm"),
+    ("CARGO_HOME", "/home/agent/.cargo"),
+    ("RUSTUP_HOME", "/usr/local/rustup"),
+    ("PIP_CACHE_DIR", "/home/agent/.cache/pip"),
+    ("GOCACHE", "/home/agent/.cache/go-build"),
+    ("GOMODCACHE", "/home/agent/.cache/go-mod"),
+];
 
 pub const PI_DEFAULT_IMAGE: &str = "vegasroom/pi:latest";
 pub const PI_VERSIONED_IMAGE: &str = concat!("vegasroom/pi:", env!("CARGO_PKG_VERSION"));
@@ -81,19 +105,13 @@ pub const PI: HarnessDescriptor = HarnessDescriptor {
         ("PI_CODING_AGENT_SESSION_DIR", "/home/agent/.pi/sessions"),
         ("NPM_CONFIG_PREFIX", "/home/agent/.npm-global"),
         ("npm_config_prefix", "/home/agent/.npm-global"),
-        ("NPM_CONFIG_CACHE", "/home/agent/.cache/npm"),
-        ("npm_config_cache", "/home/agent/.cache/npm"),
-        ("CARGO_HOME", "/home/agent/.cargo"),
-        ("RUSTUP_HOME", "/usr/local/rustup"),
-        ("PIP_CACHE_DIR", "/home/agent/.cache/pip"),
-        ("GOCACHE", "/home/agent/.cache/go-build"),
-        ("GOMODCACHE", "/home/agent/.cache/go-mod"),
         (
             "PATH",
             "/home/agent/.npm-global/bin:/home/agent/.cargo/bin:/usr/local/cargo/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         ),
         ("BROWSER", "echo"),
     ],
+    passthrough_env: &[],
 };
 
 /// All registered harnesses, in preference order. The first entry is the default.
@@ -137,5 +155,23 @@ mod tests {
             "/home/agent/.npm-global"
         );
         assert_eq!(PI.auth_state_relative_path, "config/auth.json");
+        assert!(PI.passthrough_env.is_empty());
+    }
+
+    #[test]
+    fn compose_var_uses_uppercased_harness_id() {
+        assert_eq!(PI.compose_var("IMAGE"), "VR_PI_IMAGE");
+        assert_eq!(PI.compose_var("NETWORK_MODE"), "VR_PI_NETWORK_MODE");
+    }
+
+    #[test]
+    fn harness_ids_and_services_are_unique() {
+        for (i, a) in HARNESSES.iter().enumerate() {
+            for b in &HARNESSES[i + 1..] {
+                assert_ne!(a.id, b.id);
+                assert_ne!(a.service_name, b.service_name);
+                assert_ne!(a.compose_var("IMAGE"), b.compose_var("IMAGE"));
+            }
+        }
     }
 }

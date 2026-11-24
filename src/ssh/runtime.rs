@@ -10,7 +10,6 @@ use anyhow::{anyhow, bail, Context, Result};
 use crate::{
     alert, atomic_write,
     config::{Config, SelectedSshKey, SshMode},
-    harness,
     paths::{display_path, expand_tilde},
 };
 
@@ -78,6 +77,7 @@ impl Drop for ManagedSshAgent {
 
 pub fn prepare_agent_override(
     config: &Config,
+    service_name: &str,
     runtime_dir: &Path,
     warn: bool,
     mode: SshRuntimeMode,
@@ -87,12 +87,12 @@ pub fn prepare_agent_override(
             override_path: None,
             _managed_agent: None,
         }),
-        SshMode::Host => prepare_host_runtime(runtime_dir, warn),
-        SshMode::Managed => prepare_managed_runtime(config, runtime_dir, mode)
+        SshMode::Host => prepare_host_runtime(service_name, runtime_dir, warn),
+        SshMode::Managed => prepare_managed_runtime(config, service_name, runtime_dir, mode)
             .map_err(|err| anyhow!("managed SSH agent setup failed: {err:#}")),
         SshMode::Auto => {
             if !config.ssh.selected_keys.is_empty() {
-                match prepare_managed_runtime(config, runtime_dir, mode) {
+                match prepare_managed_runtime(config, service_name, runtime_dir, mode) {
                     Ok(runtime) => Ok(runtime),
                     Err(err) => {
                         if warn {
@@ -102,11 +102,11 @@ pub fn prepare_agent_override(
                                 alert::warn()
                             );
                         }
-                        prepare_host_runtime(runtime_dir, warn)
+                        prepare_host_runtime(service_name, runtime_dir, warn)
                     }
                 }
             } else {
-                prepare_host_runtime(runtime_dir, warn)
+                prepare_host_runtime(service_name, runtime_dir, warn)
             }
         }
     }
@@ -174,7 +174,7 @@ fn selected_key_check(status: SelectedKeyCheckStatus, detail: String) -> Selecte
     SelectedKeyCheck { status, detail }
 }
 
-fn prepare_host_runtime(runtime_dir: &Path, warn: bool) -> Result<SshRuntime> {
+fn prepare_host_runtime(service_name: &str, runtime_dir: &Path, warn: bool) -> Result<SshRuntime> {
     let agent = detect_host_agent();
     if warn {
         if let Some(message) = agent.warning() {
@@ -183,9 +183,11 @@ fn prepare_host_runtime(runtime_dir: &Path, warn: bool) -> Result<SshRuntime> {
     }
 
     let override_path = match agent {
-        HostSshAgent::Ready(path) => {
-            Some(write_agent_compose_override_for_socket(runtime_dir, &path)?)
-        }
+        HostSshAgent::Ready(path) => Some(write_agent_compose_override_for_socket(
+            service_name,
+            runtime_dir,
+            &path,
+        )?),
         _ => None,
     };
 
@@ -197,6 +199,7 @@ fn prepare_host_runtime(runtime_dir: &Path, warn: bool) -> Result<SshRuntime> {
 
 fn prepare_managed_runtime(
     config: &Config,
+    service_name: &str,
     runtime_dir: &Path,
     mode: SshRuntimeMode,
 ) -> Result<SshRuntime> {
@@ -209,7 +212,8 @@ fn prepare_managed_runtime(
         add_key_to_agent(&agent, key, mode)?;
     }
 
-    let override_path = write_agent_compose_override_for_socket(runtime_dir, &agent.socket)?;
+    let override_path =
+        write_agent_compose_override_for_socket(service_name, runtime_dir, &agent.socket)?;
     Ok(SshRuntime {
         override_path: Some(override_path),
         _managed_agent: Some(agent),
@@ -217,6 +221,7 @@ fn prepare_managed_runtime(
 }
 
 fn write_agent_compose_override_for_socket(
+    service_name: &str,
     runtime_dir: &Path,
     host_sock: &Path,
 ) -> Result<PathBuf> {
@@ -238,7 +243,6 @@ fn write_agent_compose_override_for_socket(
         source: "{host_sock}"
         target: {container_sock}
 "#,
-        service_name = harness::PI.service_name,
         container_sock = CONTAINER_SSH_AUTH_SOCK,
         host_sock = yaml_double_quoted(host_sock),
     );
@@ -400,7 +404,7 @@ mod tests {
         let hostile_sock = Path::new("/tmp/agent.sock\n        target: /evil\r# comment");
 
         let override_path =
-            write_agent_compose_override_for_socket(&runtime_dir, hostile_sock).unwrap();
+            write_agent_compose_override_for_socket("pi", &runtime_dir, hostile_sock).unwrap();
         let contents = fs::read_to_string(&override_path).unwrap();
 
         assert!(contents.contains("source: \"/tmp/agent.sock         target: /evil # comment\""));

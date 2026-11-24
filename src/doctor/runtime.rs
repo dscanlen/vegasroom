@@ -21,29 +21,7 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
     let harness_ssh_target = format!("target: {harness_ssh_dir}");
     let root_ssh_symlink = format!("ln -s {harness_ssh_dir} /root/.ssh");
 
-    checks.push(check_bool(
-        Status::Warn,
-        "Compose image setting",
-        contents.contains("image: ${VR_PI_IMAGE:-"),
-        "image is controlled by harness.pi.image through VR_PI_IMAGE",
-        "Compose image is not controlled by VR_PI_IMAGE",
-    ));
-
-    checks.push(check_bool(
-        Status::Warn,
-        "Compose build network",
-        contents.contains("network: ${VR_PI_BUILD_NETWORK:-host}"),
-        "build.network is controlled by harness.pi.build_network through VR_PI_BUILD_NETWORK",
-        "build.network is not controlled by VR_PI_BUILD_NETWORK",
-    ));
-
-    checks.push(check_bool(
-        Status::Warn,
-        "Compose runtime network",
-        contents.contains("network_mode: ${VR_PI_NETWORK_MODE:-host}"),
-        "network_mode is controlled by harness.pi.network through VR_PI_NETWORK_MODE",
-        "network_mode is not controlled by VR_PI_NETWORK_MODE",
-    ));
+    checks.extend(compose_var_checks(&contents, harness::HARNESSES));
 
     checks.push(check_bool(
         Status::Warn,
@@ -83,7 +61,7 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
         Status::Warn,
         "Workspace read-only option",
         contents.contains("read_only: ${VR_WORKSPACE_READ_ONLY:-false}"),
-        "workspace mount read-only mode is controlled by harness.pi.read_only_workspace",
+        "workspace mount read-only mode is controlled by harness.<id>.read_only_workspace of the launched harness",
         "workspace mount is not controlled by VR_WORKSPACE_READ_ONLY",
     ));
 
@@ -153,4 +131,80 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
     ));
 
     checks
+}
+
+/// Check that each harness service's image/network settings are driven by its
+/// `VR_<ID>_*` interpolation variable. One check per category covering all harnesses.
+fn compose_var_checks(contents: &str, harnesses: &[&harness::HarnessDescriptor]) -> Vec<Check> {
+    type Pattern = fn(&str) -> String;
+    let categories: [(&'static str, &str, Pattern, &str); 3] = [
+        (
+            "Compose image setting",
+            "IMAGE",
+            |var| format!("image: ${{{var}:-"),
+            "image",
+        ),
+        (
+            "Compose build network",
+            "BUILD_NETWORK",
+            |var| format!("network: ${{{var}:-host}}"),
+            "build_network",
+        ),
+        (
+            "Compose runtime network",
+            "NETWORK_MODE",
+            |var| format!("network_mode: ${{{var}:-host}}"),
+            "network",
+        ),
+    ];
+
+    categories
+        .into_iter()
+        .map(|(name, suffix, pattern, field)| {
+            let vars: Vec<String> = harnesses.iter().map(|d| d.compose_var(suffix)).collect();
+            let missing: Vec<&str> = vars
+                .iter()
+                .filter(|var| !contents.contains(&pattern(var)))
+                .map(String::as_str)
+                .collect();
+            check_bool(
+                Status::Warn,
+                name,
+                missing.is_empty(),
+                format!(
+                    "controlled by harness.<id>.{field} through {}",
+                    vars.join(", ")
+                ),
+                format!("not controlled by {}", missing.join(", ")),
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compose_var_checks_pass_for_each_registered_harness() {
+        let mut contents = String::new();
+        for d in harness::HARNESSES {
+            contents.push_str(&format!(
+                "image: ${{{}:-x}}\nnetwork: ${{{}:-host}}\nnetwork_mode: ${{{}:-host}}\n",
+                d.compose_var("IMAGE"),
+                d.compose_var("BUILD_NETWORK"),
+                d.compose_var("NETWORK_MODE"),
+            ));
+        }
+        let checks = compose_var_checks(&contents, harness::HARNESSES);
+        assert_eq!(checks.len(), 3);
+        assert!(checks.iter().all(|c| c.status == Status::Pass));
+    }
+
+    #[test]
+    fn compose_var_checks_name_the_missing_variable() {
+        let checks = compose_var_checks("services:\n", &[&harness::PI]);
+        assert!(checks.iter().all(|c| c.status == Status::Warn));
+        assert!(checks[0].detail.contains("VR_PI_IMAGE"));
+    }
 }
