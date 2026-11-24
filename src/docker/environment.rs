@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, fs};
+use std::collections::BTreeSet;
 
 use crate::{
     assets,
@@ -7,7 +7,6 @@ use crate::{
         normalized_typescript_packages, Config,
     },
     harness,
-    paths::StatePaths,
 };
 
 pub(crate) fn packages(config: &Config) -> Vec<String> {
@@ -56,6 +55,25 @@ pub(crate) fn base_dockerfile_contents(config: &Config) -> String {
     contents
 }
 
+/// Docker label on the base image recording what it was built from.
+pub(crate) const BASE_FINGERPRINT_LABEL: &str = "vegasroom.base.fingerprint";
+
+/// Fingerprint of the base Dockerfile the current config generates. Stored as the
+/// [`BASE_FINGERPRINT_LABEL`] on the built base image and compared on launch/doctor.
+pub(crate) fn base_fingerprint(config: &Config) -> String {
+    format!(
+        "fnv1a64:{:016x}",
+        fnv1a64(base_dockerfile_contents(config).as_bytes())
+    )
+}
+
+/// FNV-1a 64-bit: stable across builds and Rust versions. Change detection only, not security.
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
 /// Human-readable lines describing what the environment profile installs.
 pub(crate) fn profile_summary(config: &Config) -> Vec<String> {
     let mut lines = Vec::new();
@@ -84,14 +102,6 @@ pub(crate) fn profile_summary(config: &Config) -> Vec<String> {
         lines.push(line);
     }
     lines
-}
-
-/// True when the base Dockerfile recorded at the last base build differs from what
-/// the current config would generate (or no base has been built yet).
-pub(crate) fn base_dockerfile_stale(config: &Config, state: &StatePaths) -> bool {
-    fs::read_to_string(state.runtime_base_dockerfile())
-        .map(|built| built != base_dockerfile_contents(config))
-        .unwrap_or(true)
 }
 
 /// Dockerfile instructions for the configured environment profile. Empty when nothing is enabled.
@@ -202,71 +212,9 @@ fn build_apt_packages(config: &Config) -> Vec<String> {
         .collect()
 }
 
-// TEMPORARY(M3.3): consumed by the M3.4 leftover-image hint; remove this allow then.
-#[allow(dead_code)]
-/// Tag of the per-harness `-env` image that vegasroom built before the shared base
-/// image existed (e.g. `vegasroom/pi:local-env`). Only used to point out leftovers.
-pub(crate) fn legacy_env_image_tag(base: &str) -> String {
-    if let Some((image, _digest)) = base.split_once('@') {
-        return format!("{}:env", image_repository_without_tag(image));
-    }
-
-    if has_tag(base) {
-        format!("{base}-env")
-    } else {
-        format!("{base}:env")
-    }
-}
-
-#[allow(dead_code)] // TEMPORARY(M3.3), see legacy_env_image_tag
-fn image_repository_without_tag(image: &str) -> &str {
-    if let Some(colon) = tag_colon(image) {
-        &image[..colon]
-    } else {
-        image
-    }
-}
-
-#[allow(dead_code)] // TEMPORARY(M3.3), see legacy_env_image_tag
-fn has_tag(image: &str) -> bool {
-    tag_colon(image).is_some()
-}
-
-#[allow(dead_code)] // TEMPORARY(M3.3), see legacy_env_image_tag
-fn tag_colon(image: &str) -> Option<usize> {
-    let last_slash = image.rfind('/');
-    let last_colon = image.rfind(':');
-    last_colon.filter(|colon| last_slash.map(|slash| *colon > slash).unwrap_or(true))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn derived_image_tag_appends_env_to_existing_tag() {
-        assert_eq!(
-            legacy_env_image_tag("vegasroom/pi:latest"),
-            "vegasroom/pi:latest-env"
-        );
-        assert_eq!(legacy_env_image_tag("vegasroom/pi"), "vegasroom/pi:env");
-    }
-
-    #[test]
-    fn derived_image_tag_handles_digest_base_images() {
-        assert_eq!(
-            legacy_env_image_tag("vegasroom/pi@sha256:abc123"),
-            "vegasroom/pi:env"
-        );
-        assert_eq!(
-            legacy_env_image_tag("vegasroom/pi:latest@sha256:abc123"),
-            "vegasroom/pi:env"
-        );
-        assert_eq!(
-            legacy_env_image_tag("localhost:5000/vegasroom/pi@sha256:abc123"),
-            "localhost:5000/vegasroom/pi:env"
-        );
-    }
 
     fn base_config() -> Config {
         let mut config = Config::default();
@@ -315,26 +263,26 @@ mod tests {
     }
 
     #[test]
-    fn base_dockerfile_staleness_tracks_last_built_contents() {
-        let state = StatePaths::from_root(
-            crate::test_util::unique_temp_dir("base-stale").join(".vegasroom"),
-        );
-        let config = base_config();
-        assert!(base_dockerfile_stale(&config, &state), "never built");
+    fn fnv1a64_matches_reference_vectors() {
+        assert_eq!(fnv1a64(b""), 0xcbf2_9ce4_8422_2325);
+        assert_eq!(fnv1a64(b"a"), 0xaf63_dc4c_8601_ec8c);
+        assert_eq!(fnv1a64(b"foobar"), 0x85944171f73967e8);
+    }
 
-        fs::create_dir_all(state.runtime_base_dir()).unwrap();
-        fs::write(
-            state.runtime_base_dockerfile(),
-            base_dockerfile_contents(&config),
-        )
-        .unwrap();
-        assert!(!base_dockerfile_stale(&config, &state));
+    #[test]
+    fn base_fingerprint_changes_with_profile_only() {
+        let config = base_config();
+        assert_eq!(base_fingerprint(&config), base_fingerprint(&config.clone()));
+        assert!(base_fingerprint(&config).starts_with("fnv1a64:"));
 
         let mut changed = config.clone();
         changed.environment.go.enabled = true;
-        assert!(base_dockerfile_stale(&changed, &state));
+        assert_ne!(base_fingerprint(&config), base_fingerprint(&changed));
 
-        let _ = fs::remove_dir_all(state.root);
+        // Harness settings do not affect the base.
+        let mut harness_only = config.clone();
+        harness_only.harness.pi.image = "example/pi:other".to_owned();
+        assert_eq!(base_fingerprint(&config), base_fingerprint(&harness_only));
     }
 
     #[test]

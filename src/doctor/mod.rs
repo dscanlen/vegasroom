@@ -130,7 +130,8 @@ pub fn run() -> Result<i32> {
     checks.push(check_environment_python(&config));
     checks.push(check_environment_go(&config));
     checks.push(check_environment_typescript(&config));
-    checks.push(check_base_image_freshness(&config, &state));
+    checks.push(check_base_image(&config));
+    checks.push(check_unused_images(&config));
     checks.push(check_known_hosts(&state.known_hosts));
     checks.push(check_dir_writable("Cargo home writable", &state.cargo_home));
 
@@ -268,6 +269,10 @@ fn check_harness(
         }
     };
 
+    if image_ready {
+        checks.push(check_harness_on_current_base(config, descriptor));
+    }
+
     if !image_ready {
         checks.push(Check {
             status: Status::Warn,
@@ -399,25 +404,82 @@ fn check_environment_typescript(config: &Config) -> Check {
     }
 }
 
-fn check_base_image_freshness(config: &Config, state: &StatePaths) -> Check {
-    if docker::environment_image_stale(config, state) {
-        Check {
-            status: Status::Warn,
-            name: "Base image freshness".into(),
-            detail: format!(
-                "{} is out of date for the current environment profile (or has not been built). Run: vr init --build",
-                config.environment.base_image
+fn check_base_image(config: &Config) -> Check {
+    let image = &config.environment.base_image;
+    let (status, detail) = match docker::base_status(config) {
+        Ok(docker::BaseStatus::Current) => (
+            Status::Pass,
+            format!("{image} exists and was built from the current environment profile"),
+        ),
+        Ok(docker::BaseStatus::Stale) => (
+            Status::Warn,
+            format!(
+                "{image} is out of date for the current environment profile. Run: vr init --build"
             ),
-        }
-    } else {
-        Check {
+        ),
+        Ok(docker::BaseStatus::Missing) => (
+            Status::Warn,
+            format!("{image} was not found. Run: vr init --build"),
+        ),
+        Err(err) => (Status::Warn, format!("could not inspect {image}: {err:#}")),
+    };
+    Check {
+        status,
+        name: "Base image".into(),
+        detail,
+    }
+}
+
+fn check_unused_images(config: &Config) -> Check {
+    match docker::unused_images(config) {
+        Ok(unused) if unused.is_empty() => Check {
             status: Status::Pass,
-            name: "Base image freshness".into(),
+            name: "Unused images".into(),
+            detail: "no leftover vegasroom images".to_owned(),
+        },
+        Ok(unused) => Check {
+            status: Status::Warn,
+            name: "Unused images".into(),
             detail: format!(
-                "{} was built from the current environment profile",
+                "{} not used by the current config. Remove with: {}",
+                unused.join(", "),
+                docker::removal_command(config, &unused)
+            ),
+        },
+        Err(err) => Check {
+            status: Status::Warn,
+            name: "Unused images".into(),
+            detail: format!("could not list Docker images: {err:#}"),
+        },
+    }
+}
+
+fn check_harness_on_current_base(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+) -> Check {
+    let (status, detail) = match docker::harness_on_current_base(config, descriptor) {
+        Ok(Some(true)) => (
+            Status::Pass,
+            format!("built on the current {}", config.environment.base_image),
+        ),
+        Ok(Some(false)) => (
+            Status::Warn,
+            format!(
+                "built on an older base image than {}; it may lack the current environment profile. Run: vr init --build",
                 config.environment.base_image
             ),
-        }
+        ),
+        Ok(None) => (
+            Status::Warn,
+            "skipped because the harness or base image is missing".to_owned(),
+        ),
+        Err(err) => (Status::Warn, format!("could not compare image layers: {err:#}")),
+    };
+    Check {
+        status,
+        name: "Built on current base".into(),
+        detail,
     }
 }
 

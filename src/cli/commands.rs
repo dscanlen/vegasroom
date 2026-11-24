@@ -29,6 +29,7 @@ pub(super) fn init(build: bool) -> Result<i32> {
             );
             docker::build_image(&config, descriptor)?;
         }
+        print_unused_images_hint(&config);
     }
 
     Ok(0)
@@ -58,7 +59,7 @@ pub(super) fn launch_harness(
     config.validate_semantics()?;
     let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
     print_workspace_messages(&workspace, &config, descriptor);
-    print_environment_image_warning(&config, &state);
+    print_image_freshness_warnings(&config, descriptor);
 
     docker::ensure_harness_image_exists(descriptor, &config).with_context(|| {
         format!(
@@ -78,20 +79,57 @@ pub(super) fn launch_shell(workspace_arg: Option<&str>, command: Vec<String>) ->
     config.validate_semantics()?;
     let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
     print_workspace_messages(&workspace, &config, &harness::PI);
-    print_environment_image_warning(&config, &state);
+    print_image_freshness_warnings(&config, &harness::PI);
 
     docker::ensure_harness_image_exists(&harness::PI, &config)
         .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
     docker::run_shell(&config, &workspace, &command, &state)
 }
 
-fn print_environment_image_warning(config: &Config, state: &StatePaths) {
-    if docker::environment_image_stale(config, state) {
+/// Non-blocking launch warnings: the base no longer matches the environment profile,
+/// or the harness image was built on an older base. Docker errors are ignored here;
+/// `ensure_harness_image_exists` reports a missing harness image.
+fn print_image_freshness_warnings(config: &Config, descriptor: &HarnessDescriptor) {
+    match docker::base_status(config) {
+        Ok(docker::BaseStatus::Stale) => eprintln!(
+            "{}: Shared base image {} is out of date for the current environment profile. Run `vr init --build` when ready.",
+            alert::warn(),
+            config.environment.base_image
+        ),
+        Ok(docker::BaseStatus::Missing) => eprintln!(
+            "{}: Shared base image {} was not found. Run `vr init --build` when ready.",
+            alert::warn(),
+            config.environment.base_image
+        ),
+        Ok(docker::BaseStatus::Current) | Err(_) => {}
+    }
+
+    if let Ok(Some(false)) = docker::harness_on_current_base(config, descriptor) {
         eprintln!(
-            "{}: Shared base image is out of date for the current environment profile. Run `vr init --build` when ready.",
-            alert::warn()
+            "{}: {} image {} was built on an older base image, so it may not have your current environment profile. Run `vr init --build` when ready.",
+            alert::warn(),
+            descriptor.display_name,
+            config.harness_runtime_config(descriptor).image
         );
     }
+}
+
+/// After a build, point out local vegasroom images the current config no longer uses.
+fn print_unused_images_hint(config: &Config) {
+    let Ok(unused) = docker::unused_images(config) else {
+        return;
+    };
+    if unused.is_empty() {
+        return;
+    }
+    println!("\nThese local images are no longer used by your config:");
+    for image in &unused {
+        println!("  {image}");
+    }
+    println!(
+        "Remove them when you no longer need them:\n  {}",
+        docker::removal_command(config, &unused)
+    );
 }
 
 fn print_workspace_messages(

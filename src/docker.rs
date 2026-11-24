@@ -6,6 +6,7 @@ mod compose_gen;
 mod doctor_probe;
 pub(crate) mod environment;
 mod git_identity;
+mod images;
 mod overrides;
 mod runtime_files;
 
@@ -14,6 +15,9 @@ pub use doctor_probe::{
     SshAddCheck,
 };
 pub use git_identity::{effective_git_identity, GitIdentity};
+pub use images::{
+    base_status, harness_on_current_base, removal_command, unused_images, BaseStatus,
+};
 use runtime_files::RuntimeFiles;
 
 use crate::{
@@ -60,7 +64,7 @@ pub fn build_base_image(config: &Config, state: &StatePaths) -> Result<()> {
     for line in environment::profile_summary(config) {
         println!("  environment profile: {line}");
     }
-    // Written only at build time: its contents record what the base image was built from.
+    // Written at build time so the build context matches what the image was built from.
     write_base_dockerfile(config, state)?;
 
     let status = base_docker(config)
@@ -71,6 +75,12 @@ pub fn build_base_image(config: &Config, state: &StatePaths) -> Result<()> {
         .arg(state.runtime_base_dockerfile())
         .arg("-t")
         .arg(image)
+        .arg("--label")
+        .arg(format!(
+            "{}={}",
+            environment::BASE_FINGERPRINT_LABEL,
+            environment::base_fingerprint(config)
+        ))
         .arg(state.runtime_base_dir())
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
@@ -152,11 +162,6 @@ pub fn ensure_harness_image_exists(
 /// Whether the harness image a launch of `descriptor` would run exists.
 pub fn image_exists(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<bool> {
     harness_image_exists(config, descriptor)
-}
-
-/// Whether the shared base image is out of date for the current environment profile.
-pub fn environment_image_stale(config: &Config, state: &StatePaths) -> bool {
-    environment::base_dockerfile_stale(config, state)
 }
 
 /// The image a launch of `descriptor` runs: the configured harness image.
