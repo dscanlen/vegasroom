@@ -36,7 +36,29 @@ mod tests {
         assert!(!dockerfile.contains("--ignore-scripts"));
         assert!(dockerfile.contains("DISABLE_AUTOUPDATER=1"));
         assert!(dockerfile.contains("CLAUDE_CONFIG_DIR=/home/agent/.claude"));
-        assert!(dockerfile.contains("ln -s /home/agent/.ssh /root/.ssh"));
+    }
+
+    #[test]
+    fn harness_dockerfiles_leave_the_foundation_to_the_base_image() {
+        for descriptor in harness::HARNESSES {
+            let dockerfile = managed_dockerfile(descriptor).unwrap();
+            for foundation in [
+                "apt-get",
+                "node:24-bookworm-slim",
+                "/root/.ssh",
+                "WORKDIR",
+                "HOME=",
+                "NPM_CONFIG_CACHE",
+            ] {
+                assert!(
+                    !dockerfile.contains(foundation),
+                    "{} Dockerfile duplicates base foundation: {foundation}",
+                    descriptor.id
+                );
+            }
+        }
+        assert!(MANAGED_BASE_DOCKERFILE.contains("ln -s /home/agent/.ssh /root/.ssh"));
+        assert!(MANAGED_BASE_DOCKERFILE.contains("WORKDIR /workspace"));
     }
 
     #[test]
@@ -49,7 +71,10 @@ mod tests {
                 .collect();
             assert_eq!(
                 &instructions[..2],
-                &["ARG BASE_IMAGE=node:24-bookworm-slim", "FROM ${BASE_IMAGE}"],
+                &[
+                    format!("ARG BASE_IMAGE={}", crate::config::DEFAULT_BASE_IMAGE).as_str(),
+                    "FROM ${BASE_IMAGE}"
+                ],
                 "{}",
                 descriptor.id
             );

@@ -54,10 +54,14 @@ pub fn write_base_dockerfile(config: &Config, state: &StatePaths) -> Result<()> 
 ///
 /// Uses the default harness's `build_network`, since the base is shared.
 pub fn build_base_image(config: &Config, state: &StatePaths) -> Result<()> {
-    write_base_dockerfile(config, state)?;
     let image = &config.environment.base_image;
     let build_network = &config.harness.instance(harness::HARNESSES[0]).build_network;
     println!("Building shared base image: {image}");
+    for line in environment::profile_summary(config) {
+        println!("  environment profile: {line}");
+    }
+    // Written only at build time: its contents record what the base image was built from.
+    write_base_dockerfile(config, state)?;
 
     let status = base_docker(config)
         .arg("build")
@@ -83,10 +87,9 @@ pub fn build_base_image(config: &Config, state: &StatePaths) -> Result<()> {
     }
 }
 
-/// Build a harness image on the shared base, then its environment-layered image if customised.
+/// Build a harness image on the shared base (the base must be built first).
 pub fn build_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
-    build_harness_image(config, descriptor)?;
-    environment::build_image(config, descriptor)
+    build_harness_image(config, descriptor)
 }
 
 pub fn run_harness(
@@ -146,24 +149,19 @@ pub fn ensure_harness_image_exists(
     ensure_harness_image(descriptor, config)
 }
 
-/// Whether the image a launch of `descriptor` would run (environment-layered if customised) exists.
+/// Whether the harness image a launch of `descriptor` would run exists.
 pub fn image_exists(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<bool> {
-    if environment::has_customization(config) {
-        environment::image_exists(config, descriptor)
-    } else {
-        harness_image_exists(config, descriptor)
-    }
+    harness_image_exists(config, descriptor)
 }
 
-pub fn environment_image_stale(
-    config: &Config,
-    descriptor: &harness::HarnessDescriptor,
-) -> Result<bool> {
-    environment::image_stale(config, descriptor)
+/// Whether the shared base image is out of date for the current environment profile.
+pub fn environment_image_stale(config: &Config, state: &StatePaths) -> bool {
+    environment::base_dockerfile_stale(config, state)
 }
 
+/// The image a launch of `descriptor` runs: the configured harness image.
 pub fn runtime_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> String {
-    environment::runtime_image(config, descriptor)
+    harness_image(config, descriptor).to_owned()
 }
 
 fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
@@ -255,10 +253,6 @@ fn run_harness_command(
 }
 
 fn ensure_harness_image(descriptor: &harness::HarnessDescriptor, config: &Config) -> Result<()> {
-    if environment::has_customization(config) {
-        return environment::ensure_image(config, descriptor);
-    }
-
     if harness_image_exists(config, descriptor)? {
         Ok(())
     } else {
@@ -520,7 +514,7 @@ fn apply_compose_config_env(
         command
             .env(
                 descriptor.compose_var("IMAGE"),
-                environment::runtime_image(config, descriptor),
+                harness_image(config, descriptor),
             )
             .env(descriptor.compose_var("NETWORK_MODE"), &instance.network)
             .env(

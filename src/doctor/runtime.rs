@@ -90,20 +90,24 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
     ));
 
     if let Some(project_dir) = compose_file.parent() {
-        let dockerfile = project_dir.join(harness::PI.dockerfile_path);
-        if let Ok(dockerfile_contents) = fs::read_to_string(&dockerfile) {
+        // The base Dockerfile is written when the base image is built.
+        let base_dockerfile = project_dir.join("harness/base/Dockerfile");
+        if let Ok(base_contents) = fs::read_to_string(&base_dockerfile) {
             checks.push(check_bool(
                 Status::Warn,
                 "Root SSH symlink model",
-                dockerfile_contents.contains(&root_ssh_symlink),
+                base_contents.contains(&root_ssh_symlink),
                 format!(
-                    "/root/.ssh is created as an image-level symlink to {harness_ssh_dir}"
+                    "/root/.ssh is created as an image-level symlink to {harness_ssh_dir} in the base image"
                 ),
                 format!(
-                    "/root/.ssh image-level symlink to {harness_ssh_dir} was not found in the Pi Dockerfile"
+                    "/root/.ssh image-level symlink to {harness_ssh_dir} was not found in the base Dockerfile"
                 ),
             ));
+        }
 
+        let dockerfile = project_dir.join(harness::PI.dockerfile_path);
+        if let Ok(dockerfile_contents) = fs::read_to_string(&dockerfile) {
             checks.push(check_bool(
                 Status::Warn,
                 "Pi Dockerfile npm-global PATH",

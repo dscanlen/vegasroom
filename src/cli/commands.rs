@@ -17,7 +17,6 @@ pub(super) fn init(build: bool) -> Result<i32> {
 
     let config = Config::load_with(&state)?;
     docker::write_runtime_compose_yaml(&config, &state)?;
-    docker::write_base_dockerfile(&config, &state)?;
 
     if build {
         config.validate_semantics()?;
@@ -59,7 +58,7 @@ pub(super) fn launch_harness(
     config.validate_semantics()?;
     let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
     print_workspace_messages(&workspace, &config, descriptor);
-    print_environment_image_warning(&config, descriptor)?;
+    print_environment_image_warning(&config, &state);
 
     docker::ensure_harness_image_exists(descriptor, &config).with_context(|| {
         format!(
@@ -79,21 +78,20 @@ pub(super) fn launch_shell(workspace_arg: Option<&str>, command: Vec<String>) ->
     config.validate_semantics()?;
     let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
     print_workspace_messages(&workspace, &config, &harness::PI);
-    print_environment_image_warning(&config, &harness::PI)?;
+    print_environment_image_warning(&config, &state);
 
     docker::ensure_harness_image_exists(&harness::PI, &config)
         .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
     docker::run_shell(&config, &workspace, &command, &state)
 }
 
-fn print_environment_image_warning(config: &Config, descriptor: &HarnessDescriptor) -> Result<()> {
-    if docker::environment_image_stale(config, descriptor)? {
+fn print_environment_image_warning(config: &Config, state: &StatePaths) {
+    if docker::environment_image_stale(config, state) {
         eprintln!(
-            "{}: Environment image is out of date for the current package/toolchain config. Run `vr init --build` when ready.",
+            "{}: Shared base image is out of date for the current environment profile. Run `vr init --build` when ready.",
             alert::warn()
         );
     }
-    Ok(())
 }
 
 fn print_workspace_messages(

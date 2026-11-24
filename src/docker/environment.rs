@@ -1,18 +1,14 @@
-use std::{collections::BTreeSet, fs, path::PathBuf, process::Stdio};
-
-use anyhow::{bail, Context, Result};
+use std::{collections::BTreeSet, fs};
 
 use crate::{
-    assets, atomic_write,
+    assets,
     config::{
         normalized_apt_packages, normalized_rust_components, normalized_rust_toolchain,
         normalized_typescript_packages, Config,
     },
     harness,
-    paths::{display_path, StatePaths},
+    paths::StatePaths,
 };
-
-use super::{base_docker, harness_image_exists};
 
 pub(crate) fn packages(config: &Config) -> Vec<String> {
     normalized_apt_packages(&config.environment)
@@ -46,211 +42,6 @@ pub(crate) fn typescript_packages(config: &Config) -> Vec<String> {
     normalized_typescript_packages(&config.environment)
 }
 
-pub(crate) fn has_customization(config: &Config) -> bool {
-    !packages(config).is_empty()
-        || rust_enabled(config)
-        || python_enabled(config)
-        || go_enabled(config)
-        || typescript_enabled(config)
-}
-
-pub(super) fn runtime_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> String {
-    let base = base_image(config, descriptor);
-    if has_customization(config) {
-        derived_image_tag(base)
-    } else {
-        base.to_owned()
-    }
-}
-
-pub(super) fn ensure_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
-    if !has_customization(config) {
-        return Ok(());
-    }
-
-    validate_environment(config)?;
-
-    let image = runtime_image(config, descriptor);
-    if image_tag_exists(config, &image)? {
-        Ok(())
-    } else {
-        bail!("environment image not found: {image}\nRun: vr init --build")
-    }
-}
-
-pub(super) fn build_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
-    if !has_customization(config) {
-        return Ok(());
-    }
-
-    validate_environment(config)?;
-
-    if !harness_image_exists(config, descriptor)? {
-        bail!(
-            "base {} image was not found: {}\nRun: vr init --build",
-            descriptor.display_name,
-            base_image(config, descriptor)
-        );
-    }
-
-    let state = StatePaths::default()?;
-    write_dockerfile(config, descriptor, &state)?;
-    let image = runtime_image(config, descriptor);
-    run_build_image(config, descriptor, &state, &image)
-}
-
-pub(super) fn image_stale(
-    config: &Config,
-    descriptor: &harness::HarnessDescriptor,
-) -> Result<bool> {
-    if !has_customization(config) {
-        return Ok(false);
-    }
-
-    validate_environment(config)?;
-
-    let state = StatePaths::default()?;
-    let dockerfile_path = dockerfile_path(&state, descriptor);
-    let next_contents = dockerfile_contents(config, descriptor);
-    Ok(fs::read_to_string(&dockerfile_path)
-        .map(|current| current != next_contents)
-        .unwrap_or(true))
-}
-
-pub(super) fn image_exists(
-    config: &Config,
-    descriptor: &harness::HarnessDescriptor,
-) -> Result<bool> {
-    let image = runtime_image(config, descriptor);
-    image_tag_exists(config, &image)
-}
-
-fn validate_environment(config: &Config) -> Result<()> {
-    config.validate_semantics()
-}
-
-pub(super) fn dockerfile_path(
-    state: &StatePaths,
-    descriptor: &harness::HarnessDescriptor,
-) -> PathBuf {
-    state
-        .runtime_root
-        .join("environment")
-        .join(descriptor.id)
-        .join("Dockerfile")
-}
-
-fn write_dockerfile(
-    config: &Config,
-    descriptor: &harness::HarnessDescriptor,
-    state: &StatePaths,
-) -> Result<PathBuf> {
-    let dockerfile_path = dockerfile_path(state, descriptor);
-    if let Some(parent) = dockerfile_path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!(
-                "failed to create environment runtime directory: {}",
-                display_path(parent)
-            )
-        })?;
-    }
-
-    atomic_write::write_file(&dockerfile_path, dockerfile_contents(config, descriptor))
-        .with_context(|| {
-            format!(
-                "failed to write environment Dockerfile: {}",
-                display_path(&dockerfile_path)
-            )
-        })?;
-
-    Ok(dockerfile_path)
-}
-
-fn run_build_image(
-    config: &Config,
-    descriptor: &harness::HarnessDescriptor,
-    state: &StatePaths,
-    image: &str,
-) -> Result<()> {
-    let dockerfile = dockerfile_path(state, descriptor);
-    let context = dockerfile
-        .parent()
-        .context("environment Dockerfile has no parent directory")?;
-
-    println!(
-        "Building {} environment image: {image}",
-        descriptor.display_name
-    );
-    let apt_packages = packages(config);
-    if !apt_packages.is_empty() {
-        println!("Installing apt packages: {}", apt_packages.join(", "));
-    }
-    if python_enabled(config) {
-        println!("Installing Python toolchain");
-    }
-    if go_enabled(config) {
-        println!("Installing Go toolchain");
-    }
-    if typescript_enabled(config) {
-        println!(
-            "Installing TypeScript npm packages: {}",
-            typescript_packages(config).join(", ")
-        );
-    }
-    if rust_enabled(config) {
-        let components = rust_components(config);
-        println!("Installing Rust toolchain: {}", rust_toolchain(config));
-        if !components.is_empty() {
-            println!("Installing Rust components: {}", components.join(", "));
-        }
-    }
-
-    let status = base_docker(config)
-        .arg("build")
-        .arg("--network")
-        .arg(&config.harness.instance(descriptor).build_network)
-        .arg("-f")
-        .arg(&dockerfile)
-        .arg("-t")
-        .arg(image)
-        .arg(context)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .context("failed to start Docker environment image build command")?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        bail!("Docker environment image build failed with status: {status}")
-    }
-}
-
-fn image_tag_exists(config: &Config, image: &str) -> Result<bool> {
-    let status = base_docker(config)
-        .args(["image", "inspect", image])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .context("failed to inspect Docker image")?;
-
-    Ok(status.success())
-}
-
-fn dockerfile_contents(config: &Config, descriptor: &harness::HarnessDescriptor) -> String {
-    let mut contents = format!(
-        r#"FROM {base_image}
-
-ENV DEBIAN_FRONTEND=noninteractive
-"#,
-        base_image = base_image(config, descriptor),
-    );
-    contents.push_str(&environment_sections(config, descriptor.container_home));
-    contents
-}
-
 /// Full Dockerfile for the shared base image: the embedded foundation followed by
 /// the configured `environment:` profile. Harness images build `FROM` this.
 pub(crate) fn base_dockerfile_contents(config: &Config) -> String {
@@ -263,6 +54,44 @@ pub(crate) fn base_dockerfile_contents(config: &Config) -> String {
         contents.push_str(&sections);
     }
     contents
+}
+
+/// Human-readable lines describing what the environment profile installs.
+pub(crate) fn profile_summary(config: &Config) -> Vec<String> {
+    let mut lines = Vec::new();
+    let apt_packages = packages(config);
+    if !apt_packages.is_empty() {
+        lines.push(format!("apt packages: {}", apt_packages.join(", ")));
+    }
+    if python_enabled(config) {
+        lines.push("Python toolchain".to_owned());
+    }
+    if go_enabled(config) {
+        lines.push("Go toolchain".to_owned());
+    }
+    if typescript_enabled(config) {
+        lines.push(format!(
+            "TypeScript npm packages: {}",
+            typescript_packages(config).join(", ")
+        ));
+    }
+    if rust_enabled(config) {
+        let components = rust_components(config);
+        let mut line = format!("Rust toolchain: {}", rust_toolchain(config));
+        if !components.is_empty() {
+            line.push_str(&format!(" (components: {})", components.join(", ")));
+        }
+        lines.push(line);
+    }
+    lines
+}
+
+/// True when the base Dockerfile recorded at the last base build differs from what
+/// the current config would generate (or no base has been built yet).
+pub(crate) fn base_dockerfile_stale(config: &Config, state: &StatePaths) -> bool {
+    fs::read_to_string(state.runtime_base_dockerfile())
+        .map(|built| built != base_dockerfile_contents(config))
+        .unwrap_or(true)
 }
 
 /// Dockerfile instructions for the configured environment profile. Empty when nothing is enabled.
@@ -373,11 +202,11 @@ fn build_apt_packages(config: &Config) -> Vec<String> {
         .collect()
 }
 
-fn base_image<'a>(config: &'a Config, descriptor: &'a harness::HarnessDescriptor) -> &'a str {
-    config.harness_runtime_config(descriptor).image
-}
-
-fn derived_image_tag(base: &str) -> String {
+// TEMPORARY(M3.3): consumed by the M3.4 leftover-image hint; remove this allow then.
+#[allow(dead_code)]
+/// Tag of the per-harness `-env` image that vegasroom built before the shared base
+/// image existed (e.g. `vegasroom/pi:local-env`). Only used to point out leftovers.
+pub(crate) fn legacy_env_image_tag(base: &str) -> String {
     if let Some((image, _digest)) = base.split_once('@') {
         return format!("{}:env", image_repository_without_tag(image));
     }
@@ -389,6 +218,7 @@ fn derived_image_tag(base: &str) -> String {
     }
 }
 
+#[allow(dead_code)] // TEMPORARY(M3.3), see legacy_env_image_tag
 fn image_repository_without_tag(image: &str) -> &str {
     if let Some(colon) = tag_colon(image) {
         &image[..colon]
@@ -397,10 +227,12 @@ fn image_repository_without_tag(image: &str) -> &str {
     }
 }
 
+#[allow(dead_code)] // TEMPORARY(M3.3), see legacy_env_image_tag
 fn has_tag(image: &str) -> bool {
     tag_colon(image).is_some()
 }
 
+#[allow(dead_code)] // TEMPORARY(M3.3), see legacy_env_image_tag
 fn tag_colon(image: &str) -> Option<usize> {
     let last_slash = image.rfind('/');
     let last_colon = image.rfind(':');
@@ -414,24 +246,24 @@ mod tests {
     #[test]
     fn derived_image_tag_appends_env_to_existing_tag() {
         assert_eq!(
-            derived_image_tag("vegasroom/pi:latest"),
+            legacy_env_image_tag("vegasroom/pi:latest"),
             "vegasroom/pi:latest-env"
         );
-        assert_eq!(derived_image_tag("vegasroom/pi"), "vegasroom/pi:env");
+        assert_eq!(legacy_env_image_tag("vegasroom/pi"), "vegasroom/pi:env");
     }
 
     #[test]
     fn derived_image_tag_handles_digest_base_images() {
         assert_eq!(
-            derived_image_tag("vegasroom/pi@sha256:abc123"),
+            legacy_env_image_tag("vegasroom/pi@sha256:abc123"),
             "vegasroom/pi:env"
         );
         assert_eq!(
-            derived_image_tag("vegasroom/pi:latest@sha256:abc123"),
+            legacy_env_image_tag("vegasroom/pi:latest@sha256:abc123"),
             "vegasroom/pi:env"
         );
         assert_eq!(
-            derived_image_tag("localhost:5000/vegasroom/pi@sha256:abc123"),
+            legacy_env_image_tag("localhost:5000/vegasroom/pi@sha256:abc123"),
             "localhost:5000/vegasroom/pi:env"
         );
     }
@@ -483,6 +315,41 @@ mod tests {
     }
 
     #[test]
+    fn base_dockerfile_staleness_tracks_last_built_contents() {
+        let state = StatePaths::from_root(
+            crate::test_util::unique_temp_dir("base-stale").join(".vegasroom"),
+        );
+        let config = base_config();
+        assert!(base_dockerfile_stale(&config, &state), "never built");
+
+        fs::create_dir_all(state.runtime_base_dir()).unwrap();
+        fs::write(
+            state.runtime_base_dockerfile(),
+            base_dockerfile_contents(&config),
+        )
+        .unwrap();
+        assert!(!base_dockerfile_stale(&config, &state));
+
+        let mut changed = config.clone();
+        changed.environment.go.enabled = true;
+        assert!(base_dockerfile_stale(&changed, &state));
+
+        let _ = fs::remove_dir_all(state.root);
+    }
+
+    #[test]
+    fn profile_summary_lists_enabled_parts_only() {
+        assert!(profile_summary(&Config::default()).is_empty());
+        let summary = profile_summary(&base_config());
+        assert!(summary.contains(&"apt packages: jq".to_owned()));
+        assert!(summary.contains(&"Python toolchain".to_owned()));
+        assert!(summary
+            .iter()
+            .any(|line| line.starts_with("Rust toolchain: stable")));
+        assert!(!summary.contains(&"Go toolchain".to_owned()));
+    }
+
+    #[test]
     fn base_dockerfile_contains_nothing_harness_specific() {
         let contents = base_dockerfile_contents(&base_config());
         for forbidden in [
@@ -498,15 +365,5 @@ mod tests {
                 "base must not contain {forbidden}"
             );
         }
-    }
-
-    #[test]
-    fn harness_env_dockerfile_still_layers_profile_on_harness_image() {
-        // Unchanged until M3.3 removes the per-harness -env layer.
-        let config = base_config();
-        let contents = dockerfile_contents(&config, &harness::PI);
-        assert!(contents.starts_with("FROM vegasroom/pi:latest\n"));
-        assert!(contents.contains("sh.rustup.rs"));
-        assert!(!contents.contains("--- environment profile"));
     }
 }

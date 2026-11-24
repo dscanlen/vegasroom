@@ -130,6 +130,7 @@ pub fn run() -> Result<i32> {
     checks.push(check_environment_python(&config));
     checks.push(check_environment_go(&config));
     checks.push(check_environment_typescript(&config));
+    checks.push(check_base_image_freshness(&config, &state));
     checks.push(check_known_hosts(&state.known_hosts));
     checks.push(check_dir_writable("Cargo home writable", &state.cargo_home));
 
@@ -215,7 +216,6 @@ fn check_harness(
     checks.push(check_network_mode(descriptor, instance));
     checks.push(check_workspace_mount_mode(descriptor, instance));
     checks.push(check_read_only_rootfs_mode(descriptor, instance));
-    checks.push(check_environment_image_freshness(config, descriptor));
 
     let Some(compose_file) = compose_file else {
         checks.push(Check {
@@ -399,26 +399,25 @@ fn check_environment_typescript(config: &Config) -> Check {
     }
 }
 
-fn check_environment_image_freshness(
-    config: &Config,
-    descriptor: &harness::HarnessDescriptor,
-) -> Check {
-    match docker::environment_image_stale(config, descriptor) {
-        Ok(false) => Check {
+fn check_base_image_freshness(config: &Config, state: &StatePaths) -> Check {
+    if docker::environment_image_stale(config, state) {
+        Check {
+            status: Status::Warn,
+            name: "Base image freshness".into(),
+            detail: format!(
+                "{} is out of date for the current environment profile (or has not been built). Run: vr init --build",
+                config.environment.base_image
+            ),
+        }
+    } else {
+        Check {
             status: Status::Pass,
-            name: "Environment image freshness".into(),
-            detail: "environment image inputs match current config".to_owned(),
-        },
-        Ok(true) => Check {
-            status: Status::Warn,
-            name: "Environment image freshness".into(),
-            detail: "environment image is out of date for current package/toolchain config. Run: vr init --build".to_owned(),
-        },
-        Err(err) => Check {
-            status: Status::Warn,
-            name: "Environment image freshness".into(),
-            detail: format!("could not check environment image freshness: {err:#}"),
-        },
+            name: "Base image freshness".into(),
+            detail: format!(
+                "{} was built from the current environment profile",
+                config.environment.base_image
+            ),
+        }
     }
 }
 
