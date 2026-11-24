@@ -270,9 +270,12 @@ pub struct PiHarnessConfig {
 
 impl Config {
     pub fn load_or_default() -> Result<Self> {
-        let paths = StatePaths::default()?;
-        if paths.config_yaml.exists() {
-            Self::load_from_path(paths.config_yaml)
+        Self::load_with(&StatePaths::default()?)
+    }
+
+    pub fn load_with(state: &StatePaths) -> Result<Self> {
+        if state.config_yaml.exists() {
+            Self::load_from_path(state.config_yaml.clone())
         } else {
             serde_yaml::from_str(DEFAULT_CONFIG_YAML)
                 .context("failed to parse built-in default config")
@@ -286,9 +289,8 @@ impl Config {
             .with_context(|| format!("failed to parse config: {}", path.display()))
     }
 
-    pub fn save_to_default_path(&self) -> Result<()> {
-        let paths = StatePaths::default()?;
-        self.save_to_path(&paths.config_yaml)
+    pub fn save_to_default_path_with(&self, state: &StatePaths) -> Result<()> {
+        self.save_to_path(&state.config_yaml)
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<()> {
@@ -335,13 +337,11 @@ impl Config {
         );
     }
 
-    pub fn uses_managed_compose_file(&self) -> Result<bool> {
-        let state = StatePaths::default()?;
-        Ok(self.compose_file_path() == state.runtime_compose_yaml)
+    pub fn uses_managed_compose_file_with(&self, state: &StatePaths) -> bool {
+        self.compose_file_path() == state.runtime_compose_yaml
     }
 
-    pub fn set_managed_compose_file(&mut self) -> Result<()> {
-        let state = StatePaths::default()?;
+    pub fn set_managed_compose_file_with(&mut self, state: &StatePaths) -> Result<()> {
         self.docker.compose_file = display_path(&state.runtime_compose_yaml);
         Ok(())
     }

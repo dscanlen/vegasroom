@@ -25,8 +25,11 @@ impl ResolvedWorkspace {
     }
 }
 
-pub fn resolve_workspace(input: Option<&str>, config: &Config) -> Result<ResolvedWorkspace> {
-    let state = StatePaths::default()?;
+pub fn resolve_workspace_with_state(
+    input: Option<&str>,
+    config: &Config,
+    state: &StatePaths,
+) -> Result<ResolvedWorkspace> {
     let workspace_root = absolutize(expand_tilde(&config.paths.workspace))?;
     let input = input.map(str::trim).filter(|value| !value.is_empty());
 
@@ -36,7 +39,7 @@ pub fn resolve_workspace(input: Option<&str>, config: &Config) -> Result<Resolve
             auto_create: can_auto_create_under_managed_workspace(
                 &workspace_root,
                 &workspace_root,
-                &state,
+                state,
             ),
         },
         Some(".") => WorkspaceRequest {
@@ -64,7 +67,7 @@ pub fn resolve_workspace(input: Option<&str>, config: &Config) -> Result<Resolve
                 auto_create: can_auto_create_under_managed_workspace(
                     &path,
                     &workspace_root,
-                    &state,
+                    state,
                 ),
                 path,
             }
@@ -73,14 +76,17 @@ pub fn resolve_workspace(input: Option<&str>, config: &Config) -> Result<Resolve
 
     materialize_workspace(
         request,
-        &state,
+        state,
         &workspace_root,
         config.workspace.risky_mount_policy,
     )
 }
 
-pub fn default_workspace_for_compose(config: &Config) -> Result<ResolvedWorkspace> {
-    resolve_workspace(None, config)
+pub fn default_workspace_for_compose_with_state(
+    config: &Config,
+    state: &StatePaths,
+) -> Result<ResolvedWorkspace> {
+    resolve_workspace_with_state(None, config, state)
 }
 
 fn materialize_workspace(
@@ -359,10 +365,11 @@ mod tests {
     #[test]
     fn default_workspace_resolves_configured_existing_directory() {
         let root = TempDir::new("workspace-root");
+        let state = StatePaths::default().unwrap();
         let mut config = Config::default();
         config.paths.workspace = root.path.display().to_string();
 
-        let resolved = resolve_workspace(None, &config).unwrap();
+        let resolved = resolve_workspace_with_state(None, &config, &state).unwrap();
 
         assert_eq!(resolved.path, root.path.canonicalize().unwrap());
         assert!(!resolved.created);
@@ -370,8 +377,9 @@ mod tests {
 
     #[test]
     fn dot_workspace_resolves_current_directory() {
+        let state = StatePaths::default().unwrap();
         let config = Config::default();
-        let resolved = resolve_workspace(Some("."), &config).unwrap();
+        let resolved = resolve_workspace_with_state(Some("."), &config, &state).unwrap();
 
         assert_eq!(
             resolved.path,
@@ -384,9 +392,10 @@ mod tests {
     fn missing_absolute_workspace_fails_without_creating_it() {
         let root = TempDir::new("missing-absolute-parent");
         let missing = root.path.join("missing");
+        let state = StatePaths::default().unwrap();
         let config = Config::default();
 
-        let err = resolve_workspace(Some(&missing.display().to_string()), &config).unwrap_err();
+        let err = resolve_workspace_with_state(Some(&missing.display().to_string()), &config, &state).unwrap_err();
 
         assert!(err.to_string().contains("Workspace path does not exist"));
         assert!(!missing.exists());
@@ -394,8 +403,9 @@ mod tests {
 
     #[test]
     fn workspace_names_cannot_look_like_flags() {
+        let state = StatePaths::default().unwrap();
         let config = Config::default();
-        let err = resolve_workspace(Some("--session"), &config).unwrap_err();
+        let err = resolve_workspace_with_state(Some("--session"), &config, &state).unwrap_err();
 
         assert!(err
             .to_string()

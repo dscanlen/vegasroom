@@ -27,13 +27,19 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
     environment::build_image(config, &harness::PI)
 }
 
-pub fn run_pi(config: &Config, workspace: &ResolvedWorkspace, pi_args: &[String]) -> Result<i32> {
+pub fn run_pi(
+    config: &Config,
+    workspace: &ResolvedWorkspace,
+    pi_args: &[String],
+    state: &StatePaths,
+) -> Result<i32> {
     run_harness_command(
         config,
         &harness::PI,
         workspace,
         harness_command(config, &harness::PI),
         pi_args,
+        state,
     )
 }
 
@@ -41,13 +47,14 @@ pub fn run_shell(
     config: &Config,
     workspace: &ResolvedWorkspace,
     command: &[String],
+    state: &StatePaths,
 ) -> Result<i32> {
     let ssh_mode = if command.is_empty() {
         SshRuntimeMode::Interactive
     } else {
         SshRuntimeMode::NonInteractive
     };
-    run_compose(config, workspace, &shell_compose_args(command), ssh_mode)
+    run_compose(config, workspace, &shell_compose_args(command), ssh_mode, state)
 }
 
 fn shell_compose_args(command: &[String]) -> Vec<String> {
@@ -157,12 +164,14 @@ fn run_harness_command(
     workspace: &ResolvedWorkspace,
     command: &str,
     args: &[String],
+    state: &StatePaths,
 ) -> Result<i32> {
     run_compose(
         config,
         workspace,
         &harness_compose_args(descriptor, command, args),
         SshRuntimeMode::Interactive,
+        state,
     )
 }
 
@@ -258,8 +267,9 @@ fn run_compose(
     workspace: &ResolvedWorkspace,
     compose_args: &[String],
     ssh_mode: SshRuntimeMode,
+    state: &StatePaths,
 ) -> Result<i32> {
-    let mut invocation = compose_base(config, Some(workspace), true, true, ssh_mode)?;
+    let mut invocation = compose_base(config, Some(workspace), true, true, ssh_mode, state)?;
     let status = invocation
         .command
         .args(compose_args)
@@ -285,13 +295,15 @@ fn compose_shell_output_with_ssh(
     script: &str,
     include_ssh_agent: bool,
 ) -> Result<Output> {
-    let workspace = workspace::default_workspace_for_compose(config)?;
+    let state = StatePaths::default()?;
+    let workspace = workspace::default_workspace_for_compose_with_state(config, &state)?;
     let mut invocation = compose_base(
         config,
         Some(&workspace),
         include_ssh_agent,
         false,
         SshRuntimeMode::NonInteractive,
+        &state,
     )?;
     invocation
         .command
@@ -315,11 +327,11 @@ fn compose_base(
     include_ssh_agent: bool,
     warn_about_ssh: bool,
     ssh_mode: SshRuntimeMode,
+    state: &StatePaths,
 ) -> Result<ComposeInvocation> {
-    let compose_file = config.resolved_compose_file()?;
+    let compose_file = config.resolved_compose_file_from_state(state)?;
     let project_dir = compose_project_dir(&compose_file)?;
-    let state = StatePaths::default()?;
-    let runtime_files = RuntimeFiles::new(&state)?;
+    let runtime_files = RuntimeFiles::new(state)?;
 
     let mut command = base_docker(config);
     apply_compose_config_env(&mut command, config);
