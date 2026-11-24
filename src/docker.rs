@@ -3,7 +3,7 @@ use std::process::{Command, Output, Stdio};
 use anyhow::{anyhow, Context, Result};
 
 mod doctor_probe;
-mod environment;
+pub(crate) mod environment;
 mod git_identity;
 mod overrides;
 mod runtime_files;
@@ -80,38 +80,6 @@ pub fn environment_image_stale(config: &Config) -> Result<bool> {
 
 pub fn pi_runtime_image(config: &Config) -> String {
     environment::runtime_image(config, &harness::PI)
-}
-
-pub fn environment_apt_packages(config: &Config) -> Vec<String> {
-    environment::packages(config)
-}
-
-pub fn environment_rust_enabled(config: &Config) -> bool {
-    environment::rust_enabled(config)
-}
-
-pub fn environment_rust_toolchain(config: &Config) -> String {
-    environment::rust_toolchain(config)
-}
-
-pub fn environment_rust_components(config: &Config) -> Vec<String> {
-    environment::rust_components(config)
-}
-
-pub fn environment_python_enabled(config: &Config) -> bool {
-    environment::python_enabled(config)
-}
-
-pub fn environment_go_enabled(config: &Config) -> bool {
-    environment::go_enabled(config)
-}
-
-pub fn environment_typescript_enabled(config: &Config) -> bool {
-    environment::typescript_enabled(config)
-}
-
-pub fn environment_typescript_packages(config: &Config) -> Vec<String> {
-    environment::typescript_packages(config)
 }
 
 fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
