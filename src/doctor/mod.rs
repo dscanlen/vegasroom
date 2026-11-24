@@ -361,7 +361,7 @@ fn check_environment_typescript(config: &Config) -> Check {
 }
 
 fn check_environment_image_freshness(config: &Config) -> Check {
-    match docker::environment_image_stale(config) {
+    match docker::environment_image_stale(config, &harness::PI) {
         Ok(false) => Check {
             status: Status::Pass,
             name: "Environment image freshness",

@@ -206,6 +206,44 @@ mod tests {
     }
 
     #[test]
+    fn manual_parser_routes_claude_subcommand() {
+        let claude = |workspace: Option<&str>, harness_args: Vec<String>| ManualLaunch::Harness {
+            descriptor: &harness::CLAUDE,
+            workspace: workspace.map(str::to_owned),
+            harness_args,
+        };
+
+        assert_eq!(
+            parse_manual_launch(&argv(&["claude"])).unwrap(),
+            claude(None, Vec::new())
+        );
+        assert_eq!(
+            parse_manual_launch(&argv(&["claude", "."])).unwrap(),
+            claude(Some("."), Vec::new())
+        );
+        assert_eq!(
+            parse_manual_launch(&argv(&["claude", ".", "--", "--help"])).unwrap(),
+            claude(Some("."), args(&["--help"]))
+        );
+        assert_eq!(
+            parse_manual_launch(&argv(&["claude", "--resume"])).unwrap(),
+            claude(None, args(&["--resume"]))
+        );
+        assert_eq!(
+            parse_manual_launch(&argv(&["claude", "--help"])).unwrap(),
+            ManualLaunch::PrintHarnessHelp(&harness::CLAUDE)
+        );
+    }
+
+    #[test]
+    fn manual_parser_top_level_flags_still_go_to_default_harness_not_claude() {
+        assert_eq!(
+            parse_manual_launch(&argv(&["--resume"])).unwrap(),
+            pi_harness(None, args(&["--resume"]))
+        );
+    }
+
+    #[test]
     fn manual_parser_allows_separator_before_harness_help_arg() {
         assert_eq!(
             parse_manual_launch(&argv(&["pi", "--", "--help"])).unwrap(),

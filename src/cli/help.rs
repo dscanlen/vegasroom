@@ -4,9 +4,11 @@ pub(super) const TOP_LEVEL_AFTER_HELP: &str = r#"Examples:
   vr config
   vr
   vr pi .
+  vr claude .
   vr shell .
 
-Use `vr pi --help` for Pi workspace and pass-through help.
+Running `vr` with no subcommand launches the default harness (Pi).
+Use `vr pi --help` or `vr claude --help` for workspace and pass-through help.
 Use `vr shell --help` for shell workspace help."#;
 
 pub(super) const INIT_AFTER_HELP: &str = r#"Examples:
@@ -24,21 +26,46 @@ Notes:
   Manual YAML editing remains supported at ~/.vegasroom/config.yaml."#;
 
 pub(super) fn print_harness_help(descriptor: &crate::harness::HarnessDescriptor) {
+    let is_default = descriptor.id == super::parser::default_harness().id;
+    println!("{}", harness_help_text(descriptor, is_default));
+}
+
+/// Help for `vr <harness> --help`. The top-level `vr [flags]` / `vr -- args`
+/// shortcuts only launch the default harness, so they are listed only for it.
+fn harness_help_text(descriptor: &crate::harness::HarnessDescriptor, is_default: bool) -> String {
     let name = descriptor.id;
     let display_name = descriptor.display_name;
     let command = descriptor.default_command;
-    println!(
+    let args_label = format!("{command}-args");
+
+    let top_level_usage = if is_default {
+        format!("\n  vr [{command}-flags...]\n  vr -- [{command}-args...]")
+    } else {
+        String::new()
+    };
+    let top_level_examples = if is_default {
+        format!("\n  vr --session abc123\n  vr -- ask {display_name} a question")
+    } else {
+        String::new()
+    };
+    let top_level_notes = if is_default {
+        format!(
+            "\n  {display_name} is the default harness: `vr` with no subcommand launches it.\n  At top level, direct pass-through is only used when the first token begins with '-'."
+        )
+    } else {
+        format!("\n  Top-level `vr [flags]` and `vr -- args` launch the default harness, not {display_name}.")
+    };
+
+    format!(
         r#"Launch {display_name} in a Vegasroom workspace.
 
 Usage:
   vr {name} [workspace] [{command}-args...]
-  vr {name} [workspace] -- [{command}-args...]
-  vr [{command}-flags...]
-  vr -- [{command}-args...]
+  vr {name} [workspace] -- [{command}-args...]{top_level_usage}
 
 Arguments:
   workspace       Optional host workspace to mount at /workspace
-  {command}-args  Arguments passed through to {display_name}
+  {args_label:<16}Arguments passed through to {display_name}
 
 Workspace resolution:
   no workspace     ~/.vegasroom/workspace
@@ -52,20 +79,15 @@ Examples:
   vr {name}
   vr {name} .
   vr {name} my-git-repo
-  vr {name} --session abc123
-  vr {name} . --session abc123
-  vr {name} . -- --help
-  vr --session abc123
-  vr -- ask {display_name} a question
+  vr {name} . -- --help{top_level_examples}
 
 Notes:
   The explicit -- separator is preferred when {display_name} arguments are ambiguous.
   Direct {display_name} flags after vr {name} are supported when the first token begins with '-'.
-  Direct {display_name} flags after a workspace are passed through to {display_name}.
-  At top level, direct pass-through is only used when the first token begins with '-'.
+  Direct {display_name} flags after a workspace are passed through to {display_name}.{top_level_notes}
   Top-level --help, -h, --version, and -V are reserved for Vegasroom.
   Use vr --help for top-level Vegasroom help."#
-    );
+    )
 }
 
 pub(super) fn print_shell_help() {
@@ -107,21 +129,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pi_help_describes_actual_top_level_pass_through_behavior() {
-        // Capture output by formatting directly for the Pi descriptor
-        let desc = &crate::harness::PI;
-        let name = desc.id;
-        let command = desc.default_command;
+    fn default_harness_help_lists_top_level_shortcuts() {
+        let help = harness_help_text(&crate::harness::PI, true);
 
-        // Spot-check the generated format strings produce expected content
-        assert_eq!(name, "pi");
-        assert_eq!(command, "pi");
-        // The function prints to stdout; verify it at least doesn't panic
-        // and uses the right descriptor fields by checking the format values
-        assert!(format!("vr {name} [workspace] [{command}-args...]")
-            .contains("vr pi [workspace] [pi-args...]"));
-        assert!(format!("vr [{command}-flags...]").contains("vr [pi-flags...]"));
-        assert!(format!("vr -- [{command}-args...]").contains("vr -- [pi-args...]"));
+        assert!(help.contains("vr pi [workspace] [pi-args...]"));
+        assert!(help.contains("vr [pi-flags...]"));
+        assert!(help.contains("vr -- [pi-args...]"));
+        assert!(help.contains("Pi is the default harness"));
+    }
+
+    #[test]
+    fn non_default_harness_help_omits_top_level_shortcuts() {
+        let help = harness_help_text(&crate::harness::CLAUDE, false);
+
+        assert!(help.starts_with("Launch Claude Code in a Vegasroom workspace."));
+        assert!(help.contains("vr claude [workspace] [claude-args...]"));
+        assert!(help.contains("vr claude [workspace] -- [claude-args...]"));
+        assert!(help.contains("vr claude . -- --help"));
+        assert!(help.contains("\n  claude-args     Arguments passed through to Claude Code"));
+        assert!(help.contains("\n  workspace       Optional host workspace"));
+        assert!(!help.contains("vr [claude-flags...]"));
+        assert!(!help.contains("vr -- [claude-args...]"));
+        assert!(help.contains("launch the default harness, not Claude Code"));
     }
 
     #[test]

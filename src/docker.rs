@@ -34,9 +34,10 @@ pub fn write_runtime_compose_yaml(config: &Config, state: &StatePaths) -> Result
     })
 }
 
-pub fn build_pi_image(config: &Config) -> Result<()> {
-    build_harness_image(config, &harness::PI)?;
-    environment::build_image(config, &harness::PI)
+/// Build a harness base image, then its environment-layered image if customised.
+pub fn build_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
+    build_harness_image(config, descriptor)?;
+    environment::build_image(config, descriptor)
 }
 
 pub fn run_harness(
@@ -104,8 +105,11 @@ pub fn image_exists(config: &Config) -> Result<bool> {
     }
 }
 
-pub fn environment_image_stale(config: &Config) -> Result<bool> {
-    environment::image_stale(config, &harness::PI)
+pub fn environment_image_stale(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+) -> Result<bool> {
+    environment::image_stale(config, descriptor)
 }
 
 pub fn pi_runtime_image(config: &Config) -> String {

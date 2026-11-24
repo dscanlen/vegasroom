@@ -1,8 +1,12 @@
 use anyhow::{Context, Result};
 
 use crate::{
-    alert, config::Config, config_ui, docker, doctor as doctor_runner, harness::HarnessDescriptor,
-    paths::StatePaths, workspace,
+    alert,
+    config::Config,
+    config_ui, docker, doctor as doctor_runner,
+    harness::{self, HarnessDescriptor},
+    paths::StatePaths,
+    workspace,
 };
 
 pub(super) fn init(build: bool) -> Result<i32> {
@@ -16,8 +20,14 @@ pub(super) fn init(build: bool) -> Result<i32> {
 
     if build {
         config.validate_semantics()?;
-        println!("Building Pi image: {}", config.harness.pi.image);
-        docker::build_pi_image(&config)?;
+        for descriptor in harness::HARNESSES {
+            println!(
+                "Building {} image: {}",
+                descriptor.display_name,
+                config.harness_runtime_config(descriptor).image
+            );
+            docker::build_image(&config, descriptor)?;
+        }
     }
 
     Ok(0)
@@ -47,7 +57,7 @@ pub(super) fn launch_harness(
     config.validate_semantics()?;
     let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
     print_workspace_messages(&workspace, &config, descriptor);
-    print_environment_image_warning(&config)?;
+    print_environment_image_warning(&config, descriptor)?;
 
     docker::ensure_harness_image_exists(descriptor, &config).with_context(|| {
         format!(
@@ -66,16 +76,16 @@ pub(super) fn launch_shell(workspace_arg: Option<&str>, command: Vec<String>) ->
     let config = Config::load_with(&state)?;
     config.validate_semantics()?;
     let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
-    print_workspace_messages(&workspace, &config, &crate::harness::PI);
-    print_environment_image_warning(&config)?;
+    print_workspace_messages(&workspace, &config, &harness::PI);
+    print_environment_image_warning(&config, &harness::PI)?;
 
-    docker::ensure_harness_image_exists(&crate::harness::PI, &config)
+    docker::ensure_harness_image_exists(&harness::PI, &config)
         .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
     docker::run_shell(&config, &workspace, &command, &state)
 }
 
-fn print_environment_image_warning(config: &Config) -> Result<()> {
-    if docker::environment_image_stale(config)? {
+fn print_environment_image_warning(config: &Config, descriptor: &HarnessDescriptor) -> Result<()> {
+    if docker::environment_image_stale(config, descriptor)? {
         eprintln!(
             "{}: Environment image is out of date for the current package/toolchain config. Run `vr init --build` when ready.",
             alert::warn()

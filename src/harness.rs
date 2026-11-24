@@ -148,7 +148,7 @@ pub const CLAUDE: HarnessDescriptor = HarnessDescriptor {
 };
 
 /// All registered harnesses, in preference order. The first entry is the default.
-pub const HARNESSES: &[&HarnessDescriptor] = &[&PI];
+pub const HARNESSES: &[&HarnessDescriptor] = &[&PI, &CLAUDE];
 
 /// Look up a harness descriptor by its ID. Returns `None` if no harness with that ID is registered.
 pub fn find_by_id(id: &str) -> Option<&'static HarnessDescriptor> {
@@ -229,6 +229,14 @@ mod tests {
         for key in CLAUDE.passthrough_env {
             assert!(!CLAUDE.extra_env.iter().any(|(k, _)| k == key));
         }
+    }
+
+    #[test]
+    fn registry_keeps_pi_as_default_and_includes_claude() {
+        assert_eq!(HARNESSES[0].id, PI.id);
+        assert_eq!(find_by_id("claude"), Some(&CLAUDE));
+        assert_eq!(find_by_id("pi"), Some(&PI));
+        assert_eq!(find_by_id("nope"), None);
     }
 
     #[test]

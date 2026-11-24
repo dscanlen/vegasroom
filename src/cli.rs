@@ -7,13 +7,14 @@ mod commands;
 mod help;
 mod parser;
 
+use crate::harness;
 use help::{CONFIG_AFTER_HELP, DOCTOR_AFTER_HELP, INIT_AFTER_HELP, TOP_LEVEL_AFTER_HELP};
-use parser::{default_harness, parse_manual_launch, ManualLaunch};
+use parser::{parse_manual_launch, ManualLaunch};
 
 #[derive(Debug, Parser)]
 #[command(name = "vr")]
 #[command(
-    about = "Run Pi inside a Vegasroom container.",
+    about = "Run AI coding agents (Pi, Claude Code) inside ephemeral Vegasroom containers.",
     version,
     after_help = TOP_LEVEL_AFTER_HELP
 )]
@@ -40,10 +41,15 @@ pub enum Commands {
     #[command(after_help = CONFIG_AFTER_HELP)]
     Config,
 
-    /// Launch Pi in the proven Docker/Compose runtime.
+    /// Launch Pi (the default harness) in the Docker/Compose runtime.
     ///
     /// Use `vr pi --help` for workspace and pass-through syntax.
     Pi,
+
+    /// Launch Claude Code in the Docker/Compose runtime.
+    ///
+    /// Use `vr claude --help` for workspace and pass-through syntax.
+    Claude,
 
     /// Launch a shell in the same Docker/Compose runtime.
     ///
@@ -63,7 +69,8 @@ pub fn run() -> Result<i32> {
         Commands::Init { build } => commands::init(build),
         Commands::Doctor => commands::doctor(),
         Commands::Config => commands::config(),
-        Commands::Pi => commands::launch_harness(default_harness(), None, Vec::new()),
+        Commands::Pi => commands::launch_harness(&harness::PI, None, Vec::new()),
+        Commands::Claude => commands::launch_harness(&harness::CLAUDE, None, Vec::new()),
         Commands::Shell => commands::launch_shell(None, Vec::new()),
     }
 }
@@ -106,7 +113,10 @@ mod tests {
     fn top_level_help_includes_consistent_examples() {
         let help = top_level_help();
 
-        assert!(help.contains("Run Pi inside a Vegasroom container."));
+        assert!(help.contains("Run AI coding agents"));
+        assert!(help.contains("vr claude ."));
+        assert!(help.contains("`vr claude --help`"));
+        assert!(help.contains("Launch Claude Code"));
         assert!(help.contains("Examples:"));
         assert!(help.contains("vr init --build"));
         assert!(help.contains("vr config"));
