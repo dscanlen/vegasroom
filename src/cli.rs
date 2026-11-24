@@ -8,7 +8,7 @@ mod help;
 mod parser;
 
 use help::{CONFIG_AFTER_HELP, DOCTOR_AFTER_HELP, INIT_AFTER_HELP, TOP_LEVEL_AFTER_HELP};
-use parser::{parse_manual_launch, ManualLaunch, PiInvocation};
+use parser::{default_harness, parse_manual_launch, ManualLaunch};
 
 #[derive(Debug, Parser)]
 #[command(name = "vr")]
@@ -63,7 +63,7 @@ pub fn run() -> Result<i32> {
         Commands::Init { build } => commands::init(build),
         Commands::Doctor => commands::doctor(),
         Commands::Config => commands::config(),
-        Commands::Pi => commands::launch_pi(None, Vec::new()),
+        Commands::Pi => commands::launch_harness(default_harness(), None, Vec::new()),
         Commands::Shell => commands::launch_shell(None, Vec::new()),
     }
 }
@@ -71,18 +71,19 @@ pub fn run() -> Result<i32> {
 fn maybe_run_manual_launch(args: &[String]) -> Result<Option<i32>> {
     match parse_manual_launch(args)? {
         ManualLaunch::DeferToClap => Ok(None),
-        ManualLaunch::PrintPiHelp => {
-            help::print_pi_help();
+        ManualLaunch::PrintHarnessHelp(descriptor) => {
+            help::print_harness_help(descriptor);
             Ok(Some(0))
         }
         ManualLaunch::PrintShellHelp => {
             help::print_shell_help();
             Ok(Some(0))
         }
-        ManualLaunch::Pi(invocation) => {
-            let PiInvocation { workspace, pi_args } = invocation;
-            commands::launch_pi(workspace.as_deref(), pi_args).map(Some)
-        }
+        ManualLaunch::Harness {
+            descriptor,
+            workspace,
+            harness_args,
+        } => commands::launch_harness(descriptor, workspace.as_deref(), harness_args).map(Some),
         ManualLaunch::Shell { workspace, command } => {
             commands::launch_shell(workspace.as_deref(), command).map(Some)
         }

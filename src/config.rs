@@ -244,11 +244,11 @@ pub struct SelectedSshKey {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HarnessConfig {
     #[serde(default)]
-    pub pi: PiHarnessConfig,
+    pub pi: HarnessInstanceConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PiHarnessConfig {
+pub struct HarnessInstanceConfig {
     #[serde(default = "default_pi_image")]
     pub image: String,
 
@@ -268,11 +268,36 @@ pub struct PiHarnessConfig {
     pub read_only_rootfs: bool,
 }
 
+pub struct HarnessRuntimeConfig<'a> {
+    pub image: &'a str,
+    pub command: &'a str,
+}
+
 impl Config {
+    pub fn harness_runtime_config<'a>(
+        &'a self,
+        descriptor: &harness::HarnessDescriptor,
+    ) -> HarnessRuntimeConfig<'a> {
+        if descriptor.id == harness::PI.id {
+            HarnessRuntimeConfig {
+                image: &self.harness.pi.image,
+                command: &self.harness.pi.command,
+            }
+        } else {
+            HarnessRuntimeConfig {
+                image: descriptor.default_image,
+                command: descriptor.default_command,
+            }
+        }
+    }
+
     pub fn load_or_default() -> Result<Self> {
-        let paths = StatePaths::default()?;
-        if paths.config_yaml.exists() {
-            Self::load_from_path(paths.config_yaml)
+        Self::load_with(&StatePaths::default()?)
+    }
+
+    pub fn load_with(state: &StatePaths) -> Result<Self> {
+        if state.config_yaml.exists() {
+            Self::load_from_path(state.config_yaml.clone())
         } else {
             serde_yaml::from_str(DEFAULT_CONFIG_YAML)
                 .context("failed to parse built-in default config")
@@ -286,9 +311,8 @@ impl Config {
             .with_context(|| format!("failed to parse config: {}", path.display()))
     }
 
-    pub fn save_to_default_path(&self) -> Result<()> {
-        let paths = StatePaths::default()?;
-        self.save_to_path(&paths.config_yaml)
+    pub fn save_to_default_path_with(&self, state: &StatePaths) -> Result<()> {
+        self.save_to_path(&state.config_yaml)
     }
 
     pub fn save_to_path(&self, path: &Path) -> Result<()> {
@@ -335,13 +359,11 @@ impl Config {
         );
     }
 
-    pub fn uses_managed_compose_file(&self) -> Result<bool> {
-        let state = StatePaths::default()?;
-        Ok(self.compose_file_path() == state.runtime_compose_yaml)
+    pub fn uses_managed_compose_file_with(&self, state: &StatePaths) -> bool {
+        self.compose_file_path() == state.runtime_compose_yaml
     }
 
-    pub fn set_managed_compose_file(&mut self) -> Result<()> {
-        let state = StatePaths::default()?;
+    pub fn set_managed_compose_file_with(&mut self, state: &StatePaths) -> Result<()> {
         self.docker.compose_file = display_path(&state.runtime_compose_yaml);
         Ok(())
     }
@@ -398,7 +420,7 @@ impl Default for GitConfig {
     }
 }
 
-impl Default for PiHarnessConfig {
+impl Default for HarnessInstanceConfig {
     fn default() -> Self {
         Self {
             image: default_pi_image(),
@@ -612,6 +634,7 @@ fn is_safe_npm_package_name(package: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_temp_dir;
 
     #[test]
     fn built_in_default_config_parses() {
@@ -982,14 +1005,4 @@ harness:
         assert_eq!(reparsed.ssh.selected_keys, config.ssh.selected_keys);
     }
 
-    fn unique_temp_dir(name: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "vegasroom-config-{name}-{}-{nanos}",
-            std::process::id()
-        ))
-    }
 }

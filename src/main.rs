@@ -11,6 +11,9 @@ mod paths;
 mod ssh;
 mod workspace;
 
+#[cfg(test)]
+mod test_util;
+
 fn main() {
     match cli::run() {
         Ok(code) => std::process::exit(code),

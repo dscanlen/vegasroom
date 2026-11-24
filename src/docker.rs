@@ -2,8 +2,9 @@ use std::process::{Command, Output, Stdio};
 
 use anyhow::{anyhow, Context, Result};
 
+mod compose_gen;
 mod doctor_probe;
-mod environment;
+pub(crate) mod environment;
 mod git_identity;
 mod overrides;
 mod runtime_files;
@@ -15,25 +16,43 @@ pub use git_identity::{effective_git_identity, GitIdentity};
 use runtime_files::RuntimeFiles;
 
 use crate::{
+    atomic_write,
     config::Config,
     harness,
-    paths::StatePaths,
+    paths::{display_path, StatePaths},
     ssh::{self, SshRuntime, SshRuntimeMode},
     workspace::{self, ResolvedWorkspace},
 };
+
+pub fn write_runtime_compose_yaml(config: &Config, state: &StatePaths) -> Result<()> {
+    let content = compose_gen::generate(&harness::PI, config, state);
+    atomic_write::write_file(&state.runtime_compose_yaml, content).with_context(|| {
+        format!(
+            "failed to write managed Compose file: {}",
+            display_path(&state.runtime_compose_yaml)
+        )
+    })
+}
 
 pub fn build_pi_image(config: &Config) -> Result<()> {
     build_harness_image(config, &harness::PI)?;
     environment::build_image(config, &harness::PI)
 }
 
-pub fn run_pi(config: &Config, workspace: &ResolvedWorkspace, pi_args: &[String]) -> Result<i32> {
+pub fn run_harness(
+    descriptor: &harness::HarnessDescriptor,
+    config: &Config,
+    workspace: &ResolvedWorkspace,
+    harness_args: &[String],
+    state: &StatePaths,
+) -> Result<i32> {
     run_harness_command(
         config,
-        &harness::PI,
+        descriptor,
         workspace,
-        harness_command(config, &harness::PI),
-        pi_args,
+        harness_command(config, descriptor),
+        harness_args,
+        state,
     )
 }
 
@@ -41,13 +60,14 @@ pub fn run_shell(
     config: &Config,
     workspace: &ResolvedWorkspace,
     command: &[String],
+    state: &StatePaths,
 ) -> Result<i32> {
     let ssh_mode = if command.is_empty() {
         SshRuntimeMode::Interactive
     } else {
         SshRuntimeMode::NonInteractive
     };
-    run_compose(config, workspace, &shell_compose_args(command), ssh_mode)
+    run_compose(config, workspace, &shell_compose_args(command), ssh_mode, state)
 }
 
 fn shell_compose_args(command: &[String]) -> Vec<String> {
@@ -62,8 +82,11 @@ fn shell_compose_args(command: &[String]) -> Vec<String> {
     }
 }
 
-pub fn ensure_pi_image_exists(config: &Config) -> Result<()> {
-    ensure_harness_image_exists(config, &harness::PI)
+pub fn ensure_harness_image_exists(
+    descriptor: &harness::HarnessDescriptor,
+    config: &Config,
+) -> Result<()> {
+    ensure_harness_image(descriptor, config)
 }
 
 pub fn image_exists(config: &Config) -> Result<bool> {
@@ -82,47 +105,13 @@ pub fn pi_runtime_image(config: &Config) -> String {
     environment::runtime_image(config, &harness::PI)
 }
 
-pub fn environment_apt_packages(config: &Config) -> Vec<String> {
-    environment::packages(config)
-}
-
-pub fn environment_rust_enabled(config: &Config) -> bool {
-    environment::rust_enabled(config)
-}
-
-pub fn environment_rust_toolchain(config: &Config) -> String {
-    environment::rust_toolchain(config)
-}
-
-pub fn environment_rust_components(config: &Config) -> Vec<String> {
-    environment::rust_components(config)
-}
-
-pub fn environment_python_enabled(config: &Config) -> bool {
-    environment::python_enabled(config)
-}
-
-pub fn environment_go_enabled(config: &Config) -> bool {
-    environment::go_enabled(config)
-}
-
-pub fn environment_typescript_enabled(config: &Config) -> bool {
-    environment::typescript_enabled(config)
-}
-
-pub fn environment_typescript_packages(config: &Config) -> Vec<String> {
-    environment::typescript_packages(config)
-}
-
 fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
     let compose_file = config.resolved_compose_file()?;
     let project_dir = compose_project_dir(&compose_file)?;
 
     let mut command = base_docker(config);
     apply_compose_config_env(&mut command, config);
-    if descriptor.id == harness::PI.id {
-        command.env("VR_PI_IMAGE", &config.harness.pi.image);
-    }
+    command.env("VR_PI_IMAGE", config.harness_runtime_config(descriptor).image);
     let status = command
         .arg("compose")
         .arg("-f")
@@ -189,20 +178,22 @@ fn run_harness_command(
     workspace: &ResolvedWorkspace,
     command: &str,
     args: &[String],
+    state: &StatePaths,
 ) -> Result<i32> {
     run_compose(
         config,
         workspace,
         &harness_compose_args(descriptor, command, args),
         SshRuntimeMode::Interactive,
+        state,
     )
 }
 
-fn ensure_harness_image_exists(
-    config: &Config,
+fn ensure_harness_image(
     descriptor: &harness::HarnessDescriptor,
+    config: &Config,
 ) -> Result<()> {
-    if descriptor.id == harness::PI.id && environment::has_customization(config) {
+    if environment::has_customization(config) {
         return environment::ensure_image(config, descriptor);
     }
 
@@ -290,8 +281,9 @@ fn run_compose(
     workspace: &ResolvedWorkspace,
     compose_args: &[String],
     ssh_mode: SshRuntimeMode,
+    state: &StatePaths,
 ) -> Result<i32> {
-    let mut invocation = compose_base(config, Some(workspace), true, true, ssh_mode)?;
+    let mut invocation = compose_base(config, Some(workspace), true, true, ssh_mode, state)?;
     let status = invocation
         .command
         .args(compose_args)
@@ -317,13 +309,15 @@ fn compose_shell_output_with_ssh(
     script: &str,
     include_ssh_agent: bool,
 ) -> Result<Output> {
-    let workspace = workspace::default_workspace_for_compose(config)?;
+    let state = StatePaths::default()?;
+    let workspace = workspace::default_workspace_for_compose_with_state(config, &state)?;
     let mut invocation = compose_base(
         config,
         Some(&workspace),
         include_ssh_agent,
         false,
         SshRuntimeMode::NonInteractive,
+        &state,
     )?;
     invocation
         .command
@@ -347,11 +341,11 @@ fn compose_base(
     include_ssh_agent: bool,
     warn_about_ssh: bool,
     ssh_mode: SshRuntimeMode,
+    state: &StatePaths,
 ) -> Result<ComposeInvocation> {
-    let compose_file = config.resolved_compose_file()?;
+    let compose_file = config.resolved_compose_file_from_state(state)?;
     let project_dir = compose_project_dir(&compose_file)?;
-    let state = StatePaths::default()?;
-    let runtime_files = RuntimeFiles::new(&state)?;
+    let runtime_files = RuntimeFiles::new(state)?;
 
     let mut command = base_docker(config);
     apply_compose_config_env(&mut command, config);
@@ -404,19 +398,11 @@ fn compose_project_dir(compose_file: &std::path::Path) -> Result<std::path::Path
 }
 
 fn harness_image<'a>(config: &'a Config, descriptor: &harness::HarnessDescriptor) -> &'a str {
-    if descriptor.id == harness::PI.id {
-        config.harness.pi.image.as_str()
-    } else {
-        descriptor.default_image
-    }
+    config.harness_runtime_config(descriptor).image
 }
 
 fn harness_command<'a>(config: &'a Config, descriptor: &harness::HarnessDescriptor) -> &'a str {
-    if descriptor.id == harness::PI.id {
-        config.harness.pi.command.as_str()
-    } else {
-        descriptor.default_command
-    }
+    config.harness_runtime_config(descriptor).command
 }
 
 fn harness_compose_args(
@@ -457,22 +443,11 @@ fn base_docker(config: &Config) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        fs,
-        path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use crate::test_util::unique_temp_dir;
+    use std::fs;
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
-    }
-
-    fn test_state_root(name: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or_default();
-        std::env::temp_dir().join(format!("vegasroom-{name}-{}-{nanos}", std::process::id()))
     }
 
     #[test]
@@ -557,7 +532,7 @@ mod tests {
 
     #[test]
     fn runtime_files_use_unique_dirs_and_cleanup_on_drop() {
-        let root = test_state_root("runtime-files");
+        let root = unique_temp_dir("runtime-files");
         let state = StatePaths::from_root(root.clone());
         let first_dir;
         let second_dir;

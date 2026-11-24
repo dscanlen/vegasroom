@@ -146,6 +146,7 @@ fn sync_parent_dir(_parent: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_temp_dir;
 
     #[test]
     fn atomic_write_creates_and_replaces_file() {
@@ -205,11 +206,4 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 
-    fn unique_temp_dir(name: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("vegasroom-{name}-{}-{nanos}", std::process::id()))
-    }
 }

@@ -14,39 +14,39 @@ use crate::{
 
 use super::{base_docker, harness_image_exists};
 
-pub(super) fn packages(config: &Config) -> Vec<String> {
+pub(crate) fn packages(config: &Config) -> Vec<String> {
     normalized_apt_packages(&config.environment)
 }
 
-pub(super) fn rust_enabled(config: &Config) -> bool {
+pub(crate) fn rust_enabled(config: &Config) -> bool {
     config.environment.rust.enabled
 }
 
-pub(super) fn rust_toolchain(config: &Config) -> String {
+pub(crate) fn rust_toolchain(config: &Config) -> String {
     normalized_rust_toolchain(&config.environment)
 }
 
-pub(super) fn rust_components(config: &Config) -> Vec<String> {
+pub(crate) fn rust_components(config: &Config) -> Vec<String> {
     normalized_rust_components(&config.environment)
 }
 
-pub(super) fn python_enabled(config: &Config) -> bool {
+pub(crate) fn python_enabled(config: &Config) -> bool {
     config.environment.python.enabled
 }
 
-pub(super) fn go_enabled(config: &Config) -> bool {
+pub(crate) fn go_enabled(config: &Config) -> bool {
     config.environment.go.enabled
 }
 
-pub(super) fn typescript_enabled(config: &Config) -> bool {
+pub(crate) fn typescript_enabled(config: &Config) -> bool {
     config.environment.typescript.enabled
 }
 
-pub(super) fn typescript_packages(config: &Config) -> Vec<String> {
+pub(crate) fn typescript_packages(config: &Config) -> Vec<String> {
     normalized_typescript_packages(&config.environment)
 }
 
-pub(super) fn has_customization(config: &Config) -> bool {
+pub(crate) fn has_customization(config: &Config) -> bool {
     !packages(config).is_empty()
         || rust_enabled(config)
         || python_enabled(config)
@@ -353,11 +353,7 @@ fn build_apt_packages(config: &Config) -> Vec<String> {
 }
 
 fn base_image<'a>(config: &'a Config, descriptor: &'a harness::HarnessDescriptor) -> &'a str {
-    if descriptor.id == harness::PI.id {
-        config.harness.pi.image.as_str()
-    } else {
-        descriptor.default_image
-    }
+    config.harness_runtime_config(descriptor).image
 }
 
 fn derived_image_tag(base: &str) -> String {

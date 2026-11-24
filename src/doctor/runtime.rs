@@ -24,8 +24,7 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
     checks.push(check_bool(
         Status::Warn,
         "Compose image setting",
-        contents
-            .contains(format!("image: ${{VR_PI_IMAGE:-{}}}", harness::PI.default_image).as_str()),
+        contents.contains("image: ${VR_PI_IMAGE:-"),
         "image is controlled by harness.pi.image through VR_PI_IMAGE",
         "Compose image is not controlled by VR_PI_IMAGE",
     ));

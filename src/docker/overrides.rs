@@ -48,19 +48,11 @@ pub(super) fn prepare_read_only_rootfs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn test_state_root(name: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or_default();
-        std::env::temp_dir().join(format!("vegasroom-{name}-{}-{nanos}", std::process::id()))
-    }
+    use crate::test_util::unique_temp_dir;
 
     #[test]
     fn read_only_rootfs_override_is_only_written_when_enabled() {
-        let root = test_state_root("read-only-rootfs");
+        let root = unique_temp_dir("read-only-rootfs");
         fs::create_dir_all(&root).unwrap();
         let mut config = Config::default();
 

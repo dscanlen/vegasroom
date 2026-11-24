@@ -267,7 +267,7 @@ pub fn run() -> Result<i32> {
 }
 
 fn check_environment_apt_packages(config: &Config) -> Check {
-    let packages = docker::environment_apt_packages(config);
+    let packages = docker::environment::packages(config);
     if packages.is_empty() {
         Check {
             status: Status::Pass,
@@ -284,7 +284,7 @@ fn check_environment_apt_packages(config: &Config) -> Check {
 }
 
 fn check_environment_rust(config: &Config) -> Check {
-    if !docker::environment_rust_enabled(config) {
+    if !docker::environment::rust_enabled(config) {
         return Check {
             status: Status::Pass,
             name: "Environment Rust toolchain",
@@ -292,7 +292,7 @@ fn check_environment_rust(config: &Config) -> Check {
         };
     }
 
-    let components = docker::environment_rust_components(config);
+    let components = docker::environment::rust_components(config);
     let component_detail = if components.is_empty() {
         "no extra components".to_owned()
     } else {
@@ -304,13 +304,13 @@ fn check_environment_rust(config: &Config) -> Check {
         name: "Environment Rust toolchain",
         detail: format!(
             "enabled; toolchain: {}; {component_detail}",
-            docker::environment_rust_toolchain(config)
+            docker::environment::rust_toolchain(config)
         ),
     }
 }
 
 fn check_environment_python(config: &Config) -> Check {
-    if docker::environment_python_enabled(config) {
+    if docker::environment::python_enabled(config) {
         Check {
             status: Status::Pass,
             name: "Environment Python toolchain",
@@ -326,7 +326,7 @@ fn check_environment_python(config: &Config) -> Check {
 }
 
 fn check_environment_go(config: &Config) -> Check {
-    if docker::environment_go_enabled(config) {
+    if docker::environment::go_enabled(config) {
         Check {
             status: Status::Pass,
             name: "Environment Go toolchain",
@@ -342,13 +342,13 @@ fn check_environment_go(config: &Config) -> Check {
 }
 
 fn check_environment_typescript(config: &Config) -> Check {
-    if docker::environment_typescript_enabled(config) {
+    if docker::environment::typescript_enabled(config) {
         Check {
             status: Status::Pass,
             name: "Environment TypeScript toolchain",
             detail: format!(
                 "enabled; npm packages: {}",
-                docker::environment_typescript_packages(config).join(", ")
+                docker::environment::typescript_packages(config).join(", ")
             ),
         }
     } else {

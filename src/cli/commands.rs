@@ -1,17 +1,20 @@
 use anyhow::{Context, Result};
 
 use crate::{
-    alert, config::Config, config_ui, docker, doctor as doctor_runner, paths::StatePaths, workspace,
+    alert, config::Config, config_ui, docker, doctor as doctor_runner, harness::HarnessDescriptor,
+    paths::StatePaths, workspace,
 };
 
 pub(super) fn init(build: bool) -> Result<i32> {
     let state = StatePaths::default()?;
     let report = state.ensure()?;
     report.print();
-    repair_managed_runtime_config()?;
+    repair_managed_runtime_config(&state)?;
+
+    let config = Config::load_with(&state)?;
+    docker::write_runtime_compose_yaml(&config, &state)?;
 
     if build {
-        let config = Config::load_or_default()?;
         config.validate_semantics()?;
         println!("Building Pi image: {}", config.harness.pi.image);
         docker::build_pi_image(&config)?;
@@ -30,37 +33,41 @@ pub(super) fn config() -> Result<i32> {
     config_ui::run()
 }
 
-pub(super) fn launch_pi(workspace_arg: Option<&str>, pi_args: Vec<String>) -> Result<i32> {
+pub(super) fn launch_harness(
+    descriptor: &'static HarnessDescriptor,
+    workspace_arg: Option<&str>,
+    harness_args: Vec<String>,
+) -> Result<i32> {
     let state = StatePaths::default()?;
     let _ = state.ensure()?;
-    repair_managed_runtime_config()?;
+    repair_managed_runtime_config(&state)?;
     state.show_disclaimer_once()?;
 
-    let config = Config::load_or_default()?;
+    let config = Config::load_with(&state)?;
     config.validate_semantics()?;
-    let workspace = workspace::resolve_workspace(workspace_arg, &config)?;
+    let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
     print_workspace_messages(&workspace, &config);
     print_environment_image_warning(&config)?;
 
-    docker::ensure_pi_image_exists(&config)
-        .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
-    docker::run_pi(&config, &workspace, &pi_args)
+    docker::ensure_harness_image_exists(descriptor, &config)
+        .with_context(|| format!("{} image was not ready. Run: vr init --build", descriptor.display_name))?;
+    docker::run_harness(descriptor, &config, &workspace, &harness_args, &state)
 }
 
 pub(super) fn launch_shell(workspace_arg: Option<&str>, command: Vec<String>) -> Result<i32> {
     let state = StatePaths::default()?;
     let _ = state.ensure()?;
-    repair_managed_runtime_config()?;
+    repair_managed_runtime_config(&state)?;
 
-    let config = Config::load_or_default()?;
+    let config = Config::load_with(&state)?;
     config.validate_semantics()?;
-    let workspace = workspace::resolve_workspace(workspace_arg, &config)?;
+    let workspace = workspace::resolve_workspace_with_state(workspace_arg, &config, &state)?;
     print_workspace_messages(&workspace, &config);
     print_environment_image_warning(&config)?;
 
-    docker::ensure_pi_image_exists(&config)
+    docker::ensure_harness_image_exists(&crate::harness::PI, &config)
         .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
-    docker::run_shell(&config, &workspace, &command)
+    docker::run_shell(&config, &workspace, &command, &state)
 }
 
 fn print_environment_image_warning(config: &Config) -> Result<()> {
@@ -90,14 +97,14 @@ fn print_workspace_messages(workspace: &workspace::ResolvedWorkspace, config: &C
     }
 }
 
-fn repair_managed_runtime_config() -> Result<()> {
-    let mut config = Config::load_or_default()?;
-    if config.uses_managed_compose_file()? {
+fn repair_managed_runtime_config(state: &StatePaths) -> Result<()> {
+    let mut config = Config::load_with(state)?;
+    if config.uses_managed_compose_file_with(state) {
         return Ok(());
     }
 
-    config.set_managed_compose_file()?;
-    config.save_to_default_path()?;
+    config.set_managed_compose_file_with(state)?;
+    config.save_to_default_path_with(state)?;
     println!(
         "Configured managed Compose runtime: {}",
         config.docker.compose_file

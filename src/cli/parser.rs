@@ -1,62 +1,96 @@
 use anyhow::{bail, Result};
 
+use crate::harness::{self, HarnessDescriptor};
+
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum ManualLaunch {
     DeferToClap,
-    PrintPiHelp,
+    PrintHarnessHelp(&'static HarnessDescriptor),
     PrintShellHelp,
-    Pi(PiInvocation),
+    Harness {
+        descriptor: &'static HarnessDescriptor,
+        workspace: Option<String>,
+        harness_args: Vec<String>,
+    },
     Shell {
         workspace: Option<String>,
         command: Vec<String>,
     },
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(super) struct PiInvocation {
-    pub(super) workspace: Option<String>,
-    pub(super) pi_args: Vec<String>,
-}
-
-impl PiInvocation {
-    fn new(workspace: Option<String>, pi_args: Vec<String>) -> Self {
-        Self { workspace, pi_args }
-    }
-
-    fn default_workspace() -> Self {
-        Self::new(None, Vec::new())
-    }
+pub(super) fn default_harness() -> &'static HarnessDescriptor {
+    harness::HARNESSES[0]
 }
 
 pub(super) fn parse_manual_launch(args: &[String]) -> Result<ManualLaunch> {
     let Some(first) = args.get(1) else {
-        return Ok(ManualLaunch::Pi(PiInvocation::default_workspace()));
+        return Ok(harness_invocation(default_harness(), None, Vec::new()));
     };
 
     match first.as_str() {
-        "pi" => Ok(parse_explicit_pi(&args[2..])),
         "shell" => parse_explicit_shell(&args[2..]),
-        "--" => Ok(ManualLaunch::Pi(PiInvocation::new(
+        "--" => Ok(harness_invocation(
+            default_harness(),
             None,
             args[2..].to_vec(),
-        ))),
+        )),
         "--help" | "-h" | "--version" | "-V" | "init" | "doctor" | "config" | "ssh" => {
             Ok(ManualLaunch::DeferToClap)
         }
-        value if value.starts_with('-') => Ok(ManualLaunch::Pi(PiInvocation::new(
+        value if value.starts_with('-') => Ok(harness_invocation(
+            default_harness(),
             None,
             args[1..].to_vec(),
-        ))),
-        _ => Ok(ManualLaunch::DeferToClap),
+        )),
+        name => {
+            if let Some(descriptor) = harness::find_by_id(name) {
+                Ok(parse_explicit_harness(descriptor, &args[2..]))
+            } else {
+                Ok(ManualLaunch::DeferToClap)
+            }
+        }
     }
 }
 
-fn parse_explicit_pi(args: &[String]) -> ManualLaunch {
+fn harness_invocation(
+    descriptor: &'static HarnessDescriptor,
+    workspace: Option<String>,
+    harness_args: Vec<String>,
+) -> ManualLaunch {
+    ManualLaunch::Harness {
+        descriptor,
+        workspace,
+        harness_args,
+    }
+}
+
+fn parse_explicit_harness(descriptor: &'static HarnessDescriptor, args: &[String]) -> ManualLaunch {
     if is_help_arg(args.first()) {
-        return ManualLaunch::PrintPiHelp;
+        return ManualLaunch::PrintHarnessHelp(descriptor);
+    }
+    parse_harness_invocation(descriptor, args)
+}
+
+fn parse_harness_invocation(descriptor: &'static HarnessDescriptor, args: &[String]) -> ManualLaunch {
+    let Some(first) = args.first() else {
+        return harness_invocation(descriptor, None, Vec::new());
+    };
+
+    if first == "--" {
+        return harness_invocation(descriptor, None, args[1..].to_vec());
     }
 
-    ManualLaunch::Pi(parse_pi_invocation(args))
+    if first.starts_with('-') {
+        return harness_invocation(descriptor, None, args.to_vec());
+    }
+
+    let harness_args = if args.get(1).map(String::as_str) == Some("--") {
+        args[2..].to_vec()
+    } else {
+        args[1..].to_vec()
+    };
+
+    harness_invocation(descriptor, Some(first.clone()), harness_args)
 }
 
 fn parse_explicit_shell(args: &[String]) -> Result<ManualLaunch> {
@@ -79,28 +113,6 @@ fn is_help_arg(arg: Option<&String>) -> bool {
     matches!(arg.map(String::as_str), Some("--help" | "-h"))
 }
 
-fn parse_pi_invocation(args: &[String]) -> PiInvocation {
-    let Some(first) = args.first() else {
-        return PiInvocation::default_workspace();
-    };
-
-    if first == "--" {
-        return PiInvocation::new(None, args[1..].to_vec());
-    }
-
-    if first.starts_with('-') {
-        return PiInvocation::new(None, args.to_vec());
-    }
-
-    let pi_args = if args.get(1).map(String::as_str) == Some("--") {
-        args[2..].to_vec()
-    } else {
-        args[1..].to_vec()
-    };
-
-    PiInvocation::new(Some(first.clone()), pi_args)
-}
-
 fn parse_shell_workspace(args: &[String]) -> Result<Option<String>> {
     match args {
         [] => Ok(None),
@@ -112,6 +124,7 @@ fn parse_shell_workspace(args: &[String]) -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::harness;
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -123,11 +136,19 @@ mod tests {
         argv
     }
 
+    fn pi_harness(workspace: Option<&str>, harness_args: Vec<String>) -> ManualLaunch {
+        ManualLaunch::Harness {
+            descriptor: &harness::PI,
+            workspace: workspace.map(str::to_owned),
+            harness_args,
+        }
+    }
+
     #[test]
-    fn manual_parser_defaults_empty_command_to_pi() {
+    fn manual_parser_defaults_empty_command_to_default_harness() {
         assert_eq!(
             parse_manual_launch(&argv(&[])).unwrap(),
-            ManualLaunch::Pi(PiInvocation::default_workspace())
+            pi_harness(None, Vec::new())
         );
     }
 
@@ -154,38 +175,38 @@ mod tests {
     }
 
     #[test]
-    fn manual_parser_passes_top_level_leading_flags_to_pi() {
+    fn manual_parser_passes_top_level_leading_flags_to_default_harness() {
         assert_eq!(
             parse_manual_launch(&argv(&["--session", "abc123"])).unwrap(),
-            ManualLaunch::Pi(PiInvocation::new(None, args(&["--session", "abc123"])))
+            pi_harness(None, args(&["--session", "abc123"]))
         );
     }
 
     #[test]
-    fn manual_parser_passes_top_level_separator_args_to_pi() {
+    fn manual_parser_passes_top_level_separator_args_to_default_harness() {
         assert_eq!(
             parse_manual_launch(&argv(&["--", "ask", "Pi"])).unwrap(),
-            ManualLaunch::Pi(PiInvocation::new(None, args(&["ask", "Pi"])))
+            pi_harness(None, args(&["ask", "Pi"]))
         );
     }
 
     #[test]
-    fn manual_parser_routes_explicit_pi_help_to_wrapper_help() {
+    fn manual_parser_routes_explicit_harness_help_to_wrapper_help() {
         assert_eq!(
             parse_manual_launch(&argv(&["pi", "--help"])).unwrap(),
-            ManualLaunch::PrintPiHelp
+            ManualLaunch::PrintHarnessHelp(&harness::PI)
         );
         assert_eq!(
             parse_manual_launch(&argv(&["pi", "-h"])).unwrap(),
-            ManualLaunch::PrintPiHelp
+            ManualLaunch::PrintHarnessHelp(&harness::PI)
         );
     }
 
     #[test]
-    fn manual_parser_allows_separator_before_pi_help_arg() {
+    fn manual_parser_allows_separator_before_harness_help_arg() {
         assert_eq!(
             parse_manual_launch(&argv(&["pi", "--", "--help"])).unwrap(),
-            ManualLaunch::Pi(PiInvocation::new(None, args(&["--help"])))
+            pi_harness(None, args(&["--help"]))
         );
     }
 
@@ -241,57 +262,50 @@ mod tests {
     }
 
     #[test]
-    fn pi_invocation_without_args_uses_default_workspace_and_no_pi_args() {
-        let invocation = parse_pi_invocation(&[]);
+    fn harness_invocation_without_args_uses_default_workspace_and_no_harness_args() {
+        let launch = parse_harness_invocation(&harness::PI, &[]);
 
-        assert_eq!(invocation, PiInvocation::default_workspace());
+        assert_eq!(launch, pi_harness(None, Vec::new()));
     }
 
     #[test]
-    fn pi_invocation_treats_leading_flag_as_pi_arg() {
-        let invocation = parse_pi_invocation(&args(&["--session", "abc123"]));
+    fn harness_invocation_treats_leading_flag_as_harness_arg() {
+        let launch = parse_harness_invocation(&harness::PI, &args(&["--session", "abc123"]));
+
+        assert_eq!(launch, pi_harness(None, args(&["--session", "abc123"])));
+    }
+
+    #[test]
+    fn harness_invocation_treats_first_non_flag_as_workspace() {
+        let launch = parse_harness_invocation(&harness::PI, &args(&["my-repo"]));
+
+        assert_eq!(launch, pi_harness(Some("my-repo"), Vec::new()));
+    }
+
+    #[test]
+    fn harness_invocation_accepts_workspace_before_harness_args() {
+        let launch =
+            parse_harness_invocation(&harness::PI, &args(&[".", "--session", "abc123"]));
 
         assert_eq!(
-            invocation,
-            PiInvocation::new(None, args(&["--session", "abc123"]))
+            launch,
+            pi_harness(Some("."), args(&["--session", "abc123"]))
         );
     }
 
     #[test]
-    fn pi_invocation_treats_first_non_flag_as_workspace() {
-        let invocation = parse_pi_invocation(&args(&["my-repo"]));
+    fn harness_invocation_strips_separator_after_workspace() {
+        let launch =
+            parse_harness_invocation(&harness::PI, &args(&["my-repo", "--", "--help"]));
 
-        assert_eq!(
-            invocation,
-            PiInvocation::new(Some("my-repo".to_owned()), Vec::new())
-        );
+        assert_eq!(launch, pi_harness(Some("my-repo"), args(&["--help"])));
     }
 
     #[test]
-    fn pi_invocation_accepts_workspace_before_pi_args() {
-        let invocation = parse_pi_invocation(&args(&[".", "--session", "abc123"]));
+    fn harness_invocation_strips_separator_without_workspace() {
+        let launch = parse_harness_invocation(&harness::PI, &args(&["--", "--help"]));
 
-        assert_eq!(
-            invocation,
-            PiInvocation::new(Some(".".to_owned()), args(&["--session", "abc123"]))
-        );
-    }
-
-    #[test]
-    fn pi_invocation_strips_separator_after_workspace() {
-        let invocation = parse_pi_invocation(&args(&["my-repo", "--", "--help"]));
-
-        assert_eq!(
-            invocation,
-            PiInvocation::new(Some("my-repo".to_owned()), args(&["--help"]))
-        );
-    }
-
-    #[test]
-    fn pi_invocation_strips_separator_without_workspace() {
-        let invocation = parse_pi_invocation(&args(&["--", "--help"]));
-
-        assert_eq!(invocation, PiInvocation::new(None, args(&["--help"])));
+        assert_eq!(launch, pi_harness(None, args(&["--help"])));
     }
 
     #[test]

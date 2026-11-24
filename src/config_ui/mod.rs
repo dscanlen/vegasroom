@@ -4,7 +4,6 @@ use std::io::{self, IsTerminal};
 use std::{
     fs,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Context, Result};
@@ -155,6 +154,7 @@ fn confirm_quit(dirty: bool) -> Result<QuitDecision> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_temp_dir;
 
     #[test]
     fn default_config_matches_default_compatible_preset() {
@@ -726,14 +726,4 @@ mod tests {
             .collect()
     }
 
-    fn unique_temp_dir(name: &str) -> PathBuf {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "vegasroom-config-ui-{name}-{}-{timestamp}",
-            std::process::id()
-        ))
-    }
 }

@@ -200,7 +200,7 @@ pub(super) fn check_container_python(
     config: &Config,
     probe: &Result<docker::ContainerDoctorProbe>,
 ) -> Check {
-    if !docker::environment_python_enabled(config) {
+    if !docker::environment::python_enabled(config) {
         return Check {
             status: Status::Pass,
             name: "Container Python toolchain",
@@ -234,7 +234,7 @@ pub(super) fn check_container_go(
     config: &Config,
     probe: &Result<docker::ContainerDoctorProbe>,
 ) -> Check {
-    if !docker::environment_go_enabled(config) {
+    if !docker::environment::go_enabled(config) {
         return Check {
             status: Status::Pass,
             name: "Container Go toolchain",
@@ -268,7 +268,7 @@ pub(super) fn check_container_typescript(
     config: &Config,
     probe: &Result<docker::ContainerDoctorProbe>,
 ) -> Check {
-    if !docker::environment_typescript_enabled(config) {
+    if !docker::environment::typescript_enabled(config) {
         return Check {
             status: Status::Pass,
             name: "Container TypeScript toolchain",
