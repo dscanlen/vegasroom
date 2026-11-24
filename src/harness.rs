@@ -96,6 +96,14 @@ pub const PI: HarnessDescriptor = HarnessDescriptor {
     ],
 };
 
+/// All registered harnesses, in preference order. The first entry is the default.
+pub const HARNESSES: &[&HarnessDescriptor] = &[&PI];
+
+/// Look up a harness descriptor by its ID. Returns `None` if no harness with that ID is registered.
+pub fn find_by_id(id: &str) -> Option<&'static HarnessDescriptor> {
+    HARNESSES.iter().find(|&&d| d.id == id).copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

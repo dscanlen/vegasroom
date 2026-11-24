@@ -39,18 +39,19 @@ pub fn build_pi_image(config: &Config) -> Result<()> {
     environment::build_image(config, &harness::PI)
 }
 
-pub fn run_pi(
+pub fn run_harness(
+    descriptor: &harness::HarnessDescriptor,
     config: &Config,
     workspace: &ResolvedWorkspace,
-    pi_args: &[String],
+    harness_args: &[String],
     state: &StatePaths,
 ) -> Result<i32> {
     run_harness_command(
         config,
-        &harness::PI,
+        descriptor,
         workspace,
-        harness_command(config, &harness::PI),
-        pi_args,
+        harness_command(config, descriptor),
+        harness_args,
         state,
     )
 }
@@ -81,8 +82,11 @@ fn shell_compose_args(command: &[String]) -> Vec<String> {
     }
 }
 
-pub fn ensure_pi_image_exists(config: &Config) -> Result<()> {
-    ensure_harness_image_exists(config, &harness::PI)
+pub fn ensure_harness_image_exists(
+    descriptor: &harness::HarnessDescriptor,
+    config: &Config,
+) -> Result<()> {
+    ensure_harness_image(descriptor, config)
 }
 
 pub fn image_exists(config: &Config) -> Result<bool> {
@@ -185,9 +189,9 @@ fn run_harness_command(
     )
 }
 
-fn ensure_harness_image_exists(
-    config: &Config,
+fn ensure_harness_image(
     descriptor: &harness::HarnessDescriptor,
+    config: &Config,
 ) -> Result<()> {
     if environment::has_customization(config) {
         return environment::ensure_image(config, descriptor);

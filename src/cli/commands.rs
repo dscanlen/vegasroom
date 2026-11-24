@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 
 use crate::{
-    alert, config::Config, config_ui, docker, doctor as doctor_runner, paths::StatePaths, workspace,
+    alert, config::Config, config_ui, docker, doctor as doctor_runner, harness::HarnessDescriptor,
+    paths::StatePaths, workspace,
 };
 
 pub(super) fn init(build: bool) -> Result<i32> {
@@ -32,7 +33,11 @@ pub(super) fn config() -> Result<i32> {
     config_ui::run()
 }
 
-pub(super) fn launch_pi(workspace_arg: Option<&str>, pi_args: Vec<String>) -> Result<i32> {
+pub(super) fn launch_harness(
+    descriptor: &'static HarnessDescriptor,
+    workspace_arg: Option<&str>,
+    harness_args: Vec<String>,
+) -> Result<i32> {
     let state = StatePaths::default()?;
     let _ = state.ensure()?;
     repair_managed_runtime_config(&state)?;
@@ -44,9 +49,9 @@ pub(super) fn launch_pi(workspace_arg: Option<&str>, pi_args: Vec<String>) -> Re
     print_workspace_messages(&workspace, &config);
     print_environment_image_warning(&config)?;
 
-    docker::ensure_pi_image_exists(&config)
-        .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
-    docker::run_pi(&config, &workspace, &pi_args, &state)
+    docker::ensure_harness_image_exists(descriptor, &config)
+        .with_context(|| format!("{} image was not ready. Run: vr init --build", descriptor.display_name))?;
+    docker::run_harness(descriptor, &config, &workspace, &harness_args, &state)
 }
 
 pub(super) fn launch_shell(workspace_arg: Option<&str>, command: Vec<String>) -> Result<i32> {
@@ -60,7 +65,7 @@ pub(super) fn launch_shell(workspace_arg: Option<&str>, command: Vec<String>) ->
     print_workspace_messages(&workspace, &config);
     print_environment_image_warning(&config)?;
 
-    docker::ensure_pi_image_exists(&config)
+    docker::ensure_harness_image_exists(&crate::harness::PI, &config)
         .with_context(|| "Pi/environment image was not ready. Run: vr init --build")?;
     docker::run_shell(&config, &workspace, &command, &state)
 }
