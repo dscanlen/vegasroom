@@ -6,7 +6,11 @@ use std::{
 use anyhow::{bail, Context, Result};
 use directories::BaseDirs;
 
-use crate::{assets, atomic_write, config::DEFAULT_CONFIG_YAML, harness};
+use crate::{
+    assets, atomic_write,
+    config::DEFAULT_CONFIG_YAML,
+    harness::{self, HarnessDescriptor},
+};
 
 #[derive(Debug, Clone)]
 pub struct StatePaths {
@@ -24,8 +28,6 @@ pub struct StatePaths {
     pub cargo_home: PathBuf,
     pub runtime_root: PathBuf,
     pub runtime_harness_root: PathBuf,
-    pub runtime_pi_root: PathBuf,
-    pub runtime_pi_dockerfile: PathBuf,
     pub runtime_compose_yaml: PathBuf,
     pub ssh_dir: PathBuf,
     pub known_hosts: PathBuf,
@@ -67,8 +69,6 @@ impl StatePaths {
         let cargo_home = environment_root.join("cargo");
         let runtime_root = root.join("runtime");
         let runtime_harness_root = runtime_root.join("harness");
-        let runtime_pi_root = runtime_harness_root.join(harness::PI.id);
-        let runtime_pi_dockerfile = runtime_root.join(harness::PI.dockerfile_path);
         let runtime_compose_yaml = runtime_root.join("compose.yaml");
         let ssh_dir = root.join("ssh");
         let known_hosts = ssh_dir.join("known_hosts");
@@ -91,8 +91,6 @@ impl StatePaths {
             cargo_home,
             runtime_root,
             runtime_harness_root,
-            runtime_pi_root,
-            runtime_pi_dockerfile,
             runtime_compose_yaml,
             ssh_dir,
             known_hosts,
@@ -111,64 +109,119 @@ impl StatePaths {
 
         ensure_file(&self.config_yaml, DEFAULT_CONFIG_YAML, &mut report)?;
         ensure_file(&self.known_hosts, "", &mut report)?;
-        write_managed_file(
-            &self.runtime_pi_dockerfile,
-            assets::MANAGED_PI_DOCKERFILE,
-            &mut report,
-        )?;
+        for descriptor in harness::HARNESSES {
+            let Some(contents) = assets::managed_dockerfile(descriptor) else {
+                bail!("no embedded Dockerfile for harness `{}`", descriptor.id);
+            };
+            write_managed_file(&self.runtime_dockerfile(descriptor), contents, &mut report)?;
+        }
         self.apply_private_permissions()?;
 
         Ok(report)
     }
 
+    /// `~/.vegasroom/harness/<id>`
+    pub fn harness_state_root(&self, descriptor: &HarnessDescriptor) -> PathBuf {
+        self.harness_root.join(descriptor.id)
+    }
+
+    /// `~/.vegasroom/harness/<id>/<name>`
+    pub fn harness_state_dir(&self, descriptor: &HarnessDescriptor, name: &str) -> PathBuf {
+        self.harness_state_root(descriptor).join(name)
+    }
+
+    /// Host paths of every state dir the descriptor mounts, in descriptor order.
+    pub fn harness_state_dirs(&self, descriptor: &HarnessDescriptor) -> Vec<PathBuf> {
+        descriptor
+            .state_dirs
+            .iter()
+            .map(|dir| self.harness_state_dir(descriptor, dir.name))
+            .collect()
+    }
+
+    /// Host path of the harness's persisted login/auth file.
+    pub fn harness_auth_path(&self, descriptor: &HarnessDescriptor) -> PathBuf {
+        self.harness_state_root(descriptor)
+            .join(descriptor.auth_state_relative_path)
+    }
+
+    /// Directory holding the harness's persisted login/auth file (treated as a credential root).
+    pub fn harness_auth_dir(&self, descriptor: &HarnessDescriptor) -> PathBuf {
+        let auth = self.harness_auth_path(descriptor);
+        auth.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| self.harness_state_root(descriptor))
+    }
+
+    /// `~/.vegasroom/runtime/harness/<id>`
+    pub fn runtime_harness_dir(&self, descriptor: &HarnessDescriptor) -> PathBuf {
+        self.runtime_harness_root.join(descriptor.id)
+    }
+
+    /// Managed Dockerfile location for a harness, relative to the compose project dir.
+    pub fn runtime_dockerfile(&self, descriptor: &HarnessDescriptor) -> PathBuf {
+        self.runtime_root.join(descriptor.dockerfile_path)
+    }
+
+    /// Per-harness state dirs (root + each mounted dir) and runtime dirs for every registered harness.
+    fn harness_dirs(&self) -> Vec<PathBuf> {
+        let mut dirs = vec![self.harness_root.clone()];
+        for descriptor in harness::HARNESSES {
+            dirs.push(self.harness_state_root(descriptor));
+            dirs.extend(self.harness_state_dirs(descriptor));
+        }
+        dirs
+    }
+
+    fn runtime_harness_dirs(&self) -> Vec<PathBuf> {
+        let mut dirs = vec![self.runtime_harness_root.clone()];
+        dirs.extend(
+            harness::HARNESSES
+                .iter()
+                .map(|descriptor| self.runtime_harness_dir(descriptor)),
+        );
+        dirs
+    }
+
     pub fn required_dirs(&self) -> Vec<PathBuf> {
-        vec![
-            self.root.clone(),
-            self.harness_root.clone(),
-            self.pi_root.clone(),
-            self.pi_config.clone(),
-            self.pi_extensions.clone(),
-            self.pi_skills.clone(),
-            self.pi_sessions.clone(),
-            self.pi_npm_global.clone(),
+        let mut dirs = vec![self.root.clone()];
+        dirs.extend(self.harness_dirs());
+        dirs.extend([
             self.workspace.clone(),
             self.environment_root.clone(),
             self.cargo_home.clone(),
             self.runtime_root.clone(),
-            self.runtime_harness_root.clone(),
-            self.runtime_pi_root.clone(),
-            self.ssh_dir.clone(),
-            self.cache.clone(),
-        ]
+        ]);
+        dirs.extend(self.runtime_harness_dirs());
+        dirs.extend([self.ssh_dir.clone(), self.cache.clone()]);
+        dirs
     }
 
     pub fn private_dirs(&self) -> Vec<PathBuf> {
-        vec![
-            self.root.clone(),
-            self.harness_root.clone(),
-            self.pi_root.clone(),
-            self.pi_config.clone(),
-            self.pi_extensions.clone(),
-            self.pi_skills.clone(),
-            self.pi_sessions.clone(),
-            self.pi_npm_global.clone(),
+        let mut dirs = vec![self.root.clone()];
+        dirs.extend(self.harness_dirs());
+        dirs.extend([
             self.environment_root.clone(),
             self.cargo_home.clone(),
             self.runtime_root.clone(),
-            self.runtime_harness_root.clone(),
-            self.runtime_pi_root.clone(),
-            self.ssh_dir.clone(),
-            self.cache.clone(),
-        ]
+        ]);
+        dirs.extend(self.runtime_harness_dirs());
+        dirs.extend([self.ssh_dir.clone(), self.cache.clone()]);
+        dirs
     }
 
     pub fn private_files(&self) -> Vec<PathBuf> {
-        vec![
+        let mut files = vec![
             self.config_yaml.clone(),
             self.known_hosts.clone(),
             self.runtime_compose_yaml.clone(),
-            self.runtime_pi_dockerfile.clone(),
-        ]
+        ];
+        files.extend(
+            harness::HARNESSES
+                .iter()
+                .map(|descriptor| self.runtime_dockerfile(descriptor)),
+        );
+        files
     }
 
     pub fn apply_private_permissions(&self) -> Result<()> {
@@ -445,6 +498,68 @@ mod tests {
                 & 0o777,
             PRIVATE_FILE_MODE
         );
+
+        let _ = fs::remove_dir_all(state.root);
+    }
+
+    #[test]
+    fn harness_helpers_match_legacy_pi_fields() {
+        let state = temp_state("pi-aliases");
+        let pi = &harness::PI;
+
+        assert_eq!(state.harness_state_root(pi), state.pi_root);
+        assert_eq!(
+            state.harness_state_dir(pi, harness::PI_CONFIG_DIR),
+            state.pi_config
+        );
+        assert_eq!(
+            state.harness_state_dir(pi, harness::PI_SESSIONS_DIR),
+            state.pi_sessions
+        );
+        assert_eq!(state.harness_auth_path(pi), state.pi_auth_json);
+        assert_eq!(state.harness_auth_dir(pi), state.pi_config);
+        assert_eq!(
+            state.runtime_dockerfile(pi),
+            state.runtime_root.join("harness/pi/Dockerfile")
+        );
+    }
+
+    #[test]
+    fn required_and_private_dirs_cover_every_registered_harness() {
+        let state = temp_state("harness-dirs");
+        let required = state.required_dirs();
+        let private = state.private_dirs();
+        let files = state.private_files();
+
+        for descriptor in harness::HARNESSES {
+            for dir in state.harness_state_dirs(descriptor) {
+                assert!(
+                    required.contains(&dir),
+                    "required missing {}",
+                    dir.display()
+                );
+                assert!(private.contains(&dir), "private missing {}", dir.display());
+            }
+            assert!(required.contains(&state.runtime_harness_dir(descriptor)));
+            assert!(files.contains(&state.runtime_dockerfile(descriptor)));
+        }
+    }
+
+    #[test]
+    fn ensure_writes_managed_dockerfile_for_every_registered_harness() {
+        let state = temp_state("managed-dockerfiles");
+        state.ensure().unwrap();
+
+        for descriptor in harness::HARNESSES {
+            let written = fs::read_to_string(state.runtime_dockerfile(descriptor)).unwrap();
+            assert_eq!(
+                Some(written.as_str()),
+                assets::managed_dockerfile(descriptor)
+            );
+            for dir in state.harness_state_dirs(descriptor) {
+                assert!(dir.is_dir(), "missing {}", dir.display());
+            }
+        }
 
         let _ = fs::remove_dir_all(state.root);
     }

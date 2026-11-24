@@ -277,7 +277,11 @@ fn blocked_credential_roots(home: &Path, state: &StatePaths) -> Vec<PathBuf> {
     ];
 
     roots.push(state.ssh_dir.clone());
-    roots.push(state.pi_config.clone());
+    roots.extend(
+        crate::harness::HARNESSES
+            .iter()
+            .map(|descriptor| state.harness_auth_dir(descriptor)),
+    );
     roots
         .into_iter()
         .map(|path| path.canonicalize().unwrap_or(path))
@@ -567,5 +571,20 @@ mod tests {
         assert!(err
             .to_string()
             .contains("Refusing to mount credential directory"));
+    }
+
+    #[test]
+    fn every_harness_auth_dir_is_a_blocked_credential_root() {
+        let root = TempDir::new("harness-auth-roots");
+        let state = StatePaths::from_root(root.path.join(".vegasroom"));
+        let roots = blocked_credential_roots(&root.path, &state);
+
+        for descriptor in crate::harness::HARNESSES {
+            assert!(
+                roots.contains(&state.harness_auth_dir(descriptor)),
+                "{} auth dir is not blocked",
+                descriptor.id
+            );
+        }
     }
 }

@@ -72,9 +72,8 @@ fn service_yaml(descriptor: &HarnessDescriptor, default_image: &str, state: &Sta
     ));
 
     // Harness state dir mounts
-    let harness_state_root = state.harness_root.join(descriptor.id);
     for dir in descriptor.state_dirs {
-        let source = harness_state_root.join(dir.name);
+        let source = state.harness_state_dir(descriptor, dir.name);
         yaml.push_str(&format!(
             "      - type: bind\n\
              \x20       source: {source}\n\
