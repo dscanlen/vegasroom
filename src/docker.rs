@@ -2,6 +2,7 @@ use std::process::{Command, Output, Stdio};
 
 use anyhow::{anyhow, Context, Result};
 
+mod compose_gen;
 mod doctor_probe;
 pub(crate) mod environment;
 mod git_identity;
@@ -15,12 +16,23 @@ pub use git_identity::{effective_git_identity, GitIdentity};
 use runtime_files::RuntimeFiles;
 
 use crate::{
+    atomic_write,
     config::Config,
     harness,
-    paths::StatePaths,
+    paths::{display_path, StatePaths},
     ssh::{self, SshRuntime, SshRuntimeMode},
     workspace::{self, ResolvedWorkspace},
 };
+
+pub fn write_runtime_compose_yaml(config: &Config, state: &StatePaths) -> Result<()> {
+    let content = compose_gen::generate(&harness::PI, config, state);
+    atomic_write::write_file(&state.runtime_compose_yaml, content).with_context(|| {
+        format!(
+            "failed to write managed Compose file: {}",
+            display_path(&state.runtime_compose_yaml)
+        )
+    })
+}
 
 pub fn build_pi_image(config: &Config) -> Result<()> {
     build_harness_image(config, &harness::PI)?;

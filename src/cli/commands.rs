@@ -10,8 +10,10 @@ pub(super) fn init(build: bool) -> Result<i32> {
     report.print();
     repair_managed_runtime_config(&state)?;
 
+    let config = Config::load_with(&state)?;
+    docker::write_runtime_compose_yaml(&config, &state)?;
+
     if build {
-        let config = Config::load_with(&state)?;
         config.validate_semantics()?;
         println!("Building Pi image: {}", config.harness.pi.image);
         docker::build_pi_image(&config)?;

@@ -10,6 +10,9 @@ pub struct HarnessDescriptor {
     pub container_home: &'static str,
     pub state_dirs: &'static [HarnessStateDir],
     pub auth_state_relative_path: &'static str,
+    /// Extra environment variables to inject into the container at runtime.
+    /// These are harness-specific and are written directly into the generated compose service.
+    pub extra_env: &'static [(&'static str, &'static str)],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +77,23 @@ pub const PI: HarnessDescriptor = HarnessDescriptor {
         },
     ],
     auth_state_relative_path: "config/auth.json",
+    extra_env: &[
+        ("PI_CODING_AGENT_SESSION_DIR", "/home/agent/.pi/sessions"),
+        ("NPM_CONFIG_PREFIX", "/home/agent/.npm-global"),
+        ("npm_config_prefix", "/home/agent/.npm-global"),
+        ("NPM_CONFIG_CACHE", "/home/agent/.cache/npm"),
+        ("npm_config_cache", "/home/agent/.cache/npm"),
+        ("CARGO_HOME", "/home/agent/.cargo"),
+        ("RUSTUP_HOME", "/usr/local/rustup"),
+        ("PIP_CACHE_DIR", "/home/agent/.cache/pip"),
+        ("GOCACHE", "/home/agent/.cache/go-build"),
+        ("GOMODCACHE", "/home/agent/.cache/go-mod"),
+        (
+            "PATH",
+            "/home/agent/.npm-global/bin:/home/agent/.cargo/bin:/usr/local/cargo/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        ),
+        ("BROWSER", "echo"),
+    ],
 };
 
 #[cfg(test)]

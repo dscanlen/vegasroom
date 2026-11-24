@@ -112,11 +112,6 @@ impl StatePaths {
         ensure_file(&self.config_yaml, DEFAULT_CONFIG_YAML, &mut report)?;
         ensure_file(&self.known_hosts, "", &mut report)?;
         write_managed_file(
-            &self.runtime_compose_yaml,
-            assets::MANAGED_COMPOSE_YAML,
-            &mut report,
-        )?;
-        write_managed_file(
             &self.runtime_pi_dockerfile,
             assets::MANAGED_PI_DOCKERFILE,
             &mut report,
@@ -437,6 +432,11 @@ mod tests {
                 & 0o777,
             PRIVATE_FILE_MODE
         );
+
+        // runtime_compose_yaml is written by `vr init` (docker::write_runtime_compose_yaml),
+        // not by ensure(). Verify that apply_private_permissions covers it once it exists.
+        fs::write(&state.runtime_compose_yaml, "test\n").unwrap();
+        state.apply_private_permissions().unwrap();
         assert_eq!(
             fs::metadata(&state.runtime_compose_yaml)
                 .unwrap()
