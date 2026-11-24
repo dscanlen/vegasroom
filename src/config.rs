@@ -244,11 +244,11 @@ pub struct SelectedSshKey {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HarnessConfig {
     #[serde(default)]
-    pub pi: PiHarnessConfig,
+    pub pi: HarnessInstanceConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PiHarnessConfig {
+pub struct HarnessInstanceConfig {
     #[serde(default = "default_pi_image")]
     pub image: String,
 
@@ -420,7 +420,7 @@ impl Default for GitConfig {
     }
 }
 
-impl Default for PiHarnessConfig {
+impl Default for HarnessInstanceConfig {
     fn default() -> Self {
         Self {
             image: default_pi_image(),
