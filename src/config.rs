@@ -612,6 +612,7 @@ fn is_safe_npm_package_name(package: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::unique_temp_dir;
 
     #[test]
     fn built_in_default_config_parses() {
@@ -982,14 +983,4 @@ harness:
         assert_eq!(reparsed.ssh.selected_keys, config.ssh.selected_keys);
     }
 
-    fn unique_temp_dir(name: &str) -> PathBuf {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!(
-            "vegasroom-config-{name}-{}-{nanos}",
-            std::process::id()
-        ))
-    }
 }

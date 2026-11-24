@@ -457,22 +457,11 @@ fn base_docker(config: &Config) -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        fs,
-        path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
-    };
+    use crate::test_util::unique_temp_dir;
+    use std::fs;
 
     fn strings(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
-    }
-
-    fn test_state_root(name: &str) -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_nanos())
-            .unwrap_or_default();
-        std::env::temp_dir().join(format!("vegasroom-{name}-{}-{nanos}", std::process::id()))
     }
 
     #[test]
@@ -557,7 +546,7 @@ mod tests {
 
     #[test]
     fn runtime_files_use_unique_dirs_and_cleanup_on_drop() {
-        let root = test_state_root("runtime-files");
+        let root = unique_temp_dir("runtime-files");
         let state = StatePaths::from_root(root.clone());
         let first_dir;
         let second_dir;
