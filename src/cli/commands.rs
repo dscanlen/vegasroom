@@ -21,6 +21,7 @@ pub(super) fn init(build: bool) -> Result<i32> {
 
     if build {
         config.validate_semantics()?;
+        docker::build_base_image(&config, &state)?;
         for descriptor in harness::HARNESSES {
             println!(
                 "Building {} image: {}",

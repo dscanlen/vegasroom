@@ -38,4 +38,21 @@ mod tests {
         assert!(dockerfile.contains("CLAUDE_CONFIG_DIR=/home/agent/.claude"));
         assert!(dockerfile.contains("ln -s /home/agent/.ssh /root/.ssh"));
     }
+
+    #[test]
+    fn harness_dockerfiles_build_from_base_image_arg() {
+        for descriptor in harness::HARNESSES {
+            let dockerfile = managed_dockerfile(descriptor).unwrap();
+            let instructions: Vec<&str> = dockerfile
+                .lines()
+                .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
+                .collect();
+            assert_eq!(
+                &instructions[..2],
+                &["ARG BASE_IMAGE=node:24-bookworm-slim", "FROM ${BASE_IMAGE}"],
+                "{}",
+                descriptor.id
+            );
+        }
+    }
 }

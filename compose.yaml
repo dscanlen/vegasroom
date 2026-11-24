@@ -8,6 +8,8 @@ services:
       context: .
       dockerfile: harness/pi/Dockerfile
       network: ${VR_PI_BUILD_NETWORK:-host}
+      args:
+        BASE_IMAGE: ${VR_BASE_IMAGE:-vegasroom/base:latest}
     image: ${VR_PI_IMAGE:-vegasroom/pi:latest}
     user: "0:0"
     init: true
@@ -69,6 +71,8 @@ services:
       context: .
       dockerfile: harness/claude/Dockerfile
       network: ${VR_CLAUDE_BUILD_NETWORK:-host}
+      args:
+        BASE_IMAGE: ${VR_BASE_IMAGE:-vegasroom/base:latest}
     image: ${VR_CLAUDE_IMAGE:-vegasroom/claude:latest}
     user: "0:0"
     init: true

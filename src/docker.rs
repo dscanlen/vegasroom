@@ -50,7 +50,40 @@ pub fn write_base_dockerfile(config: &Config, state: &StatePaths) -> Result<()> 
         .with_context(|| format!("failed to write base Dockerfile: {}", display_path(&path)))
 }
 
-/// Build a harness base image, then its environment-layered image if customised.
+/// Build the shared base image (foundation + environment profile) every harness builds on.
+///
+/// Uses the default harness's `build_network`, since the base is shared.
+pub fn build_base_image(config: &Config, state: &StatePaths) -> Result<()> {
+    write_base_dockerfile(config, state)?;
+    let image = &config.environment.base_image;
+    let build_network = &config.harness.instance(harness::HARNESSES[0]).build_network;
+    println!("Building shared base image: {image}");
+
+    let status = base_docker(config)
+        .arg("build")
+        .arg("--network")
+        .arg(build_network)
+        .arg("-f")
+        .arg(state.runtime_base_dockerfile())
+        .arg("-t")
+        .arg(image)
+        .arg(state.runtime_base_dir())
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .context("failed to start Docker base image build command")?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(anyhow!(
+            "Docker base image build failed with status: {status}"
+        ))
+    }
+}
+
+/// Build a harness image on the shared base, then its environment-layered image if customised.
 pub fn build_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
     build_harness_image(config, descriptor)?;
     environment::build_image(config, descriptor)
@@ -481,6 +514,7 @@ fn apply_compose_config_env(
     config: &Config,
     launched: &harness::HarnessDescriptor,
 ) {
+    command.env("VR_BASE_IMAGE", &config.environment.base_image);
     for descriptor in harness::HARNESSES {
         let instance = config.harness.instance(descriptor);
         command
@@ -585,6 +619,10 @@ mod tests {
         assert!(envs.contains(&("VR_PI_NETWORK_MODE".to_owned(), Some("bridge".to_owned()),)));
         assert!(envs.contains(&("VR_PI_BUILD_NETWORK".to_owned(), Some("host".to_owned()),)));
         assert!(envs.contains(&("VR_WORKSPACE_READ_ONLY".to_owned(), Some("true".to_owned()),)));
+        assert!(envs.contains(&(
+            "VR_BASE_IMAGE".to_owned(),
+            Some("vegasroom/base:latest".to_owned()),
+        )));
     }
 
     #[test]

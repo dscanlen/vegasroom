@@ -1,4 +1,8 @@
-FROM node:24-bookworm-slim
+# Built FROM the shared Vegasroom base image (environment.base_image), which
+# `vr init --build` builds first and passes in as BASE_IMAGE. The default keeps
+# this Dockerfile buildable on its own.
+ARG BASE_IMAGE=node:24-bookworm-slim
+FROM ${BASE_IMAGE}
 
 ARG PI_CODING_AGENT_VERSION=1.6.0
 

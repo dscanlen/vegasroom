@@ -48,13 +48,23 @@ pub(super) fn generate(
     let mut yaml = String::from("services:\n");
     for descriptor in harnesses {
         let image = config.harness_runtime_config(descriptor).image;
-        yaml.push_str(&service_yaml(descriptor, image, state));
+        yaml.push_str(&service_yaml(
+            descriptor,
+            image,
+            &config.environment.base_image,
+            state,
+        ));
     }
     yaml
 }
 
 /// Render a single harness service block (indented under `services:`).
-fn service_yaml(descriptor: &HarnessDescriptor, default_image: &str, state: &StatePaths) -> String {
+fn service_yaml(
+    descriptor: &HarnessDescriptor,
+    default_image: &str,
+    base_image: &str,
+    state: &StatePaths,
+) -> String {
     let service = descriptor.service_name;
     let container_home = descriptor.container_home;
     let dockerfile = descriptor.dockerfile_path;
@@ -68,6 +78,8 @@ fn service_yaml(descriptor: &HarnessDescriptor, default_image: &str, state: &Sta
          \x20     context: .\n\
          \x20     dockerfile: {dockerfile}\n\
          \x20     network: ${{{build_network_var}:-host}}\n\
+         \x20     args:\n\
+         \x20       BASE_IMAGE: ${{VR_BASE_IMAGE:-{base_image}}}\n\
          \x20   image: ${{{image_var}:-{default_image}}}\n\
          \x20   user: \"0:0\"\n\
          \x20   init: true\n\
@@ -251,7 +263,7 @@ mod tests {
     #[test]
     fn service_yaml_uses_per_harness_compose_vars() {
         let state = test_state();
-        let yaml = service_yaml(&ALT, ALT.default_image, &state);
+        let yaml = service_yaml(&ALT, ALT.default_image, "vegasroom/base:latest", &state);
 
         assert!(yaml.contains("  alt:\n"));
         assert!(yaml.contains("image: ${VR_ALT_AGENT_IMAGE:-vegasroom/alt:latest}"));
@@ -270,9 +282,27 @@ mod tests {
     }
 
     #[test]
+    fn harness_build_receives_shared_base_image_arg() {
+        let mut config = Config::default();
+        config.environment.base_image = "example/base:test".to_owned();
+        let state = test_state();
+        let yaml = generate(harness::HARNESSES, &config, &state);
+        let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+
+        for descriptor in harness::HARNESSES {
+            assert_eq!(
+                doc["services"][descriptor.service_name]["build"]["args"]["BASE_IMAGE"].as_str(),
+                Some("${VR_BASE_IMAGE:-example/base:test}"),
+                "{}",
+                descriptor.id
+            );
+        }
+    }
+
+    #[test]
     fn service_yaml_renders_shared_toolchain_env_then_extra_then_passthrough() {
         let state = test_state();
-        let yaml = service_yaml(&ALT, ALT.default_image, &state);
+        let yaml = service_yaml(&ALT, ALT.default_image, "vegasroom/base:latest", &state);
 
         let cargo = yaml.find("CARGO_HOME: /home/agent/.cargo").unwrap();
         let extra = yaml.find("ALT_CONFIG_DIR: /home/agent/.alt").unwrap();
@@ -297,7 +327,7 @@ mod tests {
         let state = test_state();
         let yaml = format!(
             "services:\n{}",
-            service_yaml(&ALT, ALT.default_image, &state)
+            service_yaml(&ALT, ALT.default_image, "vegasroom/base:latest", &state)
         );
         let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
 
@@ -311,7 +341,12 @@ mod tests {
         let state = test_state();
         let yaml = format!(
             "services:\n{}",
-            service_yaml(&harness::CLAUDE, harness::CLAUDE.default_image, &state)
+            service_yaml(
+                &harness::CLAUDE,
+                harness::CLAUDE.default_image,
+                "vegasroom/base:latest",
+                &state
+            )
         );
         let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
         let service = &doc["services"]["claude"];
