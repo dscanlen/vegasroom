@@ -35,6 +35,9 @@ pub struct EnsureReport {
     existing: Vec<PathBuf>,
 }
 
+/// Runtime dir name for the shared base image; reserved, so no harness may use it as an id.
+pub const BASE_RUNTIME_DIR: &str = "base";
+
 #[cfg(unix)]
 pub const PRIVATE_DIR_MODE: u32 = 0o700;
 
@@ -137,6 +140,16 @@ impl StatePaths {
         self.runtime_harness_root.join(descriptor.id)
     }
 
+    /// `~/.vegasroom/runtime/harness/base` — build context for the shared base image.
+    pub fn runtime_base_dir(&self) -> PathBuf {
+        self.runtime_harness_root.join(BASE_RUNTIME_DIR)
+    }
+
+    /// Generated Dockerfile for the shared base image (foundation + environment profile).
+    pub fn runtime_base_dockerfile(&self) -> PathBuf {
+        self.runtime_base_dir().join("Dockerfile")
+    }
+
     /// Managed Dockerfile location for a harness, relative to the compose project dir.
     pub fn runtime_dockerfile(&self, descriptor: &HarnessDescriptor) -> PathBuf {
         self.runtime_root.join(descriptor.dockerfile_path)
@@ -153,7 +166,7 @@ impl StatePaths {
     }
 
     fn runtime_harness_dirs(&self) -> Vec<PathBuf> {
-        let mut dirs = vec![self.runtime_harness_root.clone()];
+        let mut dirs = vec![self.runtime_harness_root.clone(), self.runtime_base_dir()];
         dirs.extend(
             harness::HARNESSES
                 .iter()
@@ -194,6 +207,7 @@ impl StatePaths {
             self.config_yaml.clone(),
             self.known_hosts.clone(),
             self.runtime_compose_yaml.clone(),
+            self.runtime_base_dockerfile(),
         ];
         files.extend(
             harness::HARNESSES
@@ -510,6 +524,22 @@ mod tests {
             state.runtime_dockerfile(pi),
             state.runtime_root.join("harness/pi/Dockerfile")
         );
+    }
+
+    #[test]
+    fn base_runtime_paths_do_not_collide_with_harness_ids() {
+        let state = temp_state("base-layout");
+        assert_eq!(
+            state.runtime_base_dockerfile(),
+            state.runtime_root.join("harness/base/Dockerfile")
+        );
+        for descriptor in harness::HARNESSES {
+            assert_ne!(descriptor.id, BASE_RUNTIME_DIR);
+        }
+        assert!(state.required_dirs().contains(&state.runtime_base_dir()));
+        assert!(state
+            .private_files()
+            .contains(&state.runtime_base_dockerfile()));
     }
 
     #[test]

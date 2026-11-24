@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, fs, path::PathBuf, process::Stdio};
 use anyhow::{bail, Context, Result};
 
 use crate::{
-    atomic_write,
+    assets, atomic_write,
     config::{
         normalized_apt_packages, normalized_rust_components, normalized_rust_toolchain,
         normalized_typescript_packages, Config,
@@ -247,6 +247,27 @@ ENV DEBIAN_FRONTEND=noninteractive
 "#,
         base_image = base_image(config, descriptor),
     );
+    contents.push_str(&environment_sections(config, descriptor.container_home));
+    contents
+}
+
+/// Full Dockerfile for the shared base image: the embedded foundation followed by
+/// the configured `environment:` profile. Harness images build `FROM` this.
+pub(crate) fn base_dockerfile_contents(config: &Config) -> String {
+    let mut contents = assets::MANAGED_BASE_DOCKERFILE.to_owned();
+    let sections = environment_sections(config, harness::CONTAINER_HOME);
+    if !sections.is_empty() {
+        contents.push_str(
+            "\n# --- environment profile (generated from config.yaml `environment:`) ---\n",
+        );
+        contents.push_str(&sections);
+    }
+    contents
+}
+
+/// Dockerfile instructions for the configured environment profile. Empty when nothing is enabled.
+fn environment_sections(config: &Config, container_home: &str) -> String {
+    let mut contents = String::new();
 
     let apt_packages = build_apt_packages(config);
     if !apt_packages.is_empty() {
@@ -271,7 +292,7 @@ RUN apt-get update \
             r#"
 ENV PIP_CACHE_DIR={container_home}/.cache/pip
 "#,
-            container_home = descriptor.container_home,
+            container_home = container_home,
         ));
     }
 
@@ -282,7 +303,7 @@ ENV GOCACHE={container_home}/.cache/go-build \
     GOMODCACHE={container_home}/.cache/go-mod \
     PATH=/usr/local/go/bin:${{PATH}}
 "#,
-            container_home = descriptor.container_home,
+            container_home = container_home,
         ));
     }
 
@@ -305,7 +326,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
     | CARGO_HOME=/usr/local/cargo sh -s -- -y --no-modify-path --profile minimal --default-toolchain {toolchain}
 "#,
-            container_home = descriptor.container_home,
+            container_home = container_home,
             toolchain = rust_toolchain(config),
         ));
 
@@ -413,5 +434,79 @@ mod tests {
             derived_image_tag("localhost:5000/vegasroom/pi@sha256:abc123"),
             "localhost:5000/vegasroom/pi:env"
         );
+    }
+
+    fn base_config() -> Config {
+        let mut config = Config::default();
+        config.environment.apt.packages = vec!["jq".to_owned()];
+        config.environment.python.enabled = true;
+        config.environment.typescript.enabled = true;
+        config.environment.rust.enabled = true;
+        config
+    }
+
+    #[test]
+    fn base_dockerfile_without_profile_is_just_the_foundation() {
+        let contents = base_dockerfile_contents(&Config::default());
+        assert_eq!(contents, assets::MANAGED_BASE_DOCKERFILE);
+        assert!(contents.contains("FROM node:24-bookworm-slim"));
+        assert!(contents.contains("ln -s /home/agent/.ssh /root/.ssh"));
+        assert!(contents.contains("WORKDIR /workspace"));
+    }
+
+    #[test]
+    fn base_dockerfile_appends_profile_after_foundation() {
+        let contents = base_dockerfile_contents(&base_config());
+        let foundation_end = contents.find("WORKDIR /workspace").unwrap();
+        let profile = contents.find("--- environment profile").unwrap();
+
+        assert!(contents.starts_with(assets::MANAGED_BASE_DOCKERFILE));
+        assert!(foundation_end < profile);
+        for expected in [
+            "      jq \\",
+            "      python3 \\",
+            "PIP_CACHE_DIR=/home/agent/.cache/pip",
+            "npm install -g --ignore-scripts ts-node typescript",
+            "sh.rustup.rs",
+            "CARGO_HOME=/home/agent/.cargo",
+        ] {
+            let at = contents
+                .find(expected)
+                .unwrap_or_else(|| panic!("missing {expected}"));
+            assert!(at > profile, "{expected} should be in the profile section");
+        }
+        let from_lines = contents
+            .lines()
+            .filter(|line| line.starts_with("FROM "))
+            .count();
+        assert_eq!(from_lines, 1);
+    }
+
+    #[test]
+    fn base_dockerfile_contains_nothing_harness_specific() {
+        let contents = base_dockerfile_contents(&base_config());
+        for forbidden in [
+            "pi-coding-agent",
+            "claude-code",
+            ".pi/",
+            "CLAUDE_CONFIG_DIR",
+            "npm-global",
+            "CMD",
+        ] {
+            assert!(
+                !contents.contains(forbidden),
+                "base must not contain {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn harness_env_dockerfile_still_layers_profile_on_harness_image() {
+        // Unchanged until M3.3 removes the per-harness -env layer.
+        let config = base_config();
+        let contents = dockerfile_contents(&config, &harness::PI);
+        assert!(contents.starts_with("FROM vegasroom/pi:latest\n"));
+        assert!(contents.contains("sh.rustup.rs"));
+        assert!(!contents.contains("--- environment profile"));
     }
 }

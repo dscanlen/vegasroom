@@ -1,5 +1,7 @@
 use crate::harness::{self, HarnessDescriptor};
 
+/// Shared base foundation; the environment profile is appended at build time.
+pub const MANAGED_BASE_DOCKERFILE: &str = include_str!("../harness/base/Dockerfile");
 pub const MANAGED_PI_DOCKERFILE: &str = include_str!("../harness/pi/Dockerfile");
 pub const MANAGED_CLAUDE_DOCKERFILE: &str = include_str!("../harness/claude/Dockerfile");
 

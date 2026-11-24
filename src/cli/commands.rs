@@ -17,6 +17,7 @@ pub(super) fn init(build: bool) -> Result<i32> {
 
     let config = Config::load_with(&state)?;
     docker::write_runtime_compose_yaml(&config, &state)?;
+    docker::write_base_dockerfile(&config, &state)?;
 
     if build {
         config.validate_semantics()?;

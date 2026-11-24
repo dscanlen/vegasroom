@@ -35,6 +35,21 @@ pub fn write_runtime_compose_yaml(config: &Config, state: &StatePaths) -> Result
     })
 }
 
+/// Write the generated shared base Dockerfile (foundation + environment profile).
+pub fn write_base_dockerfile(config: &Config, state: &StatePaths) -> Result<()> {
+    let path = state.runtime_base_dockerfile();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create base runtime directory: {}",
+                display_path(parent)
+            )
+        })?;
+    }
+    atomic_write::write_file(&path, environment::base_dockerfile_contents(config))
+        .with_context(|| format!("failed to write base Dockerfile: {}", display_path(&path)))
+}
+
 /// Build a harness base image, then its environment-layered image if customised.
 pub fn build_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
     build_harness_image(config, descriptor)?;

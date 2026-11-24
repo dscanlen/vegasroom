@@ -34,6 +34,7 @@ ui:
   color: auto
 
 environment:
+  base_image: vegasroom/base:latest
   apt:
     packages: []
   rust:
@@ -152,8 +153,12 @@ pub struct UiConfig {
     pub color: ColorMode,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnvironmentConfig {
+    /// Tag `vr init --build` gives the shared base image every harness builds on.
+    #[serde(default = "default_base_image")]
+    pub base_image: String,
+
     #[serde(default)]
     pub apt: AptEnvironmentConfig,
 
@@ -534,6 +539,25 @@ fn default_rust_components() -> Vec<String> {
     vec!["rustfmt".to_owned(), "clippy".to_owned()]
 }
 
+impl Default for EnvironmentConfig {
+    fn default() -> Self {
+        Self {
+            base_image: default_base_image(),
+            apt: AptEnvironmentConfig::default(),
+            rust: RustEnvironmentConfig::default(),
+            python: PythonEnvironmentConfig::default(),
+            go: GoEnvironmentConfig::default(),
+            typescript: TypeScriptEnvironmentConfig::default(),
+        }
+    }
+}
+
+pub const DEFAULT_BASE_IMAGE: &str = "vegasroom/base:latest";
+
+fn default_base_image() -> String {
+    DEFAULT_BASE_IMAGE.to_owned()
+}
+
 impl Default for RustEnvironmentConfig {
     fn default() -> Self {
         Self {
@@ -558,6 +582,7 @@ impl Default for TypeScriptEnvironmentConfig {
 }
 
 fn validate_environment_config(environment: &EnvironmentConfig) -> Result<()> {
+    validate_docker_reference("environment.base_image", &environment.base_image)?;
     for package in normalized_apt_packages(environment) {
         if !is_safe_apt_package_name(&package) {
             bail!(
@@ -739,6 +764,22 @@ mod tests {
         assert_eq!(pi.command, harness::PI.default_command);
         assert_eq!(pi.build_network, "host");
         assert!(!pi.read_only_workspace);
+    }
+
+    #[test]
+    fn environment_base_image_defaults_and_validates() {
+        let config = Config::default();
+        assert_eq!(config.environment.base_image, "vegasroom/base:latest");
+
+        let existing: Config =
+            serde_yaml::from_str("environment:\n  python:\n    enabled: true\n").unwrap();
+        assert_eq!(existing.environment.base_image, DEFAULT_BASE_IMAGE);
+        assert!(existing.environment.python.enabled);
+
+        let mut bad = Config::default();
+        bad.environment.base_image = "bad image".to_owned();
+        let err = bad.validate_semantics().unwrap_err();
+        assert!(err.to_string().contains("environment.base_image"));
     }
 
     #[test]

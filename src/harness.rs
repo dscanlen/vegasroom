@@ -51,6 +51,9 @@ impl HarnessDescriptor {
     }
 }
 
+/// Home directory of the room user in every harness image (provided by the base image).
+pub const CONTAINER_HOME: &str = "/home/agent";
+
 /// Toolchain and cache environment shared by every harness container, so the
 /// environment image layering (rust/python/go/ts) behaves the same in each room.
 pub const TOOLCHAIN_ENV: &[(&str, &str)] = &[
@@ -80,7 +83,7 @@ pub const PI: HarnessDescriptor = HarnessDescriptor {
     versioned_image: PI_VERSIONED_IMAGE,
     default_command: "pi",
     dockerfile_path: "harness/pi/Dockerfile",
-    container_home: "/home/agent",
+    container_home: CONTAINER_HOME,
     state_dirs: &[
         HarnessStateDir {
             name: PI_CONFIG_DIR,
@@ -133,7 +136,7 @@ pub const CLAUDE: HarnessDescriptor = HarnessDescriptor {
     versioned_image: CLAUDE_VERSIONED_IMAGE,
     default_command: "claude",
     dockerfile_path: "harness/claude/Dockerfile",
-    container_home: "/home/agent",
+    container_home: CONTAINER_HOME,
     state_dirs: &[HarnessStateDir {
         name: CLAUDE_CONFIG_STATE_DIR,
         container_path: "/home/agent/.claude",
@@ -248,6 +251,17 @@ mod tests {
     fn compose_var_uses_uppercased_harness_id() {
         assert_eq!(PI.compose_var("IMAGE"), "VR_PI_IMAGE");
         assert_eq!(PI.compose_var("NETWORK_MODE"), "VR_PI_NETWORK_MODE");
+    }
+
+    #[test]
+    fn every_harness_uses_the_base_image_container_home() {
+        for descriptor in HARNESSES {
+            assert_eq!(
+                descriptor.container_home, CONTAINER_HOME,
+                "{}",
+                descriptor.id
+            );
+        }
     }
 
     #[test]
