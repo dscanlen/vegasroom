@@ -241,31 +241,113 @@ pub struct SelectedSshKey {
     pub git_user_email: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// Per-harness instance config, keyed by harness id in YAML (`harness.<id>`).
+///
+/// Deserialised through [`RawHarnessConfig`] so that every missing field is
+/// filled from the matching [`harness::HarnessDescriptor`], never from another
+/// harness's defaults.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "RawHarnessConfig")]
 pub struct HarnessConfig {
-    #[serde(default)]
     pub pi: HarnessInstanceConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct HarnessInstanceConfig {
-    #[serde(default = "default_pi_image")]
     pub image: String,
-
-    #[serde(default = "default_pi_command")]
     pub command: String,
-
-    #[serde(default = "default_network")]
     pub network: String,
-
-    #[serde(default = "default_network")]
     pub build_network: String,
-
-    #[serde(default)]
     pub read_only_workspace: bool,
-
-    #[serde(default)]
     pub read_only_rootfs: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawHarnessConfig {
+    #[serde(default)]
+    pi: RawHarnessInstanceConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawHarnessInstanceConfig {
+    #[serde(default)]
+    image: Option<String>,
+    #[serde(default)]
+    command: Option<String>,
+    #[serde(default)]
+    network: Option<String>,
+    #[serde(default)]
+    build_network: Option<String>,
+    #[serde(default)]
+    read_only_workspace: Option<bool>,
+    #[serde(default)]
+    read_only_rootfs: Option<bool>,
+}
+
+impl RawHarnessInstanceConfig {
+    fn resolve(self, descriptor: &harness::HarnessDescriptor) -> HarnessInstanceConfig {
+        let defaults = HarnessInstanceConfig::defaults_for(descriptor);
+        HarnessInstanceConfig {
+            image: self.image.unwrap_or(defaults.image),
+            command: self.command.unwrap_or(defaults.command),
+            network: self.network.unwrap_or(defaults.network),
+            build_network: self.build_network.unwrap_or(defaults.build_network),
+            read_only_workspace: self
+                .read_only_workspace
+                .unwrap_or(defaults.read_only_workspace),
+            read_only_rootfs: self.read_only_rootfs.unwrap_or(defaults.read_only_rootfs),
+        }
+    }
+}
+
+impl From<RawHarnessConfig> for HarnessConfig {
+    fn from(raw: RawHarnessConfig) -> Self {
+        Self {
+            pi: raw.pi.resolve(&harness::PI),
+        }
+    }
+}
+
+impl Default for HarnessConfig {
+    fn default() -> Self {
+        RawHarnessConfig::default().into()
+    }
+}
+
+impl HarnessConfig {
+    /// Instance config for a registered harness. Returns `None` for an id with no config field.
+    pub fn try_instance(
+        &self,
+        descriptor: &harness::HarnessDescriptor,
+    ) -> Option<&HarnessInstanceConfig> {
+        match descriptor.id {
+            id if id == harness::PI.id => Some(&self.pi),
+            _ => None,
+        }
+    }
+
+    /// Instance config for a registered harness.
+    ///
+    /// # Panics
+    /// If the descriptor has no matching config field. Every entry in
+    /// `harness::HARNESSES` must have one; this is enforced by tests.
+    pub fn instance(&self, descriptor: &harness::HarnessDescriptor) -> &HarnessInstanceConfig {
+        self.try_instance(descriptor)
+            .unwrap_or_else(|| panic!("no harness config field for harness id `{}`", descriptor.id))
+    }
+}
+
+impl HarnessInstanceConfig {
+    pub fn defaults_for(descriptor: &harness::HarnessDescriptor) -> Self {
+        Self {
+            image: descriptor.default_image.to_owned(),
+            command: descriptor.default_command.to_owned(),
+            network: default_network(),
+            build_network: default_network(),
+            read_only_workspace: false,
+            read_only_rootfs: false,
+        }
+    }
 }
 
 pub struct HarnessRuntimeConfig<'a> {
@@ -278,16 +360,10 @@ impl Config {
         &'a self,
         descriptor: &harness::HarnessDescriptor,
     ) -> HarnessRuntimeConfig<'a> {
-        if descriptor.id == harness::PI.id {
-            HarnessRuntimeConfig {
-                image: &self.harness.pi.image,
-                command: &self.harness.pi.command,
-            }
-        } else {
-            HarnessRuntimeConfig {
-                image: descriptor.default_image,
-                command: descriptor.default_command,
-            }
+        let instance = self.harness.instance(descriptor);
+        HarnessRuntimeConfig {
+            image: &instance.image,
+            command: &instance.command,
         }
     }
 
@@ -326,11 +402,9 @@ impl Config {
         validate_non_empty("paths.workspace", &self.paths.workspace)?;
         validate_non_empty("docker.context", &self.docker.context)?;
         validate_non_empty("docker.compose_file", &self.docker.compose_file)?;
-        validate_docker_reference("harness.pi.image", &self.harness.pi.image)?;
-        validate_non_empty("harness.pi.command", &self.harness.pi.command)?;
-        validate_shell_free_value("harness.pi.command", &self.harness.pi.command)?;
-        validate_docker_network("harness.pi.network", &self.harness.pi.network)?;
-        validate_docker_network("harness.pi.build_network", &self.harness.pi.build_network)?;
+        for descriptor in harness::HARNESSES {
+            validate_harness_instance(descriptor.id, self.harness.instance(descriptor))?;
+        }
         validate_environment_config(&self.environment)?;
         Ok(())
     }
@@ -420,19 +494,6 @@ impl Default for GitConfig {
     }
 }
 
-impl Default for HarnessInstanceConfig {
-    fn default() -> Self {
-        Self {
-            image: default_pi_image(),
-            command: default_pi_command(),
-            network: default_network(),
-            build_network: default_network(),
-            read_only_workspace: false,
-            read_only_rootfs: false,
-        }
-    }
-}
-
 fn default_workspace() -> String {
     "~/.vegasroom/workspace".to_owned()
 }
@@ -447,14 +508,6 @@ fn default_compose_file() -> String {
 
 fn default_true() -> bool {
     true
-}
-
-fn default_pi_image() -> String {
-    harness::PI.default_image.to_owned()
-}
-
-fn default_pi_command() -> String {
-    harness::PI.default_command.to_owned()
 }
 
 fn default_network() -> String {
@@ -569,6 +622,18 @@ fn normalized_unique(values: &[String]) -> Vec<String> {
     values
 }
 
+fn validate_harness_instance(id: &str, instance: &HarnessInstanceConfig) -> Result<()> {
+    validate_docker_reference(&format!("harness.{id}.image"), &instance.image)?;
+    validate_non_empty(&format!("harness.{id}.command"), &instance.command)?;
+    validate_shell_free_value(&format!("harness.{id}.command"), &instance.command)?;
+    validate_docker_network(&format!("harness.{id}.network"), &instance.network)?;
+    validate_docker_network(
+        &format!("harness.{id}.build_network"),
+        &instance.build_network,
+    )?;
+    Ok(())
+}
+
 fn validate_non_empty(field: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
         bail!("{field} must not be empty");
@@ -635,6 +700,65 @@ fn is_safe_npm_package_name(package: &str) -> bool {
 mod tests {
     use super::*;
     use crate::test_util::unique_temp_dir;
+
+    #[test]
+    fn every_registered_harness_has_an_instance_config() {
+        let config = Config::default();
+        for descriptor in harness::HARNESSES {
+            let instance = config
+                .harness
+                .try_instance(descriptor)
+                .unwrap_or_else(|| panic!("missing harness.{} config field", descriptor.id));
+            assert_eq!(instance, &HarnessInstanceConfig::defaults_for(descriptor));
+        }
+    }
+
+    #[test]
+    fn partial_harness_block_fills_missing_fields_from_its_descriptor() {
+        let config: Config = serde_yaml::from_str(
+            "harness:\n  pi:\n    network: bridge\n    read_only_rootfs: true\n",
+        )
+        .unwrap();
+
+        let pi = config.harness.instance(&harness::PI);
+        assert_eq!(pi.network, "bridge");
+        assert!(pi.read_only_rootfs);
+        assert_eq!(pi.image, harness::PI.default_image);
+        assert_eq!(pi.command, harness::PI.default_command);
+        assert_eq!(pi.build_network, "host");
+        assert!(!pi.read_only_workspace);
+    }
+
+    #[test]
+    fn missing_harness_section_uses_descriptor_defaults() {
+        let config: Config = serde_yaml::from_str("ui:\n  color: auto\n").unwrap();
+        assert_eq!(
+            config.harness.instance(&harness::PI),
+            &HarnessInstanceConfig::defaults_for(&harness::PI)
+        );
+    }
+
+    #[test]
+    fn harness_config_round_trips_through_yaml() {
+        let mut config = Config::default();
+        config.harness.pi.image = "example/pi:rt".to_owned();
+        config.harness.pi.read_only_workspace = true;
+
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let reparsed: Config = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(reparsed.harness.pi, config.harness.pi);
+    }
+
+    #[test]
+    fn runtime_config_reads_from_descriptor_instance() {
+        let mut config = Config::default();
+        config.harness.pi.image = "example/pi:rc".to_owned();
+        config.harness.pi.command = "pi-custom".to_owned();
+
+        let runtime = config.harness_runtime_config(&harness::PI);
+        assert_eq!(runtime.image, "example/pi:rc");
+        assert_eq!(runtime.command, "pi-custom");
+    }
 
     #[test]
     fn built_in_default_config_parses() {
@@ -1004,5 +1128,4 @@ harness:
 
         assert_eq!(reparsed.ssh.selected_keys, config.ssh.selected_keys);
     }
-
 }
