@@ -268,7 +268,7 @@ pub(super) fn check_harness_auth_state(
         status: Status::Warn,
         name,
         detail: format!(
-            "{} not found. Run `vr {}`, then use `/login`{env_hint}.",
+            "{} not found. Run `vr {}` and log in (first-launch prompt, or `/login`){env_hint}.",
             display_path(path),
             descriptor.id,
         ),
@@ -366,7 +366,9 @@ mod tests {
 
         let check = check_harness_auth_state(&missing, &harness::CLAUDE, |_| false);
         assert_eq!(check.status, Status::Warn);
-        assert!(check.detail.contains("Run `vr claude`, then use `/login`"));
+        assert!(check
+            .detail
+            .contains("Run `vr claude` and log in (first-launch prompt, or `/login`)"));
         assert!(check
             .detail
             .contains("ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN"));
@@ -380,6 +382,8 @@ mod tests {
         let check = check_harness_auth_state(&missing, &harness::PI, |_| true);
         assert_eq!(check.status, Status::Warn);
         assert_eq!(check.name, "Auth state");
-        assert!(check.detail.contains("Run `vr pi`, then use `/login`."));
+        assert!(check
+            .detail
+            .contains("Run `vr pi` and log in (first-launch prompt, or `/login`)."));
     }
 }

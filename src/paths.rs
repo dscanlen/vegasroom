@@ -231,7 +231,7 @@ impl StatePaths {
         println!("Vegasroom launches AI agent harnesses inside ephemeral Docker containers.\n");
         println!("Only configured mounts persist. Your workspace and harness config are mounted read-write.\n");
         println!("Your SSH private keys are not copied into the container, but the forwarded ssh-agent socket can authorize SSH operations while mounted.\n");
-        println!("Provider login state persists inside each harness's state mount (~/.vegasroom/harness/<id>) after you log in from the room, e.g. Pi /login or Claude Code /login.\n");
+        println!("Provider login state persists inside each harness's state mount (~/.vegasroom/harness/<id>) after you log in from the room (Pi /login, or Claude Code's first-launch browser login).\n");
         println!("Claude Code also receives ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN from your shell when they are set.\n");
         let names: Vec<&str> = harness::HARNESSES.iter().map(|d| d.display_name).collect();
         println!(

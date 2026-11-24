@@ -162,7 +162,12 @@ vr shell --help
 
 Either works; Vegasroom never writes your key into its files:
 
-- **Log in inside the room.** Run `vr claude`, then `/login`. Credentials are saved in `~/.vegasroom/harness/claude/config/.credentials.json` and reused by every later Claude Code room.
+- **Log in through the browser inside the room.** The first `vr claude` launch runs Claude Code's onboarding: pick a theme, then a login method (Claude subscription or Anthropic Console). The room cannot open a browser, so Claude Code shows the sign-in URL instead:
+  1. Press `c` to copy the URL. This uses the OSC 52 terminal clipboard, which works from inside the container in kitty, WezTerm, Alacritty, foot, iTerm2, Windows Terminal, and tmux with `set-clipboard on`. In terminals without OSC 52 (e.g. GNOME Terminal), select the URL instead and remove any line breaks.
+  2. Open it in your host browser and approve.
+  3. Paste the code the page shows back at the `Paste code here` prompt.
+
+  The callback goes through `platform.claude.com`, not `localhost`, so this works with both `host` and `bridge` networking. Credentials are saved in `~/.vegasroom/harness/claude/config/.credentials.json` and reused by every later Claude Code room; onboarding is only marked complete after a successful login, so an abandoned first run starts over next time. Use `/login` later to switch accounts.
 - **Use an environment variable.** If `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) is set in the shell where you run `vr`, it is forwarded into the room. If you keep an API key exported for other tools, Claude Code will see it and may ask whether to use it instead of your `/login` account.
 
 `vr doctor` reports a Claude Code login as ready when either is present.
