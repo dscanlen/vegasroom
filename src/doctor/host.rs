@@ -1,7 +1,12 @@
 use std::{env, fs, path::Path};
 
 use super::{check_bool, command_available, Check, Status};
-use crate::{config::Config, docker, ssh};
+use crate::{
+    config::{Config, HarnessInstanceConfig},
+    docker,
+    harness::HarnessDescriptor,
+    ssh,
+};
 
 pub(super) fn check_ssh_configuration(
     config: &Config,
@@ -11,27 +16,27 @@ pub(super) fn check_ssh_configuration(
 
     checks.push(Check {
         status: Status::Pass,
-        name: "SSH mode",
+        name: "SSH mode".into(),
         detail: format!("configured mode is {:?}", config.ssh.mode),
     });
 
     if config.ssh.selected_keys.is_empty() {
         checks.push(Check {
             status: Status::Warn,
-            name: "Managed SSH keys",
+            name: "Managed SSH keys".into(),
             detail: "no managed SSH keys configured. Run: vr config".to_owned(),
         });
     } else {
         checks.push(Check {
             status: Status::Pass,
-            name: "Managed SSH keys",
+            name: "Managed SSH keys".into(),
             detail: format!("{} key(s) configured", config.ssh.selected_keys.len()),
         });
 
         for key_check in ssh::selected_key_checks(config) {
             checks.push(Check {
                 status: selected_key_check_status(key_check.status),
-                name: "Selected SSH key",
+                name: "Selected SSH key".into(),
                 detail: key_check.detail,
             });
         }
@@ -50,7 +55,7 @@ pub(super) fn check_ssh_configuration(
         } else {
             Status::Warn
         },
-        name: "SSH next launch",
+        name: "SSH next launch".into(),
         detail: next_launch.to_owned(),
     });
 
@@ -85,17 +90,17 @@ pub(super) fn check_config_git_section(path: &Path) -> Check {
     match fs::read_to_string(path) {
         Ok(contents) if contents.lines().any(|line| line.trim_end() == "git:") => Check {
             status: Status::Pass,
-            name: "Config Git section",
+            name: "Config Git section".into(),
             detail: "~/.vegasroom/config.yaml contains a git section".to_owned(),
         },
         Ok(_) => Check {
             status: Status::Warn,
-            name: "Config Git section",
+            name: "Config Git section".into(),
             detail: "missing from ~/.vegasroom/config.yaml; run `vr init` to add git.inherit_host/user_name/user_email defaults".to_owned(),
         },
         Err(err) => Check {
             status: Status::Warn,
-            name: "Config Git section",
+            name: "Config Git section".into(),
             detail: format!("could not read config for git section check: {err:#}"),
         },
     }
@@ -104,7 +109,7 @@ pub(super) fn check_config_git_section(path: &Path) -> Check {
 pub(super) fn check_workspace_risky_mount_policy(config: &Config) -> Check {
     Check {
         status: Status::Pass,
-        name: "Workspace risky mount policy",
+        name: "Workspace risky mount policy".into(),
         detail: format!(
             "workspace.risky_mount_policy is {:?}",
             config.workspace.risky_mount_policy
@@ -112,63 +117,62 @@ pub(super) fn check_workspace_risky_mount_policy(config: &Config) -> Check {
     }
 }
 
-pub(super) fn check_network_mode(config: &Config) -> Check {
-    let detail = if config.harness.pi.network == "host" {
+pub(super) fn check_network_mode(
+    descriptor: &HarnessDescriptor,
+    instance: &HarnessInstanceConfig,
+) -> Check {
+    let detail = if instance.network == "host" {
         format!(
-            "runtime network is host and build network is {}; host runtime networking is the proven MVP default but not a network isolation model",
-            config.harness.pi.build_network
+            "runtime network is host and build network is {}; host runtime networking is the proven default but not a network isolation model",
+            instance.build_network
         )
     } else {
         format!(
-            "runtime network is {} and build network is {}; validate Docker build, internet, Git-over-SSH, and Pi /login before relying on this mode; bridge may break localhost OAuth callbacks",
-            config.harness.pi.network, config.harness.pi.build_network
+            "runtime network is {} and build network is {}; validate Docker build, internet, Git-over-SSH, and {} /login before relying on this mode; bridge may break localhost OAuth callbacks",
+            instance.network, instance.build_network, descriptor.display_name
         )
     };
 
     Check {
         status: Status::Pass,
-        name: "Network mode",
+        name: "Network mode".into(),
         detail,
     }
 }
 
-pub(super) fn check_read_only_rootfs_mode(config: &Config) -> Check {
-    if config.harness.pi.read_only_rootfs {
-        Check {
-            status: Status::Pass,
-            name: "Read-only rootfs mode",
-            detail:
-                "harness.pi.read_only_rootfs is true; the container root filesystem will be mounted read-only with tmpfs scratch paths"
-                    .to_owned(),
-        }
-    } else {
-        Check {
-            status: Status::Pass,
-            name: "Read-only rootfs mode",
-            detail:
-                "harness.pi.read_only_rootfs is false; the container root filesystem remains writable"
-                    .to_owned(),
-        }
+pub(super) fn check_read_only_rootfs_mode(
+    descriptor: &HarnessDescriptor,
+    instance: &HarnessInstanceConfig,
+) -> Check {
+    let id = descriptor.id;
+    Check {
+        status: Status::Pass,
+        name: "Read-only rootfs mode".into(),
+        detail: if instance.read_only_rootfs {
+            format!("harness.{id}.read_only_rootfs is true; the container root filesystem will be mounted read-only with tmpfs scratch paths")
+        } else {
+            format!("harness.{id}.read_only_rootfs is false; the container root filesystem remains writable")
+        },
     }
 }
 
-pub(super) fn check_workspace_mount_mode(config: &Config) -> Check {
-    if config.harness.pi.read_only_workspace {
-        Check {
-            status: Status::Pass,
-            name: "Workspace mount mode",
-            detail:
-                "harness.pi.read_only_workspace is true; /workspace should be mounted read-only"
-                    .to_owned(),
-        }
-    } else {
-        Check {
-            status: Status::Pass,
-            name: "Workspace mount mode",
-            detail:
-                "harness.pi.read_only_workspace is false; /workspace will be mounted read-write"
-                    .to_owned(),
-        }
+pub(super) fn check_workspace_mount_mode(
+    descriptor: &HarnessDescriptor,
+    instance: &HarnessInstanceConfig,
+) -> Check {
+    let id = descriptor.id;
+    Check {
+        status: Status::Pass,
+        name: "Workspace mount mode".into(),
+        detail: if instance.read_only_workspace {
+            format!(
+                "harness.{id}.read_only_workspace is true; /workspace should be mounted read-only"
+            )
+        } else {
+            format!(
+                "harness.{id}.read_only_workspace is false; /workspace will be mounted read-write"
+            )
+        },
     }
 }
 
@@ -176,7 +180,7 @@ pub(super) fn check_git_identity(config: &Config) -> Check {
     match docker::effective_git_identity(config) {
         Some(identity) => Check {
             status: Status::Pass,
-            name: "Git identity",
+            name: "Git identity".into(),
             detail: format!(
                 "{} <{}> from {}; will be injected into the room",
                 identity.name, identity.email, identity.source
@@ -184,7 +188,7 @@ pub(super) fn check_git_identity(config: &Config) -> Check {
         },
         None => Check {
             status: Status::Warn,
-            name: "Git identity",
+            name: "Git identity".into(),
             detail: "no Git user.name/user.email configured or inherited; commits may fall back to container root".to_owned(),
         },
     }
@@ -194,18 +198,18 @@ pub(super) fn check_host_ssh_agent(agent: &ssh::HostSshAgent) -> Check {
     match agent {
         ssh::HostSshAgent::Ready(_) => Check {
             status: Status::Pass,
-            name: "Host SSH agent socket",
+            name: "Host SSH agent socket".into(),
             detail: agent.status_detail(),
         },
         ssh::HostSshAgent::MissingEnv => Check {
             status: Status::Warn,
-            name: "Host SSH agent socket",
+            name: "Host SSH agent socket".into(),
             detail: "SSH_AUTH_SOCK is not set. Git over SSH may not work inside the room."
                 .to_owned(),
         },
         ssh::HostSshAgent::MissingPath(_) | ssh::HostSshAgent::NotSocket(_) => Check {
             status: Status::Warn,
-            name: "Host SSH agent socket",
+            name: "Host SSH agent socket".into(),
             detail: agent.status_detail(),
         },
     }
@@ -215,12 +219,12 @@ pub(super) fn check_ssh_auth_sock_env() -> Check {
     match env::var("SSH_AUTH_SOCK") {
         Ok(value) if !value.trim().is_empty() => Check {
             status: Status::Pass,
-            name: "SSH_AUTH_SOCK env",
+            name: "SSH_AUTH_SOCK env".into(),
             detail: format!("SSH_AUTH_SOCK is set: {value}"),
         },
         _ => Check {
             status: Status::Warn,
-            name: "SSH_AUTH_SOCK env",
+            name: "SSH_AUTH_SOCK env".into(),
             detail: "No SSH agent detected. Git over SSH may not work inside the room.".to_owned(),
         },
     }

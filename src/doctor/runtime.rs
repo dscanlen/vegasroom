@@ -117,7 +117,7 @@ pub(super) fn check_compose_runtime_settings(compose_file: &Path) -> Vec<Check> 
 
     checks.push(Check {
         status: Status::Pass,
-        name: "SSH agent mount model",
+        name: "SSH agent mount model".into(),
         detail: "ssh-agent socket mount is generated dynamically when SSH_AUTH_SOCK is usable"
             .to_owned(),
     });

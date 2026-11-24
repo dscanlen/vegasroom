@@ -201,6 +201,7 @@ mod tests {
         auth_state_relative_path: "config/creds.json",
         extra_env: &[("ALT_CONFIG_DIR", "/home/agent/.alt")],
         passthrough_env: &["ALT_API_KEY", "ALT_TOKEN"],
+        connectivity_url: "https://alt.example",
     };
 
     #[test]

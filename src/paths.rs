@@ -16,13 +16,6 @@ use crate::{
 pub struct StatePaths {
     pub root: PathBuf,
     pub harness_root: PathBuf,
-    pub pi_root: PathBuf,
-    pub pi_config: PathBuf,
-    pub pi_extensions: PathBuf,
-    pub pi_skills: PathBuf,
-    pub pi_sessions: PathBuf,
-    pub pi_npm_global: PathBuf,
-    pub pi_auth_json: PathBuf,
     pub workspace: PathBuf,
     pub environment_root: PathBuf,
     pub cargo_home: PathBuf,
@@ -57,13 +50,6 @@ impl StatePaths {
 
     pub fn from_root(root: PathBuf) -> Self {
         let harness_root = root.join("harness");
-        let pi_root = harness_root.join(harness::PI.id);
-        let pi_config = pi_root.join(harness::PI_CONFIG_DIR);
-        let pi_extensions = pi_root.join(harness::PI_EXTENSIONS_DIR);
-        let pi_skills = pi_root.join(harness::PI_SKILLS_DIR);
-        let pi_sessions = pi_root.join(harness::PI_SESSIONS_DIR);
-        let pi_npm_global = pi_root.join(harness::PI_NPM_GLOBAL_DIR);
-        let pi_auth_json = pi_root.join(harness::PI.auth_state_relative_path);
         let workspace = root.join("workspace");
         let environment_root = root.join("environment");
         let cargo_home = environment_root.join("cargo");
@@ -79,13 +65,6 @@ impl StatePaths {
         Self {
             root,
             harness_root,
-            pi_root,
-            pi_config,
-            pi_extensions,
-            pi_skills,
-            pi_sessions,
-            pi_npm_global,
-            pi_auth_json,
             workspace,
             environment_root,
             cargo_home,
@@ -463,7 +442,9 @@ mod tests {
         let state = temp_state("private-dirs");
 
         assert!(state.private_dirs().contains(&state.root));
-        assert!(state.private_dirs().contains(&state.pi_config));
+        assert!(state
+            .private_dirs()
+            .contains(&state.harness_state_dir(&harness::PI, harness::PI_CONFIG_DIR)));
         assert!(state.private_dirs().contains(&state.ssh_dir));
         assert!(!state.private_dirs().contains(&state.workspace));
     }
@@ -506,24 +487,49 @@ mod tests {
     }
 
     #[test]
-    fn harness_helpers_match_legacy_pi_fields() {
-        let state = temp_state("pi-aliases");
+    fn harness_helpers_resolve_expected_pi_layout() {
+        let state = temp_state("pi-layout");
         let pi = &harness::PI;
+        let pi_root = state.root.join("harness/pi");
 
-        assert_eq!(state.harness_state_root(pi), state.pi_root);
+        assert_eq!(state.harness_state_root(pi), pi_root);
         assert_eq!(
             state.harness_state_dir(pi, harness::PI_CONFIG_DIR),
-            state.pi_config
+            pi_root.join("config")
         );
         assert_eq!(
             state.harness_state_dir(pi, harness::PI_SESSIONS_DIR),
-            state.pi_sessions
+            pi_root.join("sessions")
         );
-        assert_eq!(state.harness_auth_path(pi), state.pi_auth_json);
-        assert_eq!(state.harness_auth_dir(pi), state.pi_config);
+        assert_eq!(
+            state.harness_auth_path(pi),
+            pi_root.join("config/auth.json")
+        );
+        assert_eq!(state.harness_auth_dir(pi), pi_root.join("config"));
         assert_eq!(
             state.runtime_dockerfile(pi),
             state.runtime_root.join("harness/pi/Dockerfile")
+        );
+    }
+
+    #[test]
+    fn harness_helpers_resolve_expected_claude_layout() {
+        let state = temp_state("claude-layout");
+        let claude = &harness::CLAUDE;
+        let claude_root = state.root.join("harness/claude");
+
+        assert_eq!(
+            state.harness_state_dirs(claude),
+            vec![claude_root.join("config")]
+        );
+        assert_eq!(
+            state.harness_auth_path(claude),
+            claude_root.join("config/.credentials.json")
+        );
+        assert_eq!(state.harness_auth_dir(claude), claude_root.join("config"));
+        assert_eq!(
+            state.runtime_dockerfile(claude),
+            state.runtime_root.join("harness/claude/Dockerfile")
         );
     }
 

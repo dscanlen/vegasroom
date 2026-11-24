@@ -17,6 +17,9 @@ pub struct HarnessDescriptor {
     /// Rendered as bare `KEY:` entries so Compose takes the value from the invoking shell
     /// and leaves the variable unset in the container when the host has no value.
     pub passthrough_env: &'static [&'static str],
+    /// HTTPS endpoint `vr doctor` fetches from inside the room to confirm the
+    /// harness can reach its provider (any HTTP response counts as reachable).
+    pub connectivity_url: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,6 +115,7 @@ pub const PI: HarnessDescriptor = HarnessDescriptor {
         ("BROWSER", "echo"),
     ],
     passthrough_env: &[],
+    connectivity_url: "https://pi.dev",
 };
 
 pub const CLAUDE_DEFAULT_IMAGE: &str = "vegasroom/claude:latest";
@@ -145,6 +149,7 @@ pub const CLAUDE: HarnessDescriptor = HarnessDescriptor {
         ("BROWSER", "echo"),
     ],
     passthrough_env: &["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+    connectivity_url: "https://api.anthropic.com",
 };
 
 /// All registered harnesses, in preference order. The first entry is the default.

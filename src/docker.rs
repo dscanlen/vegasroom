@@ -10,7 +10,8 @@ mod overrides;
 mod runtime_files;
 
 pub use doctor_probe::{
-    container_doctor_probe, container_ssh_doctor_probe, ContainerDoctorProbe, SshAddCheck,
+    container_doctor_probe, container_ssh_doctor_probe, path_contains_entry, ContainerDoctorProbe,
+    SshAddCheck,
 };
 pub use git_identity::{effective_git_identity, GitIdentity};
 use runtime_files::RuntimeFiles;
@@ -97,11 +98,12 @@ pub fn ensure_harness_image_exists(
     ensure_harness_image(descriptor, config)
 }
 
-pub fn image_exists(config: &Config) -> Result<bool> {
+/// Whether the image a launch of `descriptor` would run (environment-layered if customised) exists.
+pub fn image_exists(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<bool> {
     if environment::has_customization(config) {
-        environment::image_exists(config, &harness::PI)
+        environment::image_exists(config, descriptor)
     } else {
-        harness_image_exists(config, &harness::PI)
+        harness_image_exists(config, descriptor)
     }
 }
 
@@ -112,8 +114,8 @@ pub fn environment_image_stale(
     environment::image_stale(config, descriptor)
 }
 
-pub fn pi_runtime_image(config: &Config) -> String {
-    environment::runtime_image(config, &harness::PI)
+pub fn runtime_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> String {
+    environment::runtime_image(config, descriptor)
 }
 
 fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor) -> Result<()> {
@@ -318,15 +320,20 @@ fn run_compose(
 }
 
 fn compose_shell_output(config: &Config, script: &str) -> Result<Output> {
-    compose_shell_output_with_ssh(config, script, true)
+    compose_shell_output_with_ssh(config, &harness::PI, script, true)
 }
 
-fn compose_shell_output_without_ssh(config: &Config, script: &str) -> Result<Output> {
-    compose_shell_output_with_ssh(config, script, false)
+fn compose_shell_output_without_ssh(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+    script: &str,
+) -> Result<Output> {
+    compose_shell_output_with_ssh(config, descriptor, script, false)
 }
 
 fn compose_shell_output_with_ssh(
     config: &Config,
+    descriptor: &harness::HarnessDescriptor,
     script: &str,
     include_ssh_agent: bool,
 ) -> Result<Output> {
@@ -334,7 +341,7 @@ fn compose_shell_output_with_ssh(
     let workspace = workspace::default_workspace_for_compose_with_state(config, &state)?;
     let mut invocation = compose_base(
         config,
-        &harness::PI,
+        descriptor,
         Some(&workspace),
         include_ssh_agent,
         false,
@@ -343,7 +350,7 @@ fn compose_shell_output_with_ssh(
     )?;
     invocation
         .command
-        .args(["run", "--rm", harness::PI.service_name, "sh", "-c", script])
+        .args(["run", "--rm", descriptor.service_name, "sh", "-c", script])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

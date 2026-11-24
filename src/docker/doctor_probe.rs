@@ -13,20 +13,27 @@ pub struct SshAddCheck {
 
 #[derive(Debug)]
 pub struct ContainerDoctorProbe {
-    pub pi_config_writable: bool,
-    pub pi_sessions_writable: bool,
-    pub pi_npm_global_writable: bool,
-    pub npm_global_bin_on_path: bool,
+    pub state_dirs: Vec<StateDirProbe>,
     pub container_path: String,
-    pub pi_command_path: Option<String>,
+    pub command: String,
+    pub command_path: Option<String>,
+    pub command_version: Option<String>,
     pub python_available: bool,
     pub python_version: Option<String>,
     pub go_available: bool,
     pub go_version: Option<String>,
     pub typescript_available: bool,
     pub tsc_version: Option<String>,
+    pub connectivity_url: &'static str,
     pub internet_reachable: bool,
     pub git_identity: Option<GitIdentity>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StateDirProbe {
+    pub name: &'static str,
+    pub container_path: &'static str,
+    pub writable: bool,
 }
 
 #[derive(Debug)]
@@ -36,40 +43,56 @@ pub struct ContainerSshDoctorProbe {
     pub ssh_add: SshAddCheck,
 }
 
-pub fn container_doctor_probe(config: &Config) -> Result<ContainerDoctorProbe> {
-    let pi_config_path = harness::PI.required_state_dir_container_path(harness::PI_CONFIG_DIR);
-    let pi_sessions_path = harness::PI.required_state_dir_container_path(harness::PI_SESSIONS_DIR);
-    let pi_npm_global_path =
-        harness::PI.required_state_dir_container_path(harness::PI_NPM_GLOBAL_DIR);
-    let script = format!(
+/// Run the doctor probe script inside `descriptor`'s room service.
+pub fn container_doctor_probe(
+    config: &Config,
+    descriptor: &harness::HarnessDescriptor,
+) -> Result<ContainerDoctorProbe> {
+    let command = config.harness_runtime_config(descriptor).command;
+    let script = probe_script(descriptor, command);
+    let output = compose_shell_output_without_ssh(config, descriptor, &script)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        return Err(anyhow!("container doctor probe failed: {stderr}"));
+    }
+
+    Ok(parse_probe(
+        &String::from_utf8_lossy(&output.stdout),
+        descriptor,
+        command,
+    ))
+}
+
+/// `command` is config-validated as shell-free (no metacharacters/whitespace).
+fn probe_script(descriptor: &harness::HarnessDescriptor, command: &str) -> String {
+    let mut script = String::from("\nset +e\n");
+
+    for dir in descriptor.state_dirs {
+        script.push_str(&format!(
+            r#"
+tmp="{path}/.vr-doctor-write-test"
+if echo ok > "$tmp" 2>/dev/null && rm -f "$tmp"; then
+  echo 'VR_CHECK state_dir:{name}=pass'
+else
+  echo 'VR_CHECK state_dir:{name}=fail'
+fi
+"#,
+            path = dir.container_path,
+            name = dir.name,
+        ));
+    }
+
+    script.push_str(&format!(
         r#"
-set +e
-
-tmp="{pi_config_path}/.vr-m4-write-test"
-if echo m4 > "$tmp" 2>/dev/null && rm -f "$tmp"; then
-  echo 'VR_CHECK pi_config_writable=pass'
-else
-  echo 'VR_CHECK pi_config_writable=fail'
-fi
-
-tmp="{pi_sessions_path}/.vr-m4-write-test"
-if echo m4 > "$tmp" 2>/dev/null && rm -f "$tmp"; then
-  echo 'VR_CHECK pi_sessions_writable=pass'
-else
-  echo 'VR_CHECK pi_sessions_writable=fail'
-fi
-
-tmp="{pi_npm_global_path}/.vr-m4-write-test"
-if echo m4 > "$tmp" 2>/dev/null && rm -f "$tmp"; then
-  echo 'VR_CHECK pi_npm_global_writable=pass'
-else
-  echo 'VR_CHECK pi_npm_global_writable=fail'
-fi
-
 printf 'VR_PATH=%s\n' "$PATH"
 
-pi_command_path="$(command -v pi 2>/dev/null || true)"
-printf 'VR_PI_COMMAND_PATH=%s\n' "$pi_command_path"
+command_path="$(command -v {command} 2>/dev/null || true)"
+printf 'VR_COMMAND_PATH=%s\n' "$command_path"
+if test -n "$command_path"; then
+  command_version="$(timeout 20 {command} --version </dev/null 2>/dev/null | head -n 1)"
+  printf 'VR_COMMAND_VERSION=%s\n' "$command_version"
+fi
 
 if command -v python >/dev/null 2>/dev/null && command -v python3 >/dev/null 2>/dev/null && python3 -m pip --version >/dev/null 2>/dev/null && python3 -m venv --help >/dev/null 2>/dev/null; then
   echo 'VR_CHECK python=pass'
@@ -95,7 +118,7 @@ fi
 tsc_version="$(tsc --version 2>/dev/null || true)"
 printf 'VR_TSC_VERSION=%s\n' "$tsc_version"
 
-if node -e "fetch('https://pi.dev').then(r => process.exit(r.status > 0 ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>/dev/null; then
+if node -e "fetch('{url}').then(r => process.exit(r.status > 0 ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>/dev/null; then
   echo 'VR_CHECK internet=pass'
 else
   echo 'VR_CHECK internet=fail'
@@ -104,58 +127,55 @@ fi
 printf 'VR_GIT_NAME=%s\n' "${{GIT_AUTHOR_NAME:-}}"
 printf 'VR_GIT_EMAIL=%s\n' "${{GIT_AUTHOR_EMAIL:-}}"
 "#,
-    );
-    let output = compose_shell_output_without_ssh(config, &script)?;
+        url = descriptor.connectivity_url,
+    ));
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        return Err(anyhow!("container doctor probe failed: {stderr}"));
-    }
+    script
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let container_path = line_value(&stdout, "VR_PATH=")
-        .map(str::trim)
-        .unwrap_or_default()
-        .to_owned();
-    let npm_global_bin = format!("{pi_npm_global_path}/bin");
-    Ok(ContainerDoctorProbe {
-        pi_config_writable: check_passed(&stdout, "pi_config_writable"),
-        pi_sessions_writable: check_passed(&stdout, "pi_sessions_writable"),
-        pi_npm_global_writable: check_passed(&stdout, "pi_npm_global_writable"),
-        npm_global_bin_on_path: path_contains_entry(&container_path, &npm_global_bin),
-        container_path,
-        pi_command_path: line_value(&stdout, "VR_PI_COMMAND_PATH=")
+fn parse_probe(
+    stdout: &str,
+    descriptor: &harness::HarnessDescriptor,
+    command: &str,
+) -> ContainerDoctorProbe {
+    let non_empty = |prefix: &str| {
+        line_value(stdout, prefix)
             .map(str::trim)
             .filter(|value| !value.is_empty())
-            .map(str::to_owned),
-        python_available: check_passed(&stdout, "python"),
-        python_version: line_value(&stdout, "VR_PYTHON_VERSION=")
+            .map(str::to_owned)
+    };
+
+    ContainerDoctorProbe {
+        state_dirs: descriptor
+            .state_dirs
+            .iter()
+            .map(|dir| StateDirProbe {
+                name: dir.name,
+                container_path: dir.container_path,
+                writable: check_passed(stdout, &format!("state_dir:{}", dir.name)),
+            })
+            .collect(),
+        container_path: line_value(stdout, "VR_PATH=")
             .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned),
-        go_available: check_passed(&stdout, "go"),
-        go_version: line_value(&stdout, "VR_GO_VERSION=")
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned),
-        typescript_available: check_passed(&stdout, "typescript"),
-        tsc_version: line_value(&stdout, "VR_TSC_VERSION=")
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned),
-        internet_reachable: check_passed(&stdout, "internet"),
+            .unwrap_or_default()
+            .to_owned(),
+        command: command.to_owned(),
+        command_path: non_empty("VR_COMMAND_PATH="),
+        command_version: non_empty("VR_COMMAND_VERSION="),
+        python_available: check_passed(stdout, "python"),
+        python_version: non_empty("VR_PYTHON_VERSION="),
+        go_available: check_passed(stdout, "go"),
+        go_version: non_empty("VR_GO_VERSION="),
+        typescript_available: check_passed(stdout, "typescript"),
+        tsc_version: non_empty("VR_TSC_VERSION="),
+        connectivity_url: descriptor.connectivity_url,
+        internet_reachable: check_passed(stdout, "internet"),
         git_identity: git_identity::git_identity_from_parts(
-            line_value(&stdout, "VR_GIT_NAME=")
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned),
-            line_value(&stdout, "VR_GIT_EMAIL=")
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned),
+            non_empty("VR_GIT_NAME="),
+            non_empty("VR_GIT_EMAIL="),
             "container environment",
         ),
-    })
+    }
 }
 
 pub fn container_ssh_doctor_probe(config: &Config) -> Result<Option<ContainerSshDoctorProbe>> {
@@ -230,7 +250,7 @@ fn line_value<'a>(output: &'a str, prefix: &str) -> Option<&'a str> {
     output.lines().find_map(|line| line.strip_prefix(prefix))
 }
 
-fn path_contains_entry(path: &str, entry: &str) -> bool {
+pub fn path_contains_entry(path: &str, entry: &str) -> bool {
     path.split(':').any(|candidate| candidate == entry)
 }
 
@@ -250,10 +270,12 @@ mod tests {
     fn doctor_probe_parser_reads_structured_lines() {
         let output = "\
 noise
-VR_CHECK pi_config_writable=pass
-VR_CHECK pi_npm_global_writable=pass
+VR_CHECK state_dir:config=pass
+VR_CHECK state_dir:sessions=fail
+VR_CHECK state_dir:npm-global=pass
 VR_PATH=/home/agent/.npm-global/bin:/usr/local/bin:/usr/bin
-VR_PI_COMMAND_PATH=/home/agent/.npm-global/bin/pi
+VR_COMMAND_PATH=/home/agent/.npm-global/bin/pi
+VR_COMMAND_VERSION=1.6.0
 VR_CHECK python=pass
 VR_PYTHON_VERSION=Python 3.11.2
 VR_CHECK go=pass
@@ -261,35 +283,66 @@ VR_GO_VERSION=go version go1.23.0 linux/amd64
 VR_CHECK typescript=pass
 VR_TSC_VERSION=Version 5.9.3
 VR_CHECK internet=fail
+VR_GIT_NAME=Ada
+VR_GIT_EMAIL=ada@example.com
 VR_SSH_ADD_STDOUT=one
 VR_SSH_ADD_STDOUT=two
 VR_SSH_ADD_CODE=1
 ";
 
-        assert!(check_passed(output, "pi_config_writable"));
-        assert!(check_passed(output, "pi_npm_global_writable"));
+        let probe = parse_probe(output, &harness::PI, "pi");
+        let writable = |name: &str| {
+            probe
+                .state_dirs
+                .iter()
+                .find(|dir| dir.name == name)
+                .map(|dir| dir.writable)
+        };
+        assert_eq!(probe.state_dirs.len(), harness::PI.state_dirs.len());
+        assert_eq!(writable("config"), Some(true));
+        assert_eq!(writable("sessions"), Some(false));
+        assert_eq!(writable("npm-global"), Some(true));
+        assert_eq!(writable("skills"), Some(false));
         assert!(path_contains_entry(
-            line_value(output, "VR_PATH=").unwrap(),
+            &probe.container_path,
             "/home/agent/.npm-global/bin"
         ));
         assert_eq!(
-            line_value(output, "VR_PI_COMMAND_PATH="),
+            probe.command_path.as_deref(),
             Some("/home/agent/.npm-global/bin/pi")
         );
-        assert!(check_passed(output, "python"));
-        assert_eq!(
-            line_value(output, "VR_PYTHON_VERSION="),
-            Some("Python 3.11.2")
-        );
-        assert!(check_passed(output, "go"));
-        assert_eq!(
-            line_value(output, "VR_GO_VERSION="),
-            Some("go version go1.23.0 linux/amd64")
-        );
-        assert!(check_passed(output, "typescript"));
-        assert_eq!(line_value(output, "VR_TSC_VERSION="), Some("Version 5.9.3"));
-        assert!(!check_passed(output, "internet"));
+        assert_eq!(probe.command_version.as_deref(), Some("1.6.0"));
+        assert!(probe.python_available);
+        assert_eq!(probe.python_version.as_deref(), Some("Python 3.11.2"));
+        assert!(probe.go_available);
+        assert!(probe.typescript_available);
+        assert_eq!(probe.tsc_version.as_deref(), Some("Version 5.9.3"));
+        assert!(!probe.internet_reachable);
+        assert_eq!(probe.connectivity_url, "https://pi.dev");
+        assert!(probe.git_identity.is_some());
         assert_eq!(line_value(output, "VR_SSH_ADD_CODE="), Some("1"));
         assert_eq!(prefixed_lines(output, "VR_SSH_ADD_STDOUT="), "one\ntwo");
+    }
+
+    #[test]
+    fn doctor_probe_parser_treats_missing_command_lines_as_none() {
+        let probe = parse_probe("VR_COMMAND_PATH=\n", &harness::CLAUDE, "claude");
+        assert_eq!(probe.command, "claude");
+        assert!(probe.command_path.is_none());
+        assert!(probe.command_version.is_none());
+        assert_eq!(probe.connectivity_url, "https://api.anthropic.com");
+        assert_eq!(probe.state_dirs.len(), 1);
+        assert!(!probe.state_dirs[0].writable);
+    }
+
+    #[test]
+    fn probe_script_covers_each_state_dir_command_and_url() {
+        let script = probe_script(&harness::CLAUDE, "claude");
+        assert!(script.contains("tmp=\"/home/agent/.claude/.vr-doctor-write-test\""));
+        assert!(script.contains("VR_CHECK state_dir:config=pass"));
+        assert!(script.contains("command -v claude"));
+        assert!(script.contains("timeout 20 claude --version </dev/null"));
+        assert!(script.contains("fetch('https://api.anthropic.com')"));
+        assert!(!script.contains(".pi/"));
     }
 }
