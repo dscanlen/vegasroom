@@ -1,3 +1,34 @@
+//! Managed Docker Compose generation.
+//!
+//! `vr init` writes `~/.vegasroom/runtime/compose.yaml` with one service per
+//! registered harness. The repository's `compose.yaml` is a reference copy of
+//! this output (kept in sync by `reference_compose_yaml_matches_generator`).
+//!
+//! Design notes for the generated service:
+//! - `build.network` / `network_mode` default to `host`. Rootless fallback: avoids
+//!   BuildKit and container creation attaching to the default bridge on hosts where
+//!   veth is unsupported. `vr` sets `VR_<ID>_BUILD_NETWORK` / `VR_<ID>_NETWORK_MODE`
+//!   from `harness.<id>.build_network` / `.network`.
+//! - `user: "0:0"`: rootless bind-mount compatibility. Container root maps to the
+//!   invoking host user under rootless Docker, so files written to mounts stay
+//!   owned by that user; it is not root on the host.
+//! - `init`, `no-new-privileges`, `cap_drop: ALL`: low-risk hardening that keeps the
+//!   root/network/mount model while preventing privilege escalation.
+//! - Pi's `npm-global` state dir persists in-room `npm install -g` updates; that
+//!   prefix is first on PATH so it overrides the baked `/usr/local` install.
+//! - `BROWSER=echo` makes browser-login helpers print a URL instead of trying to
+//!   open a browser inside the container.
+//! - SSH: the SSH state *directory* is mounted (not `known_hosts` directly), because
+//!   Docker creates missing bind sources as directories. `/root/.ssh` is an
+//!   image-level symlink to `<home>/.ssh`, so no second bind mount is needed.
+//!   `SSH_AUTH_SOCK`, Git identity and read-only rootfs are applied per launch via
+//!   generated Compose override files targeting the launched service.
+//! - `passthrough_env` keys render as bare `KEY:` so Compose forwards the host
+//!   value only when it is set.
+//! - Offline Pi smoke tests: set `PI_OFFLINE=1` and `PI_SKIP_VERSION_CHECK=1` in the
+//!   room (e.g. `vr shell . -- env PI_OFFLINE=1 ...`) to avoid Pi package/version
+//!   endpoints.
+
 use crate::{
     config::Config,
     harness::{HarnessDescriptor, TOOLCHAIN_ENV},
@@ -303,5 +334,34 @@ mod tests {
             state.harness_root.join("claude").join("config").display()
         )));
         assert!(yaml.contains("target: /home/agent/.claude\n"));
+    }
+
+    /// Example home used for the repository's reference `compose.yaml`.
+    const REFERENCE_STATE_ROOT: &str = "/home/user/.vegasroom";
+    const REFERENCE_HEADER: &str = "\
+# Reference copy of the Compose file `vr init` generates at
+# ~/.vegasroom/runtime/compose.yaml (shown for HOME=/home/user, default config).
+# Not used at runtime. Design notes live in src/docker/compose_gen.rs.
+# Regenerate: VR_UPDATE_REFERENCE_COMPOSE=1 cargo test reference_compose_yaml
+";
+
+    #[test]
+    fn reference_compose_yaml_matches_generator() {
+        let state = StatePaths::from_root(REFERENCE_STATE_ROOT.into());
+        let expected = format!(
+            "{REFERENCE_HEADER}{}",
+            generate(harness::HARNESSES, &Config::default(), &state)
+        );
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("compose.yaml");
+
+        if std::env::var_os("VR_UPDATE_REFERENCE_COMPOSE").is_some() {
+            std::fs::write(&path, &expected).unwrap();
+        }
+
+        let actual = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            actual, expected,
+            "compose.yaml is out of date; run: VR_UPDATE_REFERENCE_COMPOSE=1 cargo test reference_compose_yaml"
+        );
     }
 }

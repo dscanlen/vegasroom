@@ -1,37 +1,26 @@
+# Reference copy of the Compose file `vr init` generates at
+# ~/.vegasroom/runtime/compose.yaml (shown for HOME=/home/user, default config).
+# Not used at runtime. Design notes live in src/docker/compose_gen.rs.
+# Regenerate: VR_UPDATE_REFERENCE_COMPOSE=1 cargo test reference_compose_yaml
 services:
   pi:
     build:
       context: .
       dockerfile: harness/pi/Dockerfile
-      # Rootless fallback: avoid BuildKit trying to attach RUN containers
-      # to the default bridge network on hosts where veth is unsupported.
-      # `vr` sets VR_PI_BUILD_NETWORK from harness.pi.build_network in config.
       network: ${VR_PI_BUILD_NETWORK:-host}
     image: ${VR_PI_IMAGE:-vegasroom/pi:latest}
-    # M1 rootless-Docker bind-mount compatibility: run as container root.
-    # With rootless Docker this is still unprivileged on the host.
     user: "0:0"
-    # Low-risk runtime hardening: keep the proven root/network/mount model,
-    # but prevent privilege escalation and drop ambient Linux capabilities.
     init: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # Rootless fallback for runtime container creation. `vr` sets
-    # VR_PI_NETWORK_MODE from harness.pi.network in config.
     network_mode: ${VR_PI_NETWORK_MODE:-host}
     stdin_open: true
     tty: true
     working_dir: /workspace
     environment:
       HOME: /home/agent
-      PI_CODING_AGENT_SESSION_DIR: /home/agent/.pi/sessions
-      # Persist npm-global installs outside the ephemeral container. If Pi (or the user)
-      # updates @earendil-works/pi-coding-agent in-room, the mounted prefix is first on
-      # PATH on future launches while /usr/local remains the baked fallback.
-      NPM_CONFIG_PREFIX: /home/agent/.npm-global
-      npm_config_prefix: /home/agent/.npm-global
       NPM_CONFIG_CACHE: /home/agent/.cache/npm
       npm_config_cache: /home/agent/.cache/npm
       CARGO_HOME: /home/agent/.cargo
@@ -39,47 +28,89 @@ services:
       PIP_CACHE_DIR: /home/agent/.cache/pip
       GOCACHE: /home/agent/.cache/go-build
       GOMODCACHE: /home/agent/.cache/go-mod
+      PI_CODING_AGENT_SESSION_DIR: /home/agent/.pi/sessions
+      NPM_CONFIG_PREFIX: /home/agent/.npm-global
+      npm_config_prefix: /home/agent/.npm-global
       PATH: /home/agent/.npm-global/bin:/home/agent/.cargo/bin:/usr/local/cargo/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      # Force browser-login helpers to print a URL instead of trying to launch a browser in the container.
       BROWSER: echo
-      # SSH_AUTH_SOCK is injected by vr with a generated Compose override when
-      # host-agent or managed SSH is available.
-      # Uncomment for offline smoke tests that should not hit Pi package/version endpoints.
-      # PI_OFFLINE: "1"
-      # PI_SKIP_VERSION_CHECK: "1"
     volumes:
       - type: bind
-        source: ${VR_WORKSPACE:-${HOME}/.vegasroom/workspace}
+        source: ${VR_WORKSPACE:-/home/user/.vegasroom/workspace}
         target: /workspace
         read_only: ${VR_WORKSPACE_READ_ONLY:-false}
       - type: bind
-        source: ${HOME}/.vegasroom/harness/pi/config
+        source: /home/user/.vegasroom/harness/pi/config
         target: /home/agent/.pi/agent
       - type: bind
-        source: ${HOME}/.vegasroom/harness/pi/extensions
+        source: /home/user/.vegasroom/harness/pi/extensions
         target: /home/agent/.pi/extensions
       - type: bind
-        source: ${HOME}/.vegasroom/harness/pi/skills
+        source: /home/user/.vegasroom/harness/pi/skills
         target: /home/agent/.pi/skills
       - type: bind
-        source: ${HOME}/.vegasroom/harness/pi/sessions
+        source: /home/user/.vegasroom/harness/pi/sessions
         target: /home/agent/.pi/sessions
       - type: bind
-        source: ${HOME}/.vegasroom/harness/pi/npm-global
+        source: /home/user/.vegasroom/harness/pi/npm-global
         target: /home/agent/.npm-global
       - type: bind
-        source: ${HOME}/.vegasroom/environment/cargo
+        source: /home/user/.vegasroom/environment/cargo
         target: /home/agent/.cargo
-      # Mount the SSH state directory, not the known_hosts file directly.
-      # Docker creates missing bind sources as directories, which causes
-      # file-vs-directory errors when binding a missing file to known_hosts.
-      # /root/.ssh is an image-level symlink to /home/agent/.ssh so root-run
-      # ssh/git commands use the same managed state without a second bind mount.
       - type: bind
-        source: ${HOME}/.vegasroom/ssh
+        source: /home/user/.vegasroom/ssh
         target: /home/agent/.ssh
       - type: bind
-        source: ${HOME}/.vegasroom/cache
+        source: /home/user/.vegasroom/cache
+        target: /home/agent/.cache
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  claude:
+    build:
+      context: .
+      dockerfile: harness/claude/Dockerfile
+      network: ${VR_CLAUDE_BUILD_NETWORK:-host}
+    image: ${VR_CLAUDE_IMAGE:-vegasroom/claude:latest}
+    user: "0:0"
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    network_mode: ${VR_CLAUDE_NETWORK_MODE:-host}
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    environment:
+      HOME: /home/agent
+      NPM_CONFIG_CACHE: /home/agent/.cache/npm
+      npm_config_cache: /home/agent/.cache/npm
+      CARGO_HOME: /home/agent/.cargo
+      RUSTUP_HOME: /usr/local/rustup
+      PIP_CACHE_DIR: /home/agent/.cache/pip
+      GOCACHE: /home/agent/.cache/go-build
+      GOMODCACHE: /home/agent/.cache/go-mod
+      CLAUDE_CONFIG_DIR: /home/agent/.claude
+      DISABLE_AUTOUPDATER: "1"
+      PATH: /home/agent/.cargo/bin:/usr/local/cargo/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      BROWSER: echo
+      ANTHROPIC_API_KEY:
+      CLAUDE_CODE_OAUTH_TOKEN:
+    volumes:
+      - type: bind
+        source: ${VR_WORKSPACE:-/home/user/.vegasroom/workspace}
+        target: /workspace
+        read_only: ${VR_WORKSPACE_READ_ONLY:-false}
+      - type: bind
+        source: /home/user/.vegasroom/harness/claude/config
+        target: /home/agent/.claude
+      - type: bind
+        source: /home/user/.vegasroom/environment/cargo
+        target: /home/agent/.cargo
+      - type: bind
+        source: /home/user/.vegasroom/ssh
+        target: /home/agent/.ssh
+      - type: bind
+        source: /home/user/.vegasroom/cache
         target: /home/agent/.cache
     extra_hosts:
       - "host.docker.internal:host-gateway"
