@@ -60,6 +60,13 @@ harness:
     build_network: host
     read_only_workspace: false
     read_only_rootfs: false
+  claude:
+    image: vegasroom/claude:latest
+    command: claude
+    network: host
+    build_network: host
+    read_only_workspace: false
+    read_only_rootfs: false
 "#;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -250,6 +257,7 @@ pub struct SelectedSshKey {
 #[serde(from = "RawHarnessConfig")]
 pub struct HarnessConfig {
     pub pi: HarnessInstanceConfig,
+    pub claude: HarnessInstanceConfig,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -266,6 +274,8 @@ pub struct HarnessInstanceConfig {
 struct RawHarnessConfig {
     #[serde(default)]
     pi: RawHarnessInstanceConfig,
+    #[serde(default)]
+    claude: RawHarnessInstanceConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -304,6 +314,7 @@ impl From<RawHarnessConfig> for HarnessConfig {
     fn from(raw: RawHarnessConfig) -> Self {
         Self {
             pi: raw.pi.resolve(&harness::PI),
+            claude: raw.claude.resolve(&harness::CLAUDE),
         }
     }
 }
@@ -322,6 +333,7 @@ impl HarnessConfig {
     ) -> Option<&HarnessInstanceConfig> {
         match descriptor.id {
             id if id == harness::PI.id => Some(&self.pi),
+            id if id == harness::CLAUDE.id => Some(&self.claude),
             _ => None,
         }
     }
@@ -727,6 +739,40 @@ mod tests {
         assert_eq!(pi.command, harness::PI.default_command);
         assert_eq!(pi.build_network, "host");
         assert!(!pi.read_only_workspace);
+    }
+
+    #[test]
+    fn claude_config_defaults_come_from_claude_descriptor() {
+        let config = Config::default();
+        assert_eq!(
+            config.harness.instance(&harness::CLAUDE),
+            &HarnessInstanceConfig::defaults_for(&harness::CLAUDE)
+        );
+        assert_eq!(config.harness.claude.image, "vegasroom/claude:latest");
+        assert_eq!(config.harness.claude.command, "claude");
+    }
+
+    #[test]
+    fn partial_claude_block_does_not_inherit_pi_defaults() {
+        let config: Config = serde_yaml::from_str(
+            "harness:\n  pi:\n    image: example/pi:x\n  claude:\n    network: bridge\n",
+        )
+        .unwrap();
+
+        assert_eq!(config.harness.claude.image, "vegasroom/claude:latest");
+        assert_eq!(config.harness.claude.command, "claude");
+        assert_eq!(config.harness.claude.network, "bridge");
+        assert_eq!(config.harness.pi.image, "example/pi:x");
+    }
+
+    #[test]
+    fn existing_config_without_claude_block_gets_claude_defaults() {
+        let config: Config =
+            serde_yaml::from_str("harness:\n  pi:\n    image: example/pi:x\n").unwrap();
+        assert_eq!(
+            config.harness.claude,
+            HarnessInstanceConfig::defaults_for(&harness::CLAUDE)
+        );
     }
 
     #[test]

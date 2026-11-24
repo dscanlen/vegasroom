@@ -274,6 +274,7 @@ fn blocked_credential_roots(home: &Path, state: &StatePaths) -> Vec<PathBuf> {
         home.join(".gnupg"),
         home.join(".password-store"),
         home.join(".local/share/keyrings"),
+        home.join(".claude"),
     ];
 
     roots.push(state.ssh_dir.clone());
@@ -571,6 +572,14 @@ mod tests {
         assert!(err
             .to_string()
             .contains("Refusing to mount credential directory"));
+    }
+
+    #[test]
+    fn host_claude_config_dir_is_a_blocked_credential_root() {
+        let root = TempDir::new("host-claude-root");
+        let state = StatePaths::from_root(root.path.join(".vegasroom"));
+        let roots = blocked_credential_roots(&root.path, &state);
+        assert!(roots.contains(&root.path.join(".claude")));
     }
 
     #[test]

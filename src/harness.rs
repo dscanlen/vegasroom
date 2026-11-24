@@ -114,6 +114,39 @@ pub const PI: HarnessDescriptor = HarnessDescriptor {
     passthrough_env: &[],
 };
 
+pub const CLAUDE_DEFAULT_IMAGE: &str = "vegasroom/claude:latest";
+pub const CLAUDE_VERSIONED_IMAGE: &str = concat!("vegasroom/claude:", env!("CARGO_PKG_VERSION"));
+
+/// Host state dir name for Claude Code's CLAUDE_CONFIG_DIR (settings, /login
+/// credentials, sessions, .claude.json all live inside it).
+pub const CLAUDE_CONFIG_STATE_DIR: &str = "config";
+
+pub const CLAUDE: HarnessDescriptor = HarnessDescriptor {
+    id: "claude",
+    display_name: "Claude Code",
+    service_name: "claude",
+    default_image: CLAUDE_DEFAULT_IMAGE,
+    versioned_image: CLAUDE_VERSIONED_IMAGE,
+    default_command: "claude",
+    dockerfile_path: "harness/claude/Dockerfile",
+    container_home: "/home/agent",
+    state_dirs: &[HarnessStateDir {
+        name: CLAUDE_CONFIG_STATE_DIR,
+        container_path: "/home/agent/.claude",
+    }],
+    auth_state_relative_path: "config/.credentials.json",
+    extra_env: &[
+        ("CLAUDE_CONFIG_DIR", "/home/agent/.claude"),
+        ("DISABLE_AUTOUPDATER", "\"1\""),
+        (
+            "PATH",
+            "/home/agent/.cargo/bin:/usr/local/cargo/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        ),
+        ("BROWSER", "echo"),
+    ],
+    passthrough_env: &["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"],
+};
+
 /// All registered harnesses, in preference order. The first entry is the default.
 pub const HARNESSES: &[&HarnessDescriptor] = &[&PI];
 
@@ -156,6 +189,46 @@ mod tests {
         );
         assert_eq!(PI.auth_state_relative_path, "config/auth.json");
         assert!(PI.passthrough_env.is_empty());
+    }
+
+    #[test]
+    fn claude_descriptor_contains_runtime_contract() {
+        assert_eq!(CLAUDE.id, "claude");
+        assert_eq!(CLAUDE.service_name, "claude");
+        assert_eq!(CLAUDE.default_image, "vegasroom/claude:latest");
+        assert_eq!(
+            CLAUDE.versioned_image,
+            concat!("vegasroom/claude:", env!("CARGO_PKG_VERSION"))
+        );
+        assert_eq!(CLAUDE.default_command, "claude");
+        assert_eq!(CLAUDE.dockerfile_path, "harness/claude/Dockerfile");
+        assert_eq!(CLAUDE.container_home, "/home/agent");
+        assert_eq!(
+            CLAUDE.required_state_dir_container_path(CLAUDE_CONFIG_STATE_DIR),
+            "/home/agent/.claude"
+        );
+        assert_eq!(CLAUDE.auth_state_relative_path, "config/.credentials.json");
+        assert_eq!(CLAUDE.compose_var("IMAGE"), "VR_CLAUDE_IMAGE");
+    }
+
+    #[test]
+    fn claude_config_dir_env_matches_mounted_state_dir() {
+        let mounted = CLAUDE.required_state_dir_container_path(CLAUDE_CONFIG_STATE_DIR);
+        assert!(CLAUDE.extra_env.contains(&("CLAUDE_CONFIG_DIR", mounted)));
+        assert!(CLAUDE
+            .auth_state_relative_path
+            .starts_with(&format!("{CLAUDE_CONFIG_STATE_DIR}/")));
+    }
+
+    #[test]
+    fn claude_forwards_auth_env_from_host_without_baking_values() {
+        assert_eq!(
+            CLAUDE.passthrough_env,
+            &["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]
+        );
+        for key in CLAUDE.passthrough_env {
+            assert!(!CLAUDE.extra_env.iter().any(|(k, _)| k == key));
+        }
     }
 
     #[test]

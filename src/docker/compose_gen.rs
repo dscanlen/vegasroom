@@ -273,4 +273,34 @@ mod tests {
         assert!(env["ALT_API_KEY"].is_null());
         assert_eq!(env["ALT_CONFIG_DIR"].as_str(), Some("/home/agent/.alt"));
     }
+
+    #[test]
+    fn claude_service_yaml_forwards_auth_env_and_mounts_config_dir() {
+        let state = test_state();
+        let yaml = format!(
+            "services:\n{}",
+            service_yaml(&harness::CLAUDE, harness::CLAUDE.default_image, &state)
+        );
+        let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+        let service = &doc["services"]["claude"];
+        let env = &service["environment"];
+
+        assert_eq!(
+            service["image"].as_str(),
+            Some("${VR_CLAUDE_IMAGE:-vegasroom/claude:latest}")
+        );
+        assert_eq!(
+            env["CLAUDE_CONFIG_DIR"].as_str(),
+            Some("/home/agent/.claude")
+        );
+        assert_eq!(env["DISABLE_AUTOUPDATER"].as_str(), Some("1"));
+        assert!(env["ANTHROPIC_API_KEY"].is_null());
+        assert!(env["CLAUDE_CODE_OAUTH_TOKEN"].is_null());
+        assert!(env.get("PI_CODING_AGENT_SESSION_DIR").is_none());
+        assert!(yaml.contains(&format!(
+            "source: {}",
+            state.harness_root.join("claude").join("config").display()
+        )));
+        assert!(yaml.contains("target: /home/agent/.claude\n"));
+    }
 }
