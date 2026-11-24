@@ -239,3 +239,5 @@ Run the project checks before handing off changes:
 ```bash
 bash scripts/check.sh
 ```
+
+Planned work (next milestones, stretch goals, smaller follow-ups) is tracked in [ROADMAP.md](ROADMAP.md).
