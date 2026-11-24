@@ -118,7 +118,8 @@ mod tests {
         assert_eq!(command, "pi");
         // The function prints to stdout; verify it at least doesn't panic
         // and uses the right descriptor fields by checking the format values
-        assert!(format!("vr {name} [workspace] [{command}-args...]").contains("vr pi [workspace] [pi-args...]"));
+        assert!(format!("vr {name} [workspace] [{command}-args...]")
+            .contains("vr pi [workspace] [pi-args...]"));
         assert!(format!("vr [{command}-flags...]").contains("vr [pi-flags...]"));
         assert!(format!("vr -- [{command}-args...]").contains("vr -- [pi-args...]"));
     }

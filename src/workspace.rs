@@ -64,11 +64,7 @@ pub fn resolve_workspace_with_state(
             reject_unsafe_workspace_name(value)?;
             let path = workspace_root.join(value);
             WorkspaceRequest {
-                auto_create: can_auto_create_under_managed_workspace(
-                    &path,
-                    &workspace_root,
-                    state,
-                ),
+                auto_create: can_auto_create_under_managed_workspace(&path, &workspace_root, state),
                 path,
             }
         }
@@ -395,7 +391,9 @@ mod tests {
         let state = StatePaths::default().unwrap();
         let config = Config::default();
 
-        let err = resolve_workspace_with_state(Some(&missing.display().to_string()), &config, &state).unwrap_err();
+        let err =
+            resolve_workspace_with_state(Some(&missing.display().to_string()), &config, &state)
+                .unwrap_err();
 
         assert!(err.to_string().contains("Workspace path does not exist"));
         assert!(!missing.exists());

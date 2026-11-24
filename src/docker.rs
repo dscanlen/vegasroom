@@ -67,7 +67,13 @@ pub fn run_shell(
     } else {
         SshRuntimeMode::NonInteractive
     };
-    run_compose(config, workspace, &shell_compose_args(command), ssh_mode, state)
+    run_compose(
+        config,
+        workspace,
+        &shell_compose_args(command),
+        ssh_mode,
+        state,
+    )
 }
 
 fn shell_compose_args(command: &[String]) -> Vec<String> {
@@ -111,7 +117,10 @@ fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor)
 
     let mut command = base_docker(config);
     apply_compose_config_env(&mut command, config);
-    command.env("VR_PI_IMAGE", config.harness_runtime_config(descriptor).image);
+    command.env(
+        "VR_PI_IMAGE",
+        config.harness_runtime_config(descriptor).image,
+    );
     let status = command
         .arg("compose")
         .arg("-f")
@@ -189,10 +198,7 @@ fn run_harness_command(
     )
 }
 
-fn ensure_harness_image(
-    descriptor: &harness::HarnessDescriptor,
-    config: &Config,
-) -> Result<()> {
+fn ensure_harness_image(descriptor: &harness::HarnessDescriptor, config: &Config) -> Result<()> {
     if environment::has_customization(config) {
         return environment::ensure_image(config, descriptor);
     }

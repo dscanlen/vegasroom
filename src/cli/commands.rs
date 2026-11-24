@@ -49,8 +49,12 @@ pub(super) fn launch_harness(
     print_workspace_messages(&workspace, &config);
     print_environment_image_warning(&config)?;
 
-    docker::ensure_harness_image_exists(descriptor, &config)
-        .with_context(|| format!("{} image was not ready. Run: vr init --build", descriptor.display_name))?;
+    docker::ensure_harness_image_exists(descriptor, &config).with_context(|| {
+        format!(
+            "{} image was not ready. Run: vr init --build",
+            descriptor.display_name
+        )
+    })?;
     docker::run_harness(descriptor, &config, &workspace, &harness_args, &state)
 }
 

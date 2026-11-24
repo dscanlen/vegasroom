@@ -71,7 +71,10 @@ fn parse_explicit_harness(descriptor: &'static HarnessDescriptor, args: &[String
     parse_harness_invocation(descriptor, args)
 }
 
-fn parse_harness_invocation(descriptor: &'static HarnessDescriptor, args: &[String]) -> ManualLaunch {
+fn parse_harness_invocation(
+    descriptor: &'static HarnessDescriptor,
+    args: &[String],
+) -> ManualLaunch {
     let Some(first) = args.first() else {
         return harness_invocation(descriptor, None, Vec::new());
     };
@@ -284,8 +287,7 @@ mod tests {
 
     #[test]
     fn harness_invocation_accepts_workspace_before_harness_args() {
-        let launch =
-            parse_harness_invocation(&harness::PI, &args(&[".", "--session", "abc123"]));
+        let launch = parse_harness_invocation(&harness::PI, &args(&[".", "--session", "abc123"]));
 
         assert_eq!(
             launch,
@@ -295,8 +297,7 @@ mod tests {
 
     #[test]
     fn harness_invocation_strips_separator_after_workspace() {
-        let launch =
-            parse_harness_invocation(&harness::PI, &args(&["my-repo", "--", "--help"]));
+        let launch = parse_harness_invocation(&harness::PI, &args(&["my-repo", "--", "--help"]));
 
         assert_eq!(launch, pi_harness(Some("my-repo"), args(&["--help"])));
     }
