@@ -268,7 +268,29 @@ pub struct PiHarnessConfig {
     pub read_only_rootfs: bool,
 }
 
+pub struct HarnessRuntimeConfig<'a> {
+    pub image: &'a str,
+    pub command: &'a str,
+}
+
 impl Config {
+    pub fn harness_runtime_config<'a>(
+        &'a self,
+        descriptor: &harness::HarnessDescriptor,
+    ) -> HarnessRuntimeConfig<'a> {
+        if descriptor.id == harness::PI.id {
+            HarnessRuntimeConfig {
+                image: &self.harness.pi.image,
+                command: &self.harness.pi.command,
+            }
+        } else {
+            HarnessRuntimeConfig {
+                image: descriptor.default_image,
+                command: descriptor.default_command,
+            }
+        }
+    }
+
     pub fn load_or_default() -> Result<Self> {
         Self::load_with(&StatePaths::default()?)
     }

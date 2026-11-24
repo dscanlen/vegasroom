@@ -353,11 +353,7 @@ fn build_apt_packages(config: &Config) -> Vec<String> {
 }
 
 fn base_image<'a>(config: &'a Config, descriptor: &'a harness::HarnessDescriptor) -> &'a str {
-    if descriptor.id == harness::PI.id {
-        config.harness.pi.image.as_str()
-    } else {
-        descriptor.default_image
-    }
+    config.harness_runtime_config(descriptor).image
 }
 
 fn derived_image_tag(base: &str) -> String {

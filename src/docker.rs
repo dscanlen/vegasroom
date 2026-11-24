@@ -95,9 +95,7 @@ fn build_harness_image(config: &Config, descriptor: &harness::HarnessDescriptor)
 
     let mut command = base_docker(config);
     apply_compose_config_env(&mut command, config);
-    if descriptor.id == harness::PI.id {
-        command.env("VR_PI_IMAGE", &config.harness.pi.image);
-    }
+    command.env("VR_PI_IMAGE", config.harness_runtime_config(descriptor).image);
     let status = command
         .arg("compose")
         .arg("-f")
@@ -179,7 +177,7 @@ fn ensure_harness_image_exists(
     config: &Config,
     descriptor: &harness::HarnessDescriptor,
 ) -> Result<()> {
-    if descriptor.id == harness::PI.id && environment::has_customization(config) {
+    if environment::has_customization(config) {
         return environment::ensure_image(config, descriptor);
     }
 
@@ -384,19 +382,11 @@ fn compose_project_dir(compose_file: &std::path::Path) -> Result<std::path::Path
 }
 
 fn harness_image<'a>(config: &'a Config, descriptor: &harness::HarnessDescriptor) -> &'a str {
-    if descriptor.id == harness::PI.id {
-        config.harness.pi.image.as_str()
-    } else {
-        descriptor.default_image
-    }
+    config.harness_runtime_config(descriptor).image
 }
 
 fn harness_command<'a>(config: &'a Config, descriptor: &harness::HarnessDescriptor) -> &'a str {
-    if descriptor.id == harness::PI.id {
-        config.harness.pi.command.as_str()
-    } else {
-        descriptor.default_command
-    }
+    config.harness_runtime_config(descriptor).command
 }
 
 fn harness_compose_args(
